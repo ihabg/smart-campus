@@ -1,269 +1,151 @@
 # Smart Campus Navigation System
-### An-Najah National University — Faculty of Engineering
-**Graduation Project | Computer Engineering | 2026**
+## An-Najah National University — Faculty of Engineering
+
+**Graduation Project | Computer Engineering Department | 2025–2026**
+
+---
+
+## Project Team
+
+| Name | Student ID |
+|------|-----------|
+| Amr Sami Salah Jamhour | 12143698 |
+| Ihab Ghassan Ayash Habash | 12144054 |
+
+**Academic Supervisor:** Dr. Abdullah Rashid
 
 ---
 
 ## Project Overview
-A full-stack platform that provides interactive campus navigation, academic scheduling, and real-time notifications for An-Najah National University students and staff.
 
-| Component | Technology |
-|-----------|-----------|
-| Backend   | Node.js + Express + PostgreSQL |
-| Web App   | React.js |
-| Mobile    | React Native (Expo) |
-| Push Notifications | Firebase Cloud Messaging |
-| Authentication | JWT (access + refresh tokens) |
+The Smart Campus Navigation System is a comprehensive digital platform developed specifically for An-Najah National University. The system addresses a common challenge faced by students, faculty, and visitors — navigating a large and complex university campus efficiently.
+
+The platform integrates interactive campus maps, academic scheduling, AI-powered assistance, and real-time room status into a unified system accessible through both a web browser and a mobile application.
 
 ---
 
-## Prerequisites
-- Node.js v18+
-- PostgreSQL 14+
-- npm v9+
-- Expo CLI (for mobile): `npm install -g expo-cli`
-- (Optional) Expo Go app on your phone
+## Motivation
+
+Large university campuses present significant navigation challenges, especially for new students and visitors. Finding a specific room, locating an instructor's office, or knowing whether a room is currently available requires either prior knowledge or asking someone for help. This project aims to solve these challenges through a modern, intelligent digital solution that is always available and easy to use.
 
 ---
 
-## 1. Database Setup
+## Objectives
 
-```bash
-# Create the database
-psql -U postgres -c "CREATE DATABASE smart_campus;"
-
-# Run schema
-psql -U postgres -d smart_campus -f backend/database/schema.sql
-
-# Run seed data (buildings, floors, demo admin)
-psql -U postgres -d smart_campus -f backend/database/seed.sql
-```
+- Provide students with an interactive, digital map of the university campus
+- Enable real-time tracking of room availability and class schedules
+- Offer AI-powered assistance for campus-related queries in Arabic and English
+- Give administrators a powerful management panel to control all aspects of the system
+- Deliver a consistent experience across both web and mobile platforms
 
 ---
 
-## 2. Backend Setup
+## System Architecture
 
-```bash
-cd backend
+The system is built on a three-tier architecture:
 
-# Install dependencies
-npm install
+**Presentation Layer**
+The user-facing interface is delivered through two platforms — a web application accessible from any browser, and a mobile application for Android and iOS devices. Both platforms share the same design language and provide identical functionality.
 
-# Copy environment file
-cp .env.example .env
+**Application Layer**
+A RESTful API server handles all business logic, authentication, data processing, and AI integration. It serves both the web and mobile clients from a single unified backend.
 
-# Edit .env — fill in:
-#   DB_PASSWORD=your_postgres_password
-#   JWT_SECRET=any_long_random_string
-#   JWT_REFRESH_SECRET=another_long_random_string
-#   (Firebase keys optional — only needed for push notifications)
-
-# Start development server
-npm run dev
-```
-
-Server runs at: **http://localhost:5000**
-Health check: **http://localhost:5000/api/health**
+**Data Layer**
+A relational database stores all system data including user accounts, campus maps, room information, schedules, notifications, and announcements.
 
 ---
 
-## 3. Web App Setup
+## Core Features
 
-```bash
-cd web
+### Interactive Campus Map
+The map system provides a digitally accurate representation of the university campus buildings and floors. Each room is represented on the map with its exact location, type, and capacity. Users can click on any room to view its details and current availability status.
 
-# Install dependencies
-npm install
+The map is built from precise floor plans and supports multiple floors per building. As additional floor maps are finalized through the AutoCAD design process, they are uploaded through the admin panel and become immediately available to all users.
 
-# Start development server
-npm start
-```
+### Pathfinding and Navigation
+The system implements Dijkstra's shortest path algorithm to calculate the optimal route between any two rooms on the same floor. When a user requests directions, the system highlights the shortest path on the map, making navigation intuitive and effortless.
 
-Web app runs at: **http://localhost:3000**
+### Real-Time Room Availability
+Each room on the map displays its current occupancy status. When a class is in session, the room shows the course name, instructor, and scheduled time. This feature allows students to quickly identify available rooms and plan their campus activities accordingly.
 
-### Default Admin Account
-After running seed.sql:
-- Email: `admin@najah.edu`
-- Password: `Admin@1234`
+### AI Campus Assistant
+The integrated AI chatbot serves as a 24/7 campus guide. It understands natural language questions in both Arabic and English and provides accurate, instant responses about room locations, schedules, instructor offices, and general campus information. The chatbot also supports voice input and voice output, making it accessible and convenient for all users.
 
----
+### Academic Schedule Management
+Students can view their personalized daily and weekly class schedules through the system. Each scheduled class is linked to its room on the campus map, allowing students to navigate directly to their next class with a single tap.
 
-## 4. Mobile App Setup
+### Notifications and Announcements
+The system includes a full notification system through which administrators can broadcast important announcements to all students or specific groups. Announcements support rich text and images, making them suitable for official university communications.
 
-```bash
-cd mobile
-
-# Install dependencies
-npm install
-
-# For Android emulator (change API URL in src/api/index.js):
-# BASE_URL = 'http://10.0.2.2:5000/api'   ← Android emulator
-# BASE_URL = 'http://YOUR_IP:5000/api'     ← Physical device
-
-# Start Expo
-npx expo start
-```
-
-- Scan the QR code with **Expo Go** (Android/iOS)
-- Or press `a` for Android emulator, `i` for iOS simulator
+### Admin Management Panel
+University administrators have access to a comprehensive management dashboard from which they can manage all aspects of the system. This includes managing user accounts, uploading and editing floor maps, placing rooms on maps, managing academic schedules, and sending notifications.
 
 ---
 
-## 5. First-Time Admin Setup
+## Technology Choices
 
-1. Log in at http://localhost:3000 with `admin@najah.edu`
-2. Go to **Admin → Floors & Maps**
-3. Select a building, then click **Upload Map** on a floor to upload your AutoCAD-exported PNG/SVG
-4. Go to **Admin → Map Editor** to place rooms on the uploaded map
-5. Use **🔗 Connect mode** to draw pathfinding connections between rooms
-6. Click **💾 Save Layout**
-7. Go to **Admin → Schedule** to add course sections and assign rooms
+The project uses a modern, industry-standard technology stack chosen for its reliability, scalability, and widespread adoption in professional software development.
+
+The web frontend is built with React.js, the most widely used JavaScript framework for building user interfaces. The mobile application uses React Native with Expo, allowing the same codebase logic to run on both Android and iOS. The backend API is built with Node.js and Express, providing a fast and scalable server environment. PostgreSQL was chosen as the database for its robustness and advanced support for relational data.
+
+The AI capabilities are powered by Google Gemini, one of the most advanced large language models available, integrated through a secure API connection.
 
 ---
 
-## Project Structure
+## Future Work
 
-```
-smart-campus/
-├── backend/                   Node.js API
-│   ├── config/                db.js · multer.js · firebase.js
-│   ├── controllers/           auth · users · floors · rooms · schedule
-│   │                          search · notifications · announcements
-│   │                          courses · instructors · mapEditor
-│   ├── middleware/            auth.js · errorHandler.js · validate.js
-│   ├── models/                (schema in database/schema.sql)
-│   ├── routes/                one file per resource
-│   ├── utils/                 jwt.js
-│   ├── database/              schema.sql · seed.sql · migrate.js
-│   ├── tests/                 auth.test.js
-│   ├── uploads/               map images · avatars · announcements
-│   ├── server.js
-│   └── API_DOCS.md
-│
-├── web/                       React web app
-│   ├── src/
-│   │   ├── api/               axiosInstance · authAPI · floorAPI · index
-│   │   ├── context/           AuthContext
-│   │   ├── hooks/             useFloors · useRooms · useSchedule · etc.
-│   │   ├── components/
-│   │   │   ├── layout/        Navbar · Sidebar
-│   │   │   └── ui/            Button · Input · Modal · Table · etc.
-│   │   ├── pages/
-│   │   │   ├── AuthPages      Login · Register
-│   │   │   ├── DashboardPage
-│   │   │   ├── MapPage        Interactive map with pathfinding
-│   │   │   ├── SchedulePage   Week view + list view
-│   │   │   ├── SearchAndNotifications
-│   │   │   ├── ProfileAndAnnouncements
-│   │   │   └── admin/
-│   │   │       ├── AdminPages     Dashboard · Users · Floors · Schedule · Notifications
-│   │   │       ├── MapEditorPage  Drag-and-drop room editor ⭐
-│   │   │       ├── AdminRoomsPage
-│   │   │       └── AdminAnnouncementsPage
-│   │   ├── styles/            variables.css · global.css
-│   │   └── utils/             dijkstra.js · helpers.js
-│   └── public/
-│
-└── mobile/                    React Native (Expo)
-    ├── src/
-    │   ├── api/               index.js (all API calls)
-    │   ├── context/           AuthContext
-    │   ├── navigation/        RootNavigator (tabs + auth stack)
-    │   ├── screens/
-    │   │   ├── auth/          LoginScreen · RegisterScreen
-    │   │   ├── MapScreen      SVG map with pan/zoom/pathfinding
-    │   │   └── ScheduleScreen · SearchScreen · NotifScreen · ProfileScreen
-    │   ├── utils/             dijkstra.js · helpers.js
-    │   └── theme.js
-    └── App.jsx
-```
+The following enhancements are planned for future development phases:
+
+**Real-Time Room Booking System**
+Integration with the university's existing room booking infrastructure to provide live updates on room availability and allow students to reserve rooms directly through the platform.
+
+**Complete Campus Map Coverage**
+As AutoCAD floor plans for all buildings are finalized, they will be digitized and added to the system. The current release includes the Ground Floor of the Engineering Faculty, with all remaining floors to follow.
+
+**Indoor Positioning System**
+Integration with Bluetooth beacons or Wi-Fi positioning to provide real-time "you are here" navigation, guiding users turn-by-turn to their destination.
+
+**Smart Timetable Recommendations**
+An AI-driven module that analyzes a student's schedule and campus position to recommend optimal routes between consecutive classes, accounting for travel time and building distances.
+
+**Integration with University Information System**
+Connecting the platform with the university's official academic information system to automatically synchronize course registrations, instructor assignments, and exam schedules.
+
+**Augmented Reality Navigation**
+A future mobile feature using the device camera to overlay directional arrows and room labels onto the real physical environment, providing an immersive navigation experience.
+
+**Analytics Dashboard**
+A data analytics module for administrators to gain insights into campus usage patterns, peak occupancy times, and popular routes, supporting data-driven facility management decisions.
+
+**Multi-Campus Support**
+Extending the platform to support multiple campuses of An-Najah National University, including the New Campus, under a single unified system.
 
 ---
 
-## Key Features
+## Project Status
 
-### For Students
-- 🗺️ **Interactive campus map** — tap rooms to see details and schedule
-- 📅 **My schedule** — week view + list view with room navigation
-- 🔍 **Smart search** — rooms, courses, instructors
-- ↗️ **Pathfinding** — shortest path between any two rooms (Dijkstra)
-- 🔔 **Push notifications** — schedule changes, announcements
-- 📢 **Announcements** — pinned posts from administration
-
-### For Admins
-- 🏢 **Floors manager** — create floors, upload map images (PNG/SVG/JPG)
-- 🗺️ **Visual map editor** — drag rooms onto the map, resize, connect for pathfinding
-- 📅 **Schedule manager** — create sections, assign rooms, detect conflicts
-- 👥 **User management** — view, edit role/status, suspend students
-- 📢 **Notifications** — broadcast push notifications to all/specific users
-- 📝 **Announcements** — create, pin, publish with images
+| Component | Status |
+|-----------|--------|
+| Backend API | Complete |
+| Web Application | Complete |
+| Mobile Application | Complete |
+| AI Chatbot (Arabic + English) | Complete |
+| Ground Floor Map | Complete |
+| Admin Dashboard | Complete |
+| Notification System | Complete |
+| Additional Floor Maps | In Progress (AutoCAD) |
+| Real-Time Room Booking | Planned |
+| Indoor Positioning | Planned |
 
 ---
 
-## Algorithms Used
+## Acknowledgements
 
-### 1. Dijkstra's Shortest Path
-Used for campus navigation — finds the shortest walkable route between any two rooms.
-- Location: `web/src/utils/dijkstra.js` and `mobile/src/utils/dijkstra.js`
-- Graph data loaded from: `GET /api/search/graph?floor_id=...`
-- Edge weights stored in `room_adjacency` table (default: 1.0 per hop)
+We would like to express our sincere gratitude to **Dr. Abdullah Rashid** for his continuous guidance, support, and valuable feedback throughout the development of this project.
 
-### 2. Full-text Search (PostgreSQL)
-Room and course search uses `pg_trgm` + `to_tsvector` for fuzzy matching.
-- Location: `backend/controllers/searchController.js`
-
-### 3. Schedule Conflict Detection
-When creating a section, the backend checks for room booking conflicts:
-```sql
-NOT (end_time <= $start OR start_time >= $end)
-AND day_of_week && $days::int[]
-```
-- Location: `backend/controllers/scheduleController.js → createSection`
+We also thank the **Faculty of Engineering** at An-Najah National University for providing the resources and environment that made this project possible.
 
 ---
 
-## Environment Variables
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| PORT | No | API port (default 5000) |
-| DB_HOST | Yes | PostgreSQL host |
-| DB_PORT | Yes | PostgreSQL port |
-| DB_NAME | Yes | Database name |
-| DB_USER | Yes | Database user |
-| DB_PASSWORD | Yes | Database password |
-| JWT_SECRET | Yes | Access token secret (min 32 chars) |
-| JWT_REFRESH_SECRET | Yes | Refresh token secret |
-| JWT_EXPIRES_IN | No | Access token TTL (default 7d) |
-| JWT_REFRESH_EXPIRES_IN | No | Refresh TTL (default 30d) |
-| FIREBASE_PROJECT_ID | Optional | Firebase project ID |
-| FIREBASE_PRIVATE_KEY | Optional | Firebase private key |
-| FIREBASE_CLIENT_EMAIL | Optional | Firebase service account email |
-| UPLOAD_PATH | No | Upload directory (default ./uploads) |
-| MAX_FILE_SIZE_MB | No | Max upload size in MB (default 10) |
-| ALLOWED_ORIGINS | No | CORS origins (comma-separated) |
-
----
-
-## Testing
-
-```bash
-cd backend
-npm install --save-dev jest supertest
-npm test
-```
-
----
-
-## Group Members
-
-| Name | ID |
-|------|----|
-| Amr Sami Salah Jamhour | — |
-| Ihab Ghassan Ayash Habash | — |
-
-**Supervisor:** Dr. Abdullah Rashid
-**Department:** Computer Engineering
-**Academic Year:** 2025/2026
-"# smart-campus" 
-"# smart-campus" 
+*An-Najah National University — Nablus, Palestine*  
+*جامعة النجاح الوطنية — نابلس، فلسطين*
