@@ -1,0 +1,49 @@
+.schedule-page { display: flex; flex-direction: column; gap: var(--space-xl); }
+
+/* Week view */
+.week-view {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: var(--space-md);
+}
+@media (max-width: 1000px) { .week-view { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 600px)  { .week-view { grid-template-columns: repeat(2, 1fr); } }
+
+.week-day {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+.week-day--today { border-color: var(--najah-mid); border-width: 2px; }
+
+.week-day__header {
+  padding: var(--space-sm) var(--space-md);
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  display: flex; justify-content: space-between; align-items: center;
+}
+.week-day__name { font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.week-day--today .week-day__name { color: var(--najah-blue); }
+
+.week-day__classes { padding: var(--space-sm); display: flex; flex-direction: column; gap: var(--space-sm); min-height: 60px; }
+.week-day__empty   { font-size: 12px; color: var(--text-faint); padding: var(--space-md); text-align: center; }
+
+/* Class card */
+.class-card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--najah-mid);
+  border-radius: var(--radius-md);
+  padding: var(--space-sm) var(--space-md);
+  position: relative;
+  font-size: 12px;
+}
+.class-card--active { background: var(--green-bg); border-left-color: var(--green); }
+.class-card__time        { font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: var(--text-muted); margin-bottom: 2px; }
+.class-card__code        { font-weight: 700; font-size: 13px; color: var(--text); }
+.class-card__name        { color: var(--text-muted); font-size: 11px; margin-bottom: 4px; }
+.class-card__room        { display: block; color: var(--najah-mid); font-size: 11px; text-decoration: none; margin-bottom: 2px; }
+.class-card__room:hover  { text-decoration: underline; }
+.class-card__instructor  { color: var(--text-faint); font-size: 11px; }
+.class-card__now-badge   { position: absolute; top: 6px; right: 6px; background: var(--green); color: #fff; font-size: 9px; font-weight: 700; padding: 1px 5px; border-radius: var(--radius-full); }
