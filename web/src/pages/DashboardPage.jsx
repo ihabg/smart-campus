@@ -9,6 +9,9 @@ import './Dashboard.css';
 
 export default function DashboardPage() {
   const { user } = useAuth();
+  const isProfessor = ['professor','department_head','dean'].includes(user?.role);
+  const isStudent   = user?.role === 'student';
+
   const { data: todayData, loading: schedLoading } = useTodaySchedule();
   const { notifications, unreadCount, loading: notifLoading } = useNotifications();
   const { data: annData, loading: annLoading } = useAsync(() => announcementAPI.getAll({ limit: 4 }), []);
@@ -17,12 +20,22 @@ export default function DashboardPage() {
   const current  = sections.find(s => s.is_current);
   const today    = new Date();
 
+  // Stats — show Department & Year only for students
   const STATS = [
-    { label:'Classes Today',   value: sections.length,            icon:'📚', color:'blue',  isNum: true  },
-    { label:'Unread Alerts',   value: unreadCount,                icon:'🔔', color:'red',   isNum: true  },
-    { label:'Department',      value: user?.department?.split(' ').slice(0,2).join(' ') || '—', icon:'🏛️', color:'gold',  isNum: false },
-    { label:'Year of Study',   value: user?.year_of_study ? `Year ${user.year_of_study}` : '—', icon:'🎓', color:'green', isNum: false },
+    { label:'Classes Today', value: sections.length, icon:'📅', color:'blue',  isNum: true  },
+    { label:'Unread Alerts', value: unreadCount,     icon:'🔔', color:'red',   isNum: true  },
+    ...(isStudent ? [
+      { label:'Department',   value: user?.department?.split(' ').slice(0,2).join(' ') || '—', icon:'🏛', color:'gold',  isNum: false },
+      { label:'Year of Study',value: user?.year_of_study ? `Year ${user.year_of_study}` : '—', icon:'🎓', color:'green', isNum: false },
+    ] : []),
   ];
+
+  // Quick Access — no Notifications for anyone, no Campus Map for professors
+  const QUICK_LINKS = [
+    !isProfessor && { to:'/map',      label:'Campus Map',  emoji:'🗺️' },
+    { to:'/schedule',                 label:'My Schedule', emoji:'📅' },
+    { to:'/search',                   label:'Find a Room', emoji:'🔍' },
+  ].filter(Boolean);
 
   return (
     <div className="dashboard">
@@ -30,7 +43,7 @@ export default function DashboardPage() {
       <div className="dashboard__welcome">
         <div>
           <div className="dashboard__welcome-badge">
-            ✦ An-Najah National University
+            ✪ An-Najah National University
           </div>
           <h1 className="dashboard__greeting">
             Good {getGreeting()}, {user?.first_name}!
@@ -39,9 +52,11 @@ export default function DashboardPage() {
             {today.toLocaleDateString('en-US', { weekday:'long', year:'numeric', month:'long', day:'numeric' })}
           </p>
         </div>
-        <Link to="/map" className="btn btn--gold btn--lg">
-          🗺️ Open Campus Map
-        </Link>
+        {!isProfessor && (
+          <Link to="/map" className="btn btn--gold btn--lg">
+            🗺️ Open Campus Map
+          </Link>
+        )}
       </div>
 
       {/* Current class */}
@@ -53,7 +68,9 @@ export default function DashboardPage() {
             <p>{current.instructor_name || ''} · {formatTime(current.start_time)} – {formatTime(current.end_time)}</p>
           </div>
           {current.room_number && (
-            <Link to="/map" state={{ roomId: current.room_id }} className="btn btn--secondary btn--sm" style={{ background:'rgba(255,255,255,.15)', color:'#fff', borderColor:'rgba(255,255,255,.3)' }}>
+            <Link to="/map" state={{ roomId: current.room_id }}
+              className="btn btn--secondary btn--sm"
+              style={{ background:'rgba(255,255,255,.15)', color:'#fff', borderColor:'rgba(255,255,255,.3)' }}>
               📍 Room {current.room_number} — {current.building_code}
             </Link>
           )}
@@ -73,6 +90,7 @@ export default function DashboardPage() {
 
       {/* Main grid */}
       <div className="dashboard__grid">
+
         {/* Today's schedule */}
         <div className="card">
           <div className="dashboard__card-header">
@@ -88,7 +106,8 @@ export default function DashboardPage() {
           ) : (
             <div className="dashboard__schedule-list">
               {sections.map(sec => (
-                <div key={sec.section_id} className={`dash-class-item ${sec.is_current ? 'dash-class-item--active' : sec.is_past ? 'dash-class-item--past' : ''}`}>
+                <div key={sec.section_id}
+                  className={`dash-class-item ${sec.is_current ? 'dash-class-item--active' : sec.is_past ? 'dash-class-item--past' : ''}`}>
                   <div className="dash-class-item__time">
                     <span>{formatTime(sec.start_time)}</span>
                     <span>{formatTime(sec.end_time)}</span>
@@ -104,33 +123,6 @@ export default function DashboardPage() {
                   </div>
                   {sec.is_current && <Badge variant="green">Now</Badge>}
                   {sec.is_past    && <Badge variant="gray">Done</Badge>}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Notifications */}
-        <div className="card">
-          <div className="dashboard__card-header">
-            <h2 className="dashboard__card-title">
-              🔔 Notifications
-              {unreadCount > 0 && <span className="dashboard__unread-badge">{unreadCount}</span>}
-            </h2>
-            <Link to="/notifications" className="dashboard__card-link">View all →</Link>
-          </div>
-          {notifLoading ? <Spinner center /> : notifications.length === 0 ? (
-            <div className="empty-state">
-              <div className="empty-state__icon">🔔</div>
-              <p className="empty-state__title">All caught up!</p>
-            </div>
-          ) : (
-            <div className="dashboard__notif-list">
-              {notifications.slice(0,5).map(n => (
-                <div key={n.id} className={`dash-notif-item ${!n.is_read ? 'dash-notif-item--unread' : ''}`}>
-                  <div className="dash-notif-item__title">{n.title}</div>
-                  <div className="dash-notif-item__body">{n.body}</div>
-                  <div className="dash-notif-item__time">{timeAgo(n.published_at)}</div>
                 </div>
               ))}
             </div>
@@ -163,16 +155,11 @@ export default function DashboardPage() {
           )}
         </div>
 
-        {/* Quick links */}
+        {/* Quick Access */}
         <div className="card">
           <h2 className="dashboard__card-title" style={{ marginBottom:'var(--space-lg)' }}>⚡ Quick Access</h2>
           <div className="dashboard__quick-links">
-            {[
-              { to:'/map',           label:'Campus Map',    emoji:'🗺️' },
-              { to:'/schedule',      label:'My Schedule',   emoji:'📅' },
-              { to:'/search',        label:'Find a Room',   emoji:'🔍' },
-              { to:'/notifications', label:'Notifications', emoji:'🔔' },
-            ].map(l => (
+            {QUICK_LINKS.map(l => (
               <Link key={l.to} to={l.to} className="dashboard__quick-item">
                 <span className="dashboard__quick-emoji">{l.emoji}</span>
                 <span>{l.label}</span>
@@ -180,6 +167,7 @@ export default function DashboardPage() {
             ))}
           </div>
         </div>
+
       </div>
     </div>
   );

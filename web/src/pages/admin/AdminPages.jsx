@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { userAPI, roomAPI, scheduleAPI, notificationAPI } from '../../api/index';
 import { floorAPI } from '../../api/floorAPI';
@@ -12,7 +12,6 @@ import {
   formatDate, formatTime, daysArrayToString, statusBadgeClass,
   statusLabel, roomTypeLabel, getErrorMessage, semesterLabel,
 } from '../../utils/helpers';
-
 import toast from 'react-hot-toast';
 
 // ─── Admin Dashboard ──────────────────────────────────────────
@@ -34,7 +33,7 @@ export function AdminDashboard() {
         <StatCard label="Total Students" value={stats.users?.students || 0} sub="Registered accounts" color="blue" />
         <StatCard label="Total Rooms"    value={stats.rooms?.total    || 0} sub={`${stats.rooms?.labs || 0} labs, ${stats.rooms?.classrooms || 0} classrooms`} color="green" />
         <StatCard label="Active Sections"value={stats.sections?.active || 0} sub="This semester" color="gold" />
-        <StatCard label="Notifications"  value={stats.notifications?.published || 0} sub="Published" color="red" />
+        
       </div>
 
       <div className="grid-2">
@@ -61,9 +60,9 @@ export function AdminDashboard() {
             {[
               { to: '/admin/floors',        label: 'Manage Floors & Upload Maps' },
               { to: '/admin/rooms',         label: 'Manage Rooms' },
-              { to: '/admin/map-editor',    label: 'Open Map Editor' },
+              { to: '/admin/map-editor',    label: '✏️ Open Map Editor' },
               { to: '/admin/schedule',      label: 'Manage Schedule' },
-              { to: '/admin/notifications', label: 'Send Notification' },
+              { to: '/admin/notifications', label: '🔔 Send Notification' },
               { to: '/admin/users',         label: 'Manage Users' },
             ].map(a => (
               <Link key={a.to} to={a.to} className="btn btn--secondary" style={{ justifyContent: 'flex-start' }}>

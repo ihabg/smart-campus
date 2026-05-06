@@ -1,0 +1,147 @@
+/* ══════════════════════════════════════════════════
+   FLOOR MAP — Shared styles (Ground + Floor 4)
+   ══════════════════════════════════════════════════ */
+
+.fm-wrap {
+  display: flex;
+  height: 100%;
+  background: var(--surface);
+  border-radius: var(--r-xl);
+  border: 1px solid var(--border);
+  overflow: hidden;
+  box-shadow: var(--shadow-md);
+  position: relative;
+}
+
+/* ── SVG area ─────────────────────────────────────── */
+.fm-svg-area {
+  flex: 1;
+  overflow: auto;
+  background: #dde3ef;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 8px;
+}
+
+.fm-svg {
+  width: 100%;
+  height: auto;
+  max-width: 1100px;
+  min-width: 640px;
+}
+
+/* ── Navigation panel ────────────────────────────── */
+.fm-nav-panel {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  width: 230px;
+  background: var(--surface);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-lg);
+  border: 1px solid var(--border);
+  z-index: 10;
+  overflow: hidden;
+}
+
+.fm-nav-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  background: var(--navy);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  user-select: none;
+  transition: background var(--t-fast);
+}
+.fm-nav-header:hover { background: var(--navy-mid); }
+
+.fm-nav-body {
+  padding: 12px;
+}
+
+.fm-nav-result {
+  margin-top: 10px;
+  background: var(--bg-deep);
+  border-radius: var(--r-md);
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+}
+
+/* ── Info panel ───────────────────────────────────── */
+.fm-panel {
+  width: 268px;
+  min-width: 250px;
+  flex-shrink: 0;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  animation: panelIn .2s ease;
+}
+@keyframes panelIn {
+  from { opacity:0; transform:translateX(16px); }
+  to   { opacity:1; transform:translateX(0); }
+}
+
+.fm-panel-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 16px;
+  background: var(--navy);
+  border-bottom: 2px solid rgba(201,168,76,.3);
+  flex-shrink: 0;
+}
+.fm-panel-num  { font-family:var(--font-mono); font-size:22px; font-weight:700; color:var(--gold); }
+.fm-panel-name { font-size:11px; color:rgba(255,255,255,.6); margin-top:4px; line-height:1.4; }
+.fm-panel-x    {
+  background:rgba(255,255,255,.1); border:none; color:#fff;
+  width:28px; height:28px; border-radius:50%; cursor:pointer;
+  font-size:14px; display:flex; align-items:center; justify-content:center;
+  transition:background .15s; flex-shrink:0;
+}
+.fm-panel-x:hover { background:rgba(255,255,255,.2); }
+
+.fm-panel-rows { padding:14px 16px; display:flex; flex-direction:column; gap:10px; }
+.fm-panel-row  { display:flex; justify-content:space-between; align-items:center; font-size:12.5px; }
+.fm-panel-row span:first-child { color:var(--text-muted); }
+.fm-panel-row span:last-child  { color:var(--text); font-weight:500; text-align:right; }
+
+/* ── Shared btn sizes ─────────────────────────────── */
+.btn--sm   { padding:5px 12px; font-size:12px; }
+.btn--full { width:100%; text-align:center; }
+
+@media(max-width:768px) {
+  .fm-wrap       { flex-direction:column; }
+  .fm-panel      { width:100%; border-left:none; border-top:1px solid var(--border); max-height:260px; }
+  .fm-nav-panel  { width:180px; }
+  .fm-svg        { min-width:320px; }
+}
+
+/* ── Floating Navigate Panel (Floor 4) ─────────── */
+.fm-nav-float {
+  position: absolute;
+  top: 12px; left: 12px;
+  width: 230px;
+  background: var(--surface);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-lg);
+  border: 1px solid var(--border);
+  z-index: 20;
+  overflow: hidden;
+}
+.fm-nav-float-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 10px 14px;
+  background: var(--navy); color: #fff;
+  font-size: 13px; font-weight: 700;
+  cursor: pointer; user-select: none;
+}
+.fm-nav-float-header:hover { background: var(--navy-mid, #0a2d6e); }
+.fm-nav-float-body { padding: 12px; }

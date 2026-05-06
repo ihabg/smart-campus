@@ -3,8 +3,8 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { userAPI, announcementAPI } from '../api/index';
 import { useAsync } from '../hooks/index';
-import { Button, Input, Select, Spinner, Badge } from '../components/ui/index';
-import { formatDate, getErrorMessage, timeAgo } from '../utils/helpers';
+import { Button, Input, Spinner, Badge } from '../components/ui/index';
+import { getErrorMessage, timeAgo } from '../utils/helpers';
 import toast from 'react-hot-toast';
 
 // ─── Profile Page ─────────────────────────────────────────────
@@ -12,16 +12,15 @@ export function ProfilePage() {
   const { user, updateUser } = useAuth();
   const [tab, setTab] = useState('profile');
   const [form, setForm] = useState({
-    first_name:    user?.first_name    || '',
-    last_name:     user?.last_name     || '',
-    department:    user?.department    || '',
-    year_of_study: user?.year_of_study || '',
+    first_name: user?.first_name || '',
+    last_name:  user?.last_name  || '',
   });
   const [passwords, setPasswords] = useState({ current_password: '', new_password: '' });
-  const [saving, setSaving]   = useState(false);
+  const [saving,    setSaving]    = useState(false);
   const [pwLoading, setPwLoading] = useState(false);
-  const set    = k => e => setForm(f => ({ ...f, [k]: e.target.value }));
-  const setPw  = k => e => setPasswords(p => ({ ...p, [k]: e.target.value }));
+
+  const set   = k => e => setForm(f => ({ ...f, [k]: e.target.value }));
+  const setPw = k => e => setPasswords(p => ({ ...p, [k]: e.target.value }));
 
   const handleSaveProfile = async () => {
     setSaving(true);
@@ -56,72 +55,88 @@ export function ProfilePage() {
     } catch (err) { toast.error(getErrorMessage(err)); }
   };
 
-  const DEPARTMENTS = ['Computer Engineering','Electrical Engineering','Mechanical Engineering','Civil Engineering','Industrial Engineering'];
+  const ROLE_LABELS = {
+    student:         'Student',
+    professor:       'Professor',
+    department_head: 'Department Head',
+    super_admin:     'Admin',
+    admin:           'Admin',
+    lab_assistant:   'Lab Assistant',
+    secretary:       'Secretary',
+    dean:            'Dean',
+  };
 
   return (
-    <div style={{ maxWidth: 600, margin: '0 auto' }}>
+    <div style={{ maxWidth:600, margin:'0 auto' }}>
       <div className="page-header"><h1 className="page-title">My Profile</h1></div>
 
-      {/* Profile header */}
-      <div className="card" style={{ display: 'flex', alignItems: 'center', gap: 20, marginBottom: 'var(--space-lg)' }}>
-        <div style={{ position: 'relative', flexShrink: 0 }}>
-          <div style={{ width: 72, height: 72, borderRadius: '50%', background: 'var(--najah-light)', overflow: 'hidden', border: '2px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, fontWeight: 700, color: 'var(--najah-blue)' }}>
+      {/* Profile header card */}
+      <div className="card" style={{ display:'flex', alignItems:'center', gap:20, marginBottom:'var(--space-lg)' }}>
+        <div style={{ position:'relative', flexShrink:0 }}>
+          <div style={{ width:72, height:72, borderRadius:'50%', background:'var(--najah-light)', overflow:'hidden', border:'2px solid var(--border)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:24, fontWeight:700, color:'var(--najah-blue)' }}>
             {user?.avatar_url
-              ? <img src={user.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-              : `${user?.first_name?.[0]}${user?.last_name?.[0]}`
+              ? <img src={user.avatar_url} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }}/>
+              : `${user?.first_name?.[0] || ''}${user?.last_name?.[0] || ''}`
             }
           </div>
-          <label style={{ position: 'absolute', bottom: 0, right: 0, width: 22, height: 22, background: 'var(--najah-blue)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 11, color: '#fff' }}>
-            ✏ <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleAvatarUpload} />
+          <label style={{ position:'absolute', bottom:0, right:0, width:22, height:22, background:'var(--najah-blue)', borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', fontSize:11, color:'#fff' }}>
+            ✎ <input type="file" accept="image/*" style={{ display:'none' }} onChange={handleAvatarUpload}/>
           </label>
         </div>
         <div>
-          <h2 style={{ fontSize: 18, fontWeight: 600 }}>{user?.first_name} {user?.last_name}</h2>
-          <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>{user?.email}</p>
-          <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-            <Badge variant={user?.role === 'student' ? 'blue' : 'amber'}>{user?.role}</Badge>
-            {user?.student_id && <Badge variant="gray">{user.student_id}</Badge>}
-            {user?.department && <Badge variant="gray">{user.department}</Badge>}
+          <h2 style={{ fontSize:18, fontWeight:600 }}>
+            {user?.academic_title && `${user.academic_title} `}
+            {user?.first_name} {user?.last_name}
+          </h2>
+          <p style={{ fontSize:13, color:'var(--text-muted)' }}>{user?.email}</p>
+          <div style={{ display:'flex', gap:6, marginTop:6, flexWrap:'wrap' }}>
+            <Badge variant={user?.role === 'student' ? 'blue' : 'amber'}>
+              {ROLE_LABELS[user?.role] || user?.role}
+            </Badge>
+            {user?.student_id  && <Badge variant="gray">{user.student_id}</Badge>}
+            {user?.department  && <Badge variant="gray">{user.department}</Badge>}
           </div>
         </div>
       </div>
 
       {/* Tabs */}
-      <div style={{ display: 'flex', gap: 4, marginBottom: 'var(--space-lg)', borderBottom: '1px solid var(--border)', paddingBottom: 0 }}>
+      <div style={{ display:'flex', gap:4, marginBottom:'var(--space-lg)', borderBottom:'1px solid var(--border)' }}>
         {['profile','security'].map(t => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            style={{ padding: '8px 16px', background: 'none', border: 'none', borderBottom: `2px solid ${tab === t ? 'var(--najah-blue)' : 'transparent'}`, color: tab === t ? 'var(--najah-blue)' : 'var(--text-muted)', fontWeight: tab === t ? 600 : 400, fontSize: 14, cursor: 'pointer' }}
-          >
+          <button key={t} onClick={() => setTab(t)} style={{
+            padding:'8px 16px', background:'none', border:'none',
+            borderBottom:`2px solid ${tab===t ? 'var(--najah-blue)' : 'transparent'}`,
+            color: tab===t ? 'var(--najah-blue)' : 'var(--text-muted)',
+            fontWeight: tab===t ? 600 : 400, fontSize:14, cursor:'pointer',
+          }}>
             {t.charAt(0).toUpperCase() + t.slice(1)}
           </button>
         ))}
       </div>
 
+      {/* Profile tab — only First Name, Last Name, Email */}
       {tab === 'profile' && (
         <div className="card">
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
+          <div style={{ display:'flex', flexDirection:'column', gap:'var(--space-md)' }}>
             <div className="form-row">
-              <Input label="First name" required value={form.first_name} onChange={set('first_name')} />
-              <Input label="Last name"  required value={form.last_name}  onChange={set('last_name')} />
+              <Input label="First name" required value={form.first_name} onChange={set('first_name')}/>
+              <Input label="Last name"  required value={form.last_name}  onChange={set('last_name')}/>
             </div>
-            <Input label="Email" value={user?.email || ''} disabled hint="Email cannot be changed" />
-            <Select label="Department" value={form.department} onChange={set('department')}
-              options={DEPARTMENTS.map(d => ({ value: d, label: d }))} placeholder="Select department" />
-            <Select label="Year of Study" value={form.year_of_study} onChange={set('year_of_study')}
-              options={[1,2,3,4,5].map(y => ({ value: y, label: `Year ${y}` }))} placeholder="Select year" />
+            <Input label="Email" value={user?.email || ''} disabled hint="Email cannot be changed"/>
             <Button variant="primary" loading={saving} onClick={handleSaveProfile}>Save Changes</Button>
           </div>
         </div>
       )}
 
+      {/* Security tab */}
       {tab === 'security' && (
         <div className="card">
           <form onSubmit={handleChangePassword}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
-              <Input label="Current password" type="password" required value={passwords.current_password} onChange={setPw('current_password')} />
-              <Input label="New password" type="password" required value={passwords.new_password} onChange={setPw('new_password')} hint="Minimum 8 characters, 1 uppercase, 1 number" />
+            <div style={{ display:'flex', flexDirection:'column', gap:'var(--space-md)' }}>
+              <Input label="Current password" type="password" required
+                value={passwords.current_password} onChange={setPw('current_password')}/>
+              <Input label="New password" type="password" required
+                value={passwords.new_password} onChange={setPw('new_password')}
+                hint="Minimum 8 characters, 1 uppercase, 1 number"/>
               <Button type="submit" variant="primary" loading={pwLoading}>Update Password</Button>
             </div>
           </form>
@@ -137,30 +152,34 @@ export function AnnouncementsPage() {
   const announcements = data?.announcements || [];
 
   return (
-    <div style={{ maxWidth: 800, margin: '0 auto' }}>
+    <div style={{ maxWidth:800, margin:'0 auto' }}>
       <div className="page-header"><h1 className="page-title">Announcements</h1></div>
 
       {loading ? <Spinner center /> : announcements.length === 0 ? (
         <div className="card">
-          <div className="empty-state"><div className="empty-state__icon">📢</div><p className="empty-state__title">No announcements</p></div>
+          <div className="empty-state">
+            <div className="empty-state__icon">📢</div>
+            <p className="empty-state__title">No announcements</p>
+          </div>
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
+        <div style={{ display:'flex', flexDirection:'column', gap:'var(--space-md)' }}>
           {announcements.map(a => (
-            <Link key={a.id} to={`/announcements/${a.id}`} style={{ textDecoration: 'none' }}>
-              <div className="card" style={{ borderLeft: a.is_pinned ? '4px solid var(--gold)' : undefined, transition: 'transform 0.1s, box-shadow 0.1s' }}
-                onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = 'var(--shadow-md)'; }}
-                onMouseLeave={e => { e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = ''; }}
+            <Link key={a.id} to={`/announcements/${a.id}`} style={{ textDecoration:'none' }}>
+              <div className="card"
+                style={{ borderLeft: a.is_pinned ? '4px solid var(--gold)' : undefined, transition:'transform 0.1s, box-shadow 0.1s' }}
+                onMouseEnter={e => { e.currentTarget.style.transform='translateY(-1px)'; e.currentTarget.style.boxShadow='var(--shadow-md)'; }}
+                onMouseLeave={e => { e.currentTarget.style.transform=''; e.currentTarget.style.boxShadow=''; }}
               >
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-                  {a.is_pinned && <span style={{ fontSize: 18, flexShrink: 0 }}>📌</span>}
-                  {a.image_url && <img src={a.image_url} alt="" style={{ width: 80, height: 60, objectFit: 'cover', borderRadius: 4, flexShrink: 0 }} />}
-                  <div style={{ flex: 1 }}>
-                    <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)', marginBottom: 4 }}>{a.title}</h3>
-                    <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 8, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                <div style={{ display:'flex', alignItems:'flex-start', gap:12 }}>
+                  {a.is_pinned && <span style={{ fontSize:18, flexShrink:0 }}>📌</span>}
+                  {a.image_url && <img src={a.image_url} alt="" style={{ width:80, height:60, objectFit:'cover', borderRadius:4, flexShrink:0 }}/>}
+                  <div style={{ flex:1 }}>
+                    <h3 style={{ fontSize:15, fontWeight:600, color:'var(--text)', marginBottom:4 }}>{a.title}</h3>
+                    <p style={{ fontSize:13, color:'var(--text-muted)', marginBottom:8, display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', overflow:'hidden' }}>
                       {a.content}
                     </p>
-                    <div style={{ fontSize: 11, color: 'var(--text-faint)' }}>
+                    <div style={{ fontSize:11, color:'var(--text-faint)' }}>
                       {a.author_name && <span>{a.author_name} · </span>}
                       <span>{timeAgo(a.published_at)}</span>
                     </div>

@@ -4,11 +4,29 @@ const { query, withTransaction } = require('../config/db');
 const { signAccessToken, signRefreshToken, verifyRefreshToken } = require('../utils/jwt');
 const { AppError } = require('../middleware/errorHandler');
 
+// ─── Student ID Parser ──────────────────────────────────────
+// First 3 digits = batch number
+// batch 121 → enrolled 2021 → Year 5 in 2026
+function getAcademicYear(studentId) {
+  const str = String(studentId).replace(/\D/g, '');
+  if (str.length < 3) return null;
+  const batch          = parseInt(str.slice(0, 3));
+  const yearSuffix     = batch % 100;          // 121 % 100 = 21
+  const enrollmentYear = 2000 + yearSuffix;    // 2021
+  const currentYear    = new Date().getFullYear();
+  const yearsStudied   = currentYear - enrollmentYear + 1;
+  if (yearsStudied < 1) return 1;
+  if (yearsStudied > 6) return 6;
+  return yearsStudied;
+}
+
 // ─── Register ───────────────────────────────────────────────
 
 async function register(req, res, next) {
   try {
-    const { first_name, last_name, email, password, student_id, department, year_of_study } = req.body;
+    const { first_name, last_name, email, password, student_id, department } = req.body;
+    // Auto-calculate academic year from student ID
+    const year_of_study = student_id ? getAcademicYear(student_id) : null;
 
     // Check duplicate email
     const existing = await query('SELECT id FROM users WHERE email = $1', [email]);

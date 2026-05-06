@@ -1,167 +1,287 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useMySchedule } from '../hooks/index';
-import { Spinner, Badge } from '../components/ui/index';
-import { formatTime, daysArrayToString, dayName, roomTypeBadgeClass, semesterLabel } from '../utils/helpers';
+import { Spinner } from '../components/ui/index';
 import './SchedulePage.css';
 
-const DAYS = [0, 1, 2, 3, 4, 5]; // Sun–Fri (Palestinian academic week)
+const DAYS = [
+  { id: 0, en: 'Sunday', ar: 'احد' },
+  { id: 1, en: 'Monday', ar: 'اثنين' },
+  { id: 2, en: 'Tuesday', ar: 'ثلاث' },
+  { id: 3, en: 'Wednesday', ar: 'اربعاء' },
+  { id: 4, en: 'Thursday', ar: 'خميس' },
+  { id: 5, en: 'Friday', ar: 'جمعة' },
+  { id: 6, en: 'Saturday', ar: 'سبت' }
+];
+
+const TIME_SLOTS = [
+  '08:00',
+  '09:00',
+  '10:00',
+  '11:00',
+  '12:00',
+  '13:00',
+  '14:00',
+  '15:00',
+  '16:00',
+  '17:00',
+  '18:00',
+  '19:00',
+  '20:00'
+];
 
 export default function SchedulePage() {
-  const [view,     setView]     = useState('week'); // 'week' | 'list'
+  const [view, setView] = useState('table');
   const [semester, setSemester] = useState('spring');
-  const [year,     setYear]     = useState('2025/2026');
+  const [year, setYear] = useState('2025/2026');
 
-  const { schedule, loading, error } = useMySchedule({ semester, academic_year: year });
-  const { sections, by_day } = schedule;
+  const { schedule, loading, error } = useMySchedule({
+    semester,
+    academic_year: year
+  });
+
+  const sections = schedule?.sections || [];
+  const byDay = schedule?.by_day || {};
+
+  const totalCredits = useMemo(() => {
+    return sections.reduce((sum, sec) => sum + Number(sec.credit_hours || 0), 0);
+  }, [sections]);
 
   if (loading) return <Spinner center />;
-  if (error)   return <div className="empty-state"><p>{error}</p></div>;
+
+  if (error) {
+    return (
+      <div className="sc-page">
+        <div className="sc-empty">{error}</div>
+      </div>
+    );
+  }
 
   return (
-    <div className="schedule-page">
-      {/* Header */}
-      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
+    <div className="sc-page">
+      <div className="sc-header">
         <div>
-          <h1 className="page-title">My Schedule</h1>
-          <p className="page-sub">{sections.length} section{sections.length !== 1 ? 's' : ''} enrolled</p>
+          <h1>My Schedule</h1>
+          <p>{sections.length} sections enrolled</p>
         </div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-          <select className="form-input" value={semester} onChange={e => setSemester(e.target.value)} style={{ width: 'auto' }}>
-            <option value="fall">Fall</option>
-            <option value="spring">Spring</option>
-            <option value="summer">Summer</option>
-          </select>
-          <select className="form-input" value={year} onChange={e => setYear(e.target.value)} style={{ width: 'auto' }}>
+
+        <div className="sc-controls">
+          <select value={year} onChange={(e) => setYear(e.target.value)}>
             <option value="2025/2026">2025/2026</option>
             <option value="2024/2025">2024/2025</option>
+            <option value="2023/2024">2023/2024</option>
           </select>
-          <div style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
-            {['week', 'list'].map(v => (
-              <button
-                key={v}
-                className={`btn btn--sm ${view === v ? 'btn--primary' : 'btn--ghost'}`}
-                style={{ borderRadius: 0, border: 'none' }}
-                onClick={() => setView(v)}
-              >
-                {v === 'week' ? 'Week View' : 'List View'}
-              </button>
-            ))}
-          </div>
+
+          <select value={semester} onChange={(e) => setSemester(e.target.value)}>
+            <option value="fall">First Semester</option>
+            <option value="spring">Second Semester</option>
+            <option value="summer">Summer Semester</option>
+          </select>
+
+          <button
+            type="button"
+            className={view === 'table' ? 'active' : ''}
+            onClick={() => setView('table')}
+          >
+            Table View
+          </button>
+
+          <button
+            type="button"
+            className={view === 'text' ? 'active' : ''}
+            onClick={() => setView('text')}
+          >
+            Text View
+          </button>
         </div>
+      </div>
+
+      <div className="sc-semester-title">
+        {semesterName(semester)} {year}
       </div>
 
       {sections.length === 0 ? (
-        <div className="card">
-          <div className="empty-state">
-            <div className="empty-state__icon">📅</div>
-            <p className="empty-state__title">No sections enrolled</p>
-            <p className="empty-state__sub">You are not enrolled in any sections for {semesterLabel(semester)} {year}.</p>
-          </div>
-        </div>
-      ) : view === 'week' ? (
-        <WeekView byDay={by_day} />
+        <div className="sc-empty">No registered courses for this semester.</div>
+      ) : view === 'table' ? (
+        <TableSchedule byDay={byDay} />
       ) : (
-        <ListView sections={sections} />
+        <TextSchedule sections={sections} totalCredits={totalCredits} />
       )}
     </div>
   );
 }
 
-// ─── Week view ────────────────────────────────────────────────
-function WeekView({ byDay }) {
-  const today = new Date().getDay();
-
+function TableSchedule({ byDay }) {
   return (
-    <div className="week-view">
-      {DAYS.map(day => (
-        <div key={day} className={`week-day ${day === today ? 'week-day--today' : ''}`}>
-          <div className="week-day__header">
-            <span className="week-day__name">{dayName(day)}</span>
-            {day === today && <Badge variant="green">Today</Badge>}
-          </div>
-          <div className="week-day__classes">
-            {(byDay[day] || []).length === 0 ? (
-              <div className="week-day__empty">Free</div>
-            ) : (
-              (byDay[day] || []).map(sec => (
-                <ClassCard key={sec.section_id} sec={sec} />
-              ))
-            )}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
+    <div className="sc-table-wrapper">
+      <table className="sc-grid-table">
+        <thead>
+          <tr>
+            <th className="sc-day-time">
+              <div>Day</div>
+              <div>Time</div>
+            </th>
 
-// ─── List view ────────────────────────────────────────────────
-function ListView({ sections }) {
-  return (
-    <div className="card card--no-pad">
-      <div className="table-wrap">
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Course</th>
-              <th>Section</th>
-              <th>Days</th>
-              <th>Time</th>
-              <th>Room</th>
-              <th>Instructor</th>
-              <th>Credits</th>
-            </tr>
-          </thead>
-          <tbody>
-            {sections.map(sec => (
-              <tr key={sec.section_id}>
-                <td>
-                  <div style={{ fontWeight: 600 }}>{sec.course_code}</div>
-                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{sec.course_name}</div>
-                </td>
-                <td style={{ fontFamily: 'monospace' }}>{sec.section_number}</td>
-                <td>{daysArrayToString(sec.day_of_week)}</td>
-                <td style={{ fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
-                  {formatTime(sec.start_time)} – {formatTime(sec.end_time)}
-                </td>
-                <td>
-                  {sec.room_number ? (
-                    <Link to="/map" state={{ roomId: sec.room_id }}>
-                      <Badge variant="gray">Room {sec.room_number}</Badge>
-                    </Link>
-                  ) : '—'}
-                </td>
-                <td style={{ fontSize: 12 }}>{sec.instructor_name || '—'}</td>
-                <td style={{ textAlign: 'center' }}>{sec.credit_hours || '—'}</td>
-              </tr>
+            {TIME_SLOTS.map((time) => (
+              <th key={time}>{formatHour(time)}</th>
             ))}
-          </tbody>
-        </table>
-      </div>
+          </tr>
+        </thead>
+
+        <tbody>
+          {DAYS.map((day) => (
+            <tr key={day.id}>
+              <th className="sc-day-name">{day.en}</th>
+
+              {TIME_SLOTS.map((time) => {
+                const meetings = getMeetingsForSlot(byDay[day.id] || [], time);
+
+                return (
+                  <td key={`${day.id}-${time}`} className="sc-slot">
+                    {meetings.map((meeting) => (
+                      <CourseBlock
+                        key={`${meeting.section_id}-${meeting.meeting_id || time}`}
+                        meeting={meeting}
+                      />
+                    ))}
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
 
-function ClassCard({ sec }) {
-  const now = new Date().toTimeString().slice(0, 5);
-  const isNow = sec.start_time <= now && sec.end_time > now;
+function CourseBlock({ meeting }) {
+  return (
+    <Link
+      to="/map"
+      state={{ roomId: meeting.room_id }}
+      className={`sc-course ${getCourseColor(meeting.course_code)}`}
+    >
+      <strong>{meeting.course_code}</strong>
+      <span>{meeting.course_name_ar || meeting.course_name}</span>
+      <small>
+        {cleanTime(meeting.start_time)} - {cleanTime(meeting.end_time)}
+      </small>
+      <em>Room {meeting.room_number || '—'}</em>
+    </Link>
+  );
+}
+
+function TextSchedule({ sections, totalCredits }) {
+  const rows = [];
+
+  sections.forEach((section) => {
+    const meetings = section.meetings || [];
+
+    if (meetings.length === 0) {
+      rows.push({ ...section, rowSpan: 1 });
+      return;
+    }
+
+    meetings.forEach((meeting, index) => {
+      rows.push({
+        ...section,
+        ...meeting,
+        rowSpan: index === 0 ? meetings.length : 0
+      });
+    });
+  });
 
   return (
-    <div className={`class-card ${isNow ? 'class-card--active' : ''}`}>
-      <div className="class-card__time">
-        {formatTime(sec.start_time)} – {formatTime(sec.end_time)}
-      </div>
-      <div className="class-card__code">{sec.course_code}</div>
-      <div className="class-card__name">{sec.course_name}</div>
-      {sec.room_number && (
-        <Link to="/map" state={{ roomId: sec.room_id }} className="class-card__room">
-          📍 {sec.room_number} · {sec.building_code}
-        </Link>
-      )}
-      {sec.instructor_name && (
-        <div className="class-card__instructor">{sec.instructor_name}</div>
-      )}
-      {isNow && <div className="class-card__now-badge">NOW</div>}
+    <div className="sc-text-wrapper">
+      <table className="sc-text-table">
+        <thead>
+          <tr>
+            <th>Course No.</th>
+            <th>Section</th>
+            <th>Course Name</th>
+            <th>Credits</th>
+            <th>Day</th>
+            <th>Time</th>
+            <th>Room</th>
+            <th>Instructor</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          {rows.map((row, index) => (
+            <tr key={`${row.section_id}-${row.meeting_id || index}`}>
+              {row.rowSpan !== 0 && (
+                <>
+                  <td rowSpan={row.rowSpan}>{row.course_code}</td>
+                  <td rowSpan={row.rowSpan}>{row.section_number}</td>
+                  <td rowSpan={row.rowSpan}>{row.course_name_ar || row.course_name}</td>
+                  <td rowSpan={row.rowSpan}>{row.credit_hours || 3}</td>
+                </>
+              )}
+
+              <td>{getDayName(row.day_of_week)}</td>
+              <td>
+                {row.start_time && row.end_time
+                  ? `${cleanTime(row.start_time)} - ${cleanTime(row.end_time)}`
+                  : '—'}
+              </td>
+              <td>Room {row.room_number || '—'}</td>
+
+              {row.rowSpan !== 0 && (
+                <td rowSpan={row.rowSpan}>{row.instructor_name || '—'}</td>
+              )}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <div className="sc-total">Total registered hours = {totalCredits}</div>
     </div>
   );
+}
+
+function getMeetingsForSlot(dayMeetings, slot) {
+  return dayMeetings.filter((meeting) => {
+    const start = cleanTime(meeting.start_time);
+    const end = cleanTime(meeting.end_time);
+    const current = cleanTime(slot);
+
+    return start <= current && end > current;
+  });
+}
+
+function cleanTime(time) {
+  return String(time || '').slice(0, 5);
+}
+
+function formatHour(time) {
+  const hour = Number(time.slice(0, 2));
+  if (hour === 0) return '12';
+  if (hour <= 12) return String(hour);
+  return String(hour - 12);
+}
+
+function getDayName(day) {
+  const found = DAYS.find((d) => d.id === Number(day));
+  return found ? found.en : '—';
+}
+
+function semesterName(semester) {
+  if (semester === 'fall') return 'First Semester';
+  if (semester === 'spring') return 'Second Semester';
+  if (semester === 'summer') return 'Summer Semester';
+  return semester;
+}
+
+function getCourseColor(code) {
+  const colors = {
+    '10636314': 'yellow',
+    '10636332': 'pink',
+    '10636451': 'cyan',
+    '10636581': 'purple',
+    '11032102': 'blue'
+  };
+
+  return colors[code] || 'gray';
 }

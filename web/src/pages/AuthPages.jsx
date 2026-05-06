@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { getErrorMessage } from '../utils/helpers';
+import { validateStudentId, getYearOfStudy, getStudentEmail } from '../utils/studentId';
 import './Auth.css';
 
 const DEPARTMENTS = [
@@ -13,9 +14,10 @@ const DEPARTMENTS = [
 export function LoginPage() {
   const { login } = useAuth();
   const navigate  = useNavigate();
-  const [form, setForm]     = useState({ email:'', password:'' });
-  const [errors, setErrors] = useState({});
+  const [form,    setForm]    = useState({ email:'', password:'' });
+  const [errors,  setErrors]  = useState({});
   const [loading, setLoading] = useState(false);
+
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }));
 
   const handleSubmit = async e => {
@@ -28,7 +30,16 @@ export function LoginPage() {
     setLoading(true);
     try {
       const user = await login(form.email, form.password);
-      navigate(user.role === 'student' ? '/dashboard' : '/admin');
+      const roleRoutes = {
+        student:         '/dashboard',
+        super_admin:     '/admin',
+        admin:           '/admin',
+        professor:       '/professor',
+        department_head: '/professor',
+        lab_assistant:   '/dashboard',
+        secretary:       '/dashboard',
+      };
+      navigate(roleRoutes[user.role] || '/dashboard');
     } catch (err) {
       setErrors({ general: getErrorMessage(err) });
     } finally { setLoading(false); }
@@ -51,16 +62,13 @@ export function LoginPage() {
 
           <form onSubmit={handleSubmit} noValidate>
             <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
-
               <div className="form-group auth-field">
                 <label className="form-label">University Email</label>
                 <div className="auth-input-wrap">
                   <span className="auth-input-icon"><MailIcon /></span>
-                  <input
-                    className={`form-input ${errors.email ? 'form-input--error' : ''}`}
+                  <input className={`form-input ${errors.email ? 'form-input--error' : ''}`}
                     type="email" placeholder="you@najah.edu"
-                    value={form.email} onChange={set('email')} autoComplete="email"
-                  />
+                    value={form.email} onChange={set('email')} autoComplete="email"/>
                 </div>
                 {errors.email && <span className="form-error">{errors.email}</span>}
               </div>
@@ -69,25 +77,24 @@ export function LoginPage() {
                 <label className="form-label">Password</label>
                 <div className="auth-input-wrap">
                   <span className="auth-input-icon"><LockIcon /></span>
-                  <input
-                    className={`form-input ${errors.password ? 'form-input--error' : ''}`}
+                  <input className={`form-input ${errors.password ? 'form-input--error' : ''}`}
                     type="password" placeholder="••••••••"
-                    value={form.password} onChange={set('password')} autoComplete="current-password"
-                  />
+                    value={form.password} onChange={set('password')} autoComplete="current-password"/>
                 </div>
                 {errors.password && <span className="form-error">{errors.password}</span>}
               </div>
-
             </div>
 
             <button type="submit" className="auth-submit-btn" disabled={loading} style={{ marginTop:24 }}>
               {loading
-                ? <><span className="spinner spinner--sm" style={{ borderTopColor:'#fff', borderColor:'rgba(255,255,255,.25)' }} /> Signing in…</>
-                : 'Sign In →'
-              }
+                ? <><span className="spinner spinner--sm" style={{ borderTopColor:'#fff', borderColor:'rgba(255,255,255,.25)' }}/> Signing in…</>
+                : 'Sign In →'}
             </button>
           </form>
 
+          <p className="auth-footer-link">
+            <Link to="/forgot-password" style={{ color:'var(--text-muted)', fontSize:12 }}>Forgot password?</Link>
+          </p>
           <p className="auth-footer-link">
             Don't have an account? <Link to="/register">Register here</Link>
           </p>
@@ -107,17 +114,33 @@ export function RegisterPage() {
   });
   const [errors,  setErrors]  = useState({});
   const [loading, setLoading] = useState(false);
-  const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }));
+
+  const set = k => e => {
+    const val = e.target.value;
+    setForm(f => {
+      const updated = { ...f, [k]: val };
+      if (k === 'student_id' && val.length >= 3) {
+        const year = getYearOfStudy(val);
+        if (year) updated.year_of_study = String(year);
+        updated.email = getStudentEmail(val);
+      }
+      return updated;
+    });
+  };
 
   const validate = () => {
     const e = {};
     if (!form.first_name.trim()) e.first_name = 'Required';
     if (!form.last_name.trim())  e.last_name  = 'Required';
     if (!form.email.trim())      e.email      = 'Required';
-    if (!form.password)          e.password   = 'Required';
-    else if (form.password.length < 8)         e.password = 'Min 8 characters';
-    else if (!/[A-Z]/.test(form.password))     e.password = 'Need 1 uppercase letter';
-    else if (!/[0-9]/.test(form.password))     e.password = 'Need 1 number';
+    if (form.student_id) {
+      const idCheck = validateStudentId(form.student_id);
+      if (!idCheck.valid) e.student_id = idCheck.error;
+    }
+    if (!form.password)                    e.password = 'Required';
+    else if (form.password.length < 8)     e.password = 'Min 8 characters';
+    else if (!/[A-Z]/.test(form.password)) e.password = 'Need 1 uppercase letter';
+    else if (!/[0-9]/.test(form.password)) e.password = 'Need 1 number';
     setErrors(e);
     return !Object.keys(e).length;
   };
@@ -143,11 +166,11 @@ export function RegisterPage() {
     <div className="auth-page">
       <AuthHero />
       <div className="auth-form-panel">
-        <div className="auth-form-wrap" style={{ maxWidth: 480 }}>
+        <div className="auth-form-wrap" style={{ maxWidth:480 }}>
           <div className="auth-form-header">
             <div className="auth-form-eyebrow">✦ New student</div>
             <h1 className="auth-form-title">Create your<br />account</h1>
-            <p className="auth-form-sub">Join Smart Campus — An-Najah National University</p>
+            <p className="auth-form-sub">Use your student email: s12345678@stu.najah.edu</p>
           </div>
 
           {errors.general && (
@@ -156,20 +179,32 @@ export function RegisterPage() {
 
           <form onSubmit={handleSubmit} noValidate>
             <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
-
               <div className="form-row">
                 <div className="form-group auth-field">
                   <label className="form-label form-label--req">First name</label>
                   <input className={`form-input ${errors.first_name ? 'form-input--error' : ''}`}
-                    value={form.first_name} onChange={set('first_name')} placeholder="Ahmad" />
+                    value={form.first_name} onChange={set('first_name')} placeholder="Ahmad"/>
                   {errors.first_name && <span className="form-error">{errors.first_name}</span>}
                 </div>
                 <div className="form-group auth-field">
                   <label className="form-label form-label--req">Last name</label>
                   <input className={`form-input ${errors.last_name ? 'form-input--error' : ''}`}
-                    value={form.last_name} onChange={set('last_name')} placeholder="Hasan" />
+                    value={form.last_name} onChange={set('last_name')} placeholder="Hasan"/>
                   {errors.last_name && <span className="form-error">{errors.last_name}</span>}
                 </div>
+              </div>
+
+              <div className="form-group auth-field">
+                <label className="form-label">Student ID</label>
+                <input className={`form-input ${errors.student_id ? 'form-input--error' : ''}`}
+                  value={form.student_id} onChange={set('student_id')}
+                  placeholder="e.g. 12143698 — email & year auto-fill"/>
+                {errors.student_id && <span className="form-error">{errors.student_id}</span>}
+                {form.student_id.length >= 3 && !errors.student_id && (
+                  <span style={{ fontSize:11, color:'var(--green)', marginTop:3, display:'block' }}>
+                    ✓ Batch {form.student_id.slice(0,3)} → Year {form.year_of_study}
+                  </span>
+                )}
               </div>
 
               <div className="form-group auth-field">
@@ -177,8 +212,8 @@ export function RegisterPage() {
                 <div className="auth-input-wrap">
                   <span className="auth-input-icon"><MailIcon /></span>
                   <input className={`form-input ${errors.email ? 'form-input--error' : ''}`}
-                    type="email" placeholder="you@najah.edu"
-                    value={form.email} onChange={set('email')} />
+                    type="email" placeholder="s12345678@stu.najah.edu"
+                    value={form.email} onChange={set('email')}/>
                 </div>
                 {errors.email && <span className="form-error">{errors.email}</span>}
               </div>
@@ -189,24 +224,9 @@ export function RegisterPage() {
                   <span className="auth-input-icon"><LockIcon /></span>
                   <input className={`form-input ${errors.password ? 'form-input--error' : ''}`}
                     type="password" placeholder="Min 8 chars, 1 uppercase, 1 number"
-                    value={form.password} onChange={set('password')} />
+                    value={form.password} onChange={set('password')}/>
                 </div>
                 {errors.password && <span className="form-error">{errors.password}</span>}
-              </div>
-
-              <div className="form-row">
-                <div className="form-group auth-field">
-                  <label className="form-label">Student ID</label>
-                  <input className="form-input" value={form.student_id}
-                    onChange={set('student_id')} placeholder="Optional" />
-                </div>
-                <div className="form-group auth-field">
-                  <label className="form-label">Year</label>
-                  <select className="form-input" value={form.year_of_study} onChange={set('year_of_study')}>
-                    <option value="">Select</option>
-                    {[1,2,3,4,5].map(y => <option key={y} value={y}>Year {y}</option>)}
-                  </select>
-                </div>
               </div>
 
               <div className="form-group auth-field">
@@ -216,14 +236,12 @@ export function RegisterPage() {
                   {DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
                 </select>
               </div>
-
             </div>
 
             <button type="submit" className="auth-submit-btn" disabled={loading} style={{ marginTop:24 }}>
               {loading
-                ? <><span className="spinner spinner--sm" style={{ borderTopColor:'#fff', borderColor:'rgba(255,255,255,.25)' }} /> Creating account…</>
-                : 'Create Account →'
-              }
+                ? <><span className="spinner spinner--sm" style={{ borderTopColor:'#fff', borderColor:'rgba(255,255,255,.25)' }}/> Creating account…</>
+                : 'Create Account →'}
             </button>
           </form>
 
@@ -240,17 +258,11 @@ export function RegisterPage() {
 function AuthHero() {
   return (
     <div className="auth-hero">
-      <div className="auth-hero__bg" />
-      <div className="auth-hero__overlay" />
-
-      {/* Floating particles */}
+      <div className="auth-hero__bg"/>
+      <div className="auth-hero__overlay"/>
       <div className="auth-hero__particles">
-        {[...Array(6)].map((_, i) => (
-          <div key={i} className="auth-hero__particle" />
-        ))}
+        {[...Array(6)].map((_, i) => <div key={i} className="auth-hero__particle"/>)}
       </div>
-
-      {/* Feature pills */}
       <div className="auth-hero__features">
         {[
           { icon:'🗺️', text:'Interactive Campus Map' },
@@ -264,7 +276,6 @@ function AuthHero() {
           </div>
         ))}
       </div>
-
       <div className="auth-hero__content">
         <div className="auth-hero__top">
           <div className="auth-hero__logo">AN</div>
@@ -273,7 +284,6 @@ function AuthHero() {
             <div className="auth-hero__brand-sub">An-Najah National University</div>
           </div>
         </div>
-
         <div className="auth-hero__mid">
           <div className="auth-hero__quote">
             Navigate your<br /><span>university</span><br />with ease.
@@ -282,7 +292,6 @@ function AuthHero() {
             Find rooms, check your schedule, get directions, and connect with your campus — all in one place.
           </p>
         </div>
-
         <div className="auth-hero__stats">
           {[
             { num:'20+',  label:'Buildings' },

@@ -1,3 +1,7 @@
+/* ══════════════════════════════════════════════════
+   DASHBOARD — Luxury Academic
+   ══════════════════════════════════════════════════ */
+
 .dashboard { display:flex; flex-direction:column; gap:var(--space-xl); animation:pageEnter var(--t-slow) var(--ease) both; }
 
 /* ── Welcome banner ───────────────────────────────── */
