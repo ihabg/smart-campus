@@ -9,8 +9,10 @@ try {
   GoogleGenerativeAI = null;
 }
 
+const useGemini = process.env.USE_GEMINI === 'true';
+
 const genAI =
-  process.env.GEMINI_API_KEY && GoogleGenerativeAI
+  useGemini && process.env.GEMINI_API_KEY && GoogleGenerativeAI
     ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
     : null;
 
@@ -384,7 +386,19 @@ function buildLocalReply({
       cards: null,
       action: null
     };
+    
   }
+  if (
+  /who are you|what are you|introduce yourself|your name|مين انت|مين انتا|من انت|شو اسمك|اسمك ايش|عرف عن نفسك/i.test(message)
+) {
+  return {
+    message: isAr
+      ? 'أنا مساعد النجاح الذكي، مساعد افتراضي داخل نظام Smart Campus في جامعة النجاح الوطنية. أساعدك في معرفة جدولك، القاعات، الخريطة، الحضور، الإعلانات، ومعلومات المدرسين. يمكنك أن تسألني مثلاً: "شو محاضراتي اليوم؟" أو "وين قاعة 111060؟"'
+      : 'I am Najah Smart Assistant, the virtual assistant inside the Smart Campus system at An-Najah National University. I can help you with your schedule, rooms, campus map, attendance, announcements, and instructor information. For example, ask: “What classes do I have today?” or “Where is room 111060?”',
+    cards: null,
+    action: null
+  };
+}
 
   if (wantsSchedule(message)) {
     if (todaySchedule.length === 0) {

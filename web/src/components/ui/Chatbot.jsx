@@ -230,115 +230,155 @@ export default function Chatbot() {
   }, [user]);
 
   // ── Send message ───────────────────────────────────────────
-const sendMessage = useCallback(async (text) => {
-  const msg = (text || input).trim();
+  const sendMessage = useCallback(async (text) => {
+    const msg = (text || input).trim();
+    if (!msg || loading) return;
 
-  if (!msg || loading) return;
+    const arabicMsg = isRtl(msg);
+    const newLang = arabicMsg ? 'ar' : 'en';
 
-  const arabicMsg = isRtl(msg);
-  const newLang = arabicMsg ? 'ar' : 'en';
+    setInput('');
+    setLang(newLang);
+    setLoading(true);
 
-  setInput('');
-  setLang(newLang);
-  setLoading(true);
-
-  if (inputRef.current) {
-    inputRef.current.style.height = 'auto';
-  }
-
-  const userMessage = {
-    id: Date.now(),
-    role: 'user',
-    text: msg,
-    timestamp: new Date()
-  };
-
-  const thinkingMessage = {
-    id: 'thinking',
-    role: 'bot',
-    text: '',
-    isThinking: true,
-    timestamp: new Date()
-  };
-
-  setMessages((prev) => [...prev, userMessage, thinkingMessage]);
-
-  try {
-    const { data } = await axiosInstance.post('/chat', {
-      message: msg,
-      history: history.slice(-6),
-      user_context: user
-        ? {
-            name: user.first_name,
-            student_id: user.student_id,
-            role: user.role
-          }
-        : null
-    });
-
-    const reply = data.data;
-
-    setHistory((prev) => [
-      ...prev,
-      { role: 'user', text: msg },
-      { role: 'model', text: reply.message }
-    ]);
-
-    setMessages((prev) => [
-      ...prev.filter((m) => m.id !== 'thinking'),
-      {
-        id: Date.now() + 1,
-        role: 'bot',
-        text: reply.message,
-        cards: reply.cards || null,
-        action: reply.action || null,
-        followUp: reply.follow_up || null,
-        timestamp: new Date()
-      }
-    ]);
-
-    if (reply.follow_up?.length) {
-      setChips(reply.follow_up);
-    } else {
-      setChips(getDefaultChips(location.pathname, newLang));
+    if (inputRef.current) {
+      inputRef.current.style.height = 'auto';
     }
-  } catch (error) {
-    console.error('Chatbot error:', error);
 
-    setMessages((prev) => [
-      ...prev.filter((m) => m.id !== 'thinking'),
-      {
-        id: Date.now() + 1,
-        role: 'bot',
-        isError: true,
-        timestamp: new Date(),
-        text: arabicMsg
-          ? 'عذراً، حدث خطأ. تأكد أن السيرفر يعمل.'
-          : 'Sorry, an error occurred. Make sure the backend is running.'
+    const userMessage = {
+      id: Date.now(),
+      role: 'user',
+      text: msg,
+      timestamp: new Date(),
+    };
+
+    const thinkingMessage = {
+      id: `thinking-${Date.now()}`,
+      role: 'bot',
+      text: '',
+      isThinking: true,
+      timestamp: new Date(),
+    };
+
+    setMessages(prev => [...prev, userMessage, thinkingMessage]);
+
+    try {
+      const { data } = await axiosInstance.post('/chat', {
+        message: msg,
+        history: history.slice(-6),
+        user_context: user
+          ? { name: user.first_name, student_id: user.student_id, role: user.role }
+          : null,
+      });
+
+      const reply = data.data;
+
+      setHistory(prev => [
+        ...prev,
+        { role: 'user',  text: msg },
+        { role: 'model', text: reply.message },
+      ]);
+
+      setMessages(prev => [
+        ...prev.filter(m => !String(m.id).startsWith('thinking')),
+        {
+          id: Date.now() + 1,
+          role: 'bot',
+          text: reply.message,
+          cards: reply.cards || null,
+          action: reply.action || null,
+          followUp: reply.follow_up || null,
+          timestamp: new Date(),
+        },
+      ]);
+
+      if (reply.follow_up?.length) {
+        setChips(reply.follow_up);
+      } else {
+        setChips(getDefaultChips(location.pathname, newLang));
       }
-    ]);
-  } finally {
-    setLoading(false);
+    } catch (error) {
+      console.error('Chatbot error:', error);
 
-    setTimeout(() => {
-      inputRef.current?.focus();
-    }, 50);
-  }
-}, [input, loading, history, user, location.pathname]);
+      setMessages(prev => [
+        ...prev.filter(m => !String(m.id).startsWith('thinking')),
+        {
+          id: Date.now() + 1,
+          role: 'bot',
+          isError: true,
+          timestamp: new Date(),
+          text: arabicMsg
+            ? 'عذراً، حدث خطأ. تأكد أن السيرفر يعمل ثم حاول مرة أخرى.'
+            : 'Sorry, something went wrong. Make sure the backend is running, then try again.',
+        },
+      ]);
+    } finally {
+      setLoading(false);
+      setTimeout(() => inputRef.current?.focus(), 60);
+    }
+  }, [input, loading, history, user, location.pathname]);
 
   // ── Voice input ────────────────────────────────────────────
   const toggleVoice = () => {
-    if (listening) { recRef.current?.stop(); setListening(false); return; }
+    if (listening) {
+      recRef.current?.stop();
+      setListening(false);
+      return;
+    }
+
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) { alert('Voice recognition requires Chrome browser.'); return; }
+
+    if (!SR) {
+      setMessages(prev => [
+        ...prev,
+        {
+          id: Date.now(),
+          role: 'bot',
+          isError: true,
+          timestamp: new Date(),
+          text: lang === 'ar'
+            ? 'التعرف على الصوت يعمل بشكل أفضل على Google Chrome.'
+            : 'Voice recognition works best in Google Chrome.',
+        },
+      ]);
+      return;
+    }
+
     const rec = new SR();
-    rec.lang        = lang === 'ar' ? 'ar-PS' : 'en-US';
-    rec.continuous  = false;
+    rec.lang = lang === 'ar' ? 'ar-PS' : 'en-US';
+    rec.continuous = false;
     rec.interimResults = false;
-    rec.onstart  = () => setListening(true);
-    rec.onresult = e  => { setInput(e.results[0][0].transcript); setListening(false); };
-    rec.onerror  = () => setListening(false);
-    rec.onend    = () => setListening(false);
+    rec.maxAlternatives = 1;
+
+    rec.onstart = () => setListening(true);
+
+    rec.onresult = (event) => {
+      const transcript = event.results?.[0]?.[0]?.transcript?.trim();
+      setListening(false);
+
+      if (transcript) {
+        // Voice messages are sent immediately. Typed messages still need the send button or Enter.
+        sendMessage(transcript);
+      }
+    };
+
+    rec.onerror = () => {
+      setListening(false);
+      setMessages(prev => [
+        ...prev,
+        {
+          id: Date.now(),
+          role: 'bot',
+          isError: true,
+          timestamp: new Date(),
+          text: lang === 'ar'
+            ? 'لم أستطع سماعك بوضوح. حاول مرة أخرى.'
+            : 'I could not hear you clearly. Please try again.',
+        },
+      ]);
+    };
+
+    rec.onend = () => setListening(false);
     recRef.current = rec;
     rec.start();
   };
