@@ -1,7 +1,6 @@
 const { query, withTransaction } = require('../config/db');
 
 // ─── Get student's full schedule ─────────────────────────────
-
 async function getMySchedule(req, res, next) {
   try {
     const { semester, academic_year } = req.query;
@@ -10,81 +9,192 @@ async function getMySchedule(req, res, next) {
       SELECT
         s.id AS section_id,
         s.section_number,
-        s.day_of_week,
-        s.start_time,
-        s.end_time,
         s.semester,
         s.academic_year,
         s.enrolled,
         s.max_capacity,
-        c.id   AS course_id,
+
+        c.id AS course_id,
         c.code AS course_code,
         c.name AS course_name,
+        c.name_ar AS course_name_ar,
         c.credit_hours,
         c.department,
-        i.title          AS instructor_title,
-        i.first_name     AS instructor_first_name,
-        i.last_name      AS instructor_last_name,
-        r.id             AS room_id,
+
+        i.title AS instructor_title,
+        i.first_name AS instructor_first_name,
+        i.last_name AS instructor_last_name,
+        i.email AS instructor_email,
+        CONCAT(i.title, ' ', i.first_name, ' ', i.last_name) AS instructor_name,
+
+        sm.id AS meeting_id,
+        sm.day_of_week,
+        sm.start_time,
+        sm.end_time,
+        sm.meeting_type,
+        sm.note,
+
+        r.id AS room_id,
         r.room_number,
-        r.name           AS room_name,
-        r.type           AS room_type,
+        r.name AS room_name,
+        r.type AS room_type,
         r.coord_x,
         r.coord_y,
         r.coord_width,
         r.coord_height,
-        f.id             AS floor_id,
+
+        f.id AS floor_id,
         f.floor_label,
         f.floor_number,
         f.map_image_url,
-        b.code           AS building_code,
-        b.name           AS building_name,
-        e.status         AS enrollment_status,
-        e.grade
+
+        b.code AS building_code,
+        b.name AS building_name,
+
+        e.status AS enrollment_status,
+        e.grade,
+
+        COALESCE(abs.absence_total, 0) AS absence_total,
+        COALESCE(abs.excused_absence_total, 0) AS excused_absence_total,
+        CASE
+          WHEN COALESCE(abs.absence_total, 0) >= 6 THEN 'نعم'
+          ELSE 'لا'
+        END AS deprivation_status
+
       FROM enrollments e
-      JOIN sections    s ON s.id = e.section_id
-      JOIN courses     c ON c.id = s.course_id
+      JOIN sections s ON s.id = e.section_id
+      JOIN courses c ON c.id = s.course_id
       LEFT JOIN instructors i ON i.id = s.instructor_id
-      LEFT JOIN rooms   r ON r.id = s.room_id
-      LEFT JOIN floors  f ON f.id = r.floor_id
+      LEFT JOIN section_meetings sm ON sm.section_id = s.id
+      LEFT JOIN rooms r ON r.id = COALESCE(sm.room_id, s.room_id)
+      LEFT JOIN floors f ON f.id = r.floor_id
       LEFT JOIN buildings b ON b.id = f.building_id
+
+      LEFT JOIN (
+        SELECT
+          student_id,
+          section_id,
+          COUNT(*) FILTER (WHERE status = 'absent') AS absence_total,
+          COUNT(*) FILTER (WHERE status = 'excused') AS excused_absence_total
+        FROM attendance
+        GROUP BY student_id, section_id
+      ) abs ON abs.student_id = e.student_id
+           AND abs.section_id = e.section_id
+
       WHERE e.student_id = $1
         AND e.status = 'enrolled'
         AND s.is_active = TRUE
     `;
 
     const params = [req.user.id];
-    let   idx    = 2;
+    let idx = 2;
 
     if (semester) {
       params.push(semester);
       sql += ` AND s.semester = $${idx++}`;
     }
+
     if (academic_year) {
       params.push(academic_year);
       sql += ` AND s.academic_year = $${idx++}`;
     }
 
-    sql += ' ORDER BY s.day_of_week[1], s.start_time';
+    sql += `
+      ORDER BY
+        sm.day_of_week,
+        sm.start_time,
+        c.code
+    `;
 
     const result = await query(sql, params);
 
-    // Group by day of week for convenience
+    const sectionsMap = new Map();
     const byDay = {};
+
     for (const row of result.rows) {
-      for (const day of row.day_of_week) {
-        if (!byDay[day]) byDay[day] = [];
-        byDay[day].push(row);
+      if (!sectionsMap.has(row.section_id)) {
+        sectionsMap.set(row.section_id, {
+          section_id: row.section_id,
+          section_number: row.section_number,
+          semester: row.semester,
+          academic_year: row.academic_year,
+          enrolled: row.enrolled,
+          max_capacity: row.max_capacity,
+          
+
+          course_id: row.course_id,
+          course_code: row.course_code,
+          course_name: row.course_name,
+          course_name_ar: row.course_name_ar,
+          credit_hours: row.credit_hours,
+          department: row.department,
+
+          instructor_title: row.instructor_title,
+          instructor_first_name: row.instructor_first_name,
+          instructor_last_name: row.instructor_last_name,
+          instructor_email: row.instructor_email,
+          instructor_name: row.instructor_name,
+
+          enrollment_status: row.enrollment_status,
+          grade: row.grade,
+
+          absence_total: row.absence_total,
+          excused_absence_total: row.excused_absence_total,
+          deprivation_status: row.deprivation_status,
+
+          meetings: []
+        });
+      }
+
+      const meeting = {
+        meeting_id: row.meeting_id,
+        day_of_week: row.day_of_week,
+        start_time: row.start_time,
+        end_time: row.end_time,
+        meeting_type: row.meeting_type,
+        note: row.note,
+
+        room_id: row.room_id,
+        room_number: row.room_number,
+        room_name: row.room_name,
+        room_type: row.room_type,
+        coord_x: row.coord_x,
+        coord_y: row.coord_y,
+        coord_width: row.coord_width,
+        coord_height: row.coord_height,
+
+        floor_id: row.floor_id,
+        floor_label: row.floor_label,
+        floor_number: row.floor_number,
+        map_image_url: row.map_image_url,
+
+        building_code: row.building_code,
+        building_name: row.building_name
+      };
+
+      if (row.meeting_id) {
+        sectionsMap.get(row.section_id).meetings.push(meeting);
+
+        if (!byDay[row.day_of_week]) {
+          byDay[row.day_of_week] = [];
+        }
+
+        byDay[row.day_of_week].push({
+          ...sectionsMap.get(row.section_id),
+          ...meeting
+        });
       }
     }
+
+    const sections = Array.from(sectionsMap.values());
 
     res.json({
       success: true,
       data: {
-        sections: result.rows,
-        by_day:   byDay,
-        total:    result.rows.length,
-      },
+        sections,
+        by_day: byDay,
+        total: sections.length
+      }
     });
   } catch (error) {
     next(error);
@@ -95,47 +205,70 @@ async function getMySchedule(req, res, next) {
 
 async function getTodaySchedule(req, res, next) {
   try {
-    const today = new Date().getDay(); // 0=Sun … 6=Sat
+    const today = new Date().getDay();
 
     const result = await query(
-      `SELECT
-         s.id AS section_id,
-         s.start_time,
-         s.end_time,
-         c.code AS course_code,
-         c.name AS course_name,
-         i.title || ' ' || i.first_name || ' ' || i.last_name AS instructor_name,
-         r.room_number,
-         r.name AS room_name,
-         r.coord_x, r.coord_y,
-         f.floor_label,
-         b.code AS building_code,
-         e.status AS enrollment_status
-       FROM enrollments e
-       JOIN sections s    ON s.id = e.section_id
-       JOIN courses  c    ON c.id = s.course_id
-       LEFT JOIN instructors i ON i.id = s.instructor_id
-       LEFT JOIN rooms   r ON r.id = s.room_id
-       LEFT JOIN floors  f ON f.id = r.floor_id
-       LEFT JOIN buildings b ON b.id = f.building_id
-       WHERE e.student_id = $1
-         AND e.status = 'enrolled'
-         AND s.is_active = TRUE
-         AND $2 = ANY(s.day_of_week)
-       ORDER BY s.start_time`,
+      `
+      SELECT
+        s.id AS section_id,
+        c.code AS course_code,
+        c.name AS course_name,
+        c.name_ar AS course_name_ar,
+
+        sm.day_of_week,
+        sm.start_time,
+        sm.end_time,
+        sm.meeting_type,
+        sm.note,
+
+        CONCAT(i.title, ' ', i.first_name, ' ', i.last_name) AS instructor_name,
+
+        r.id AS room_id,
+        r.room_number,
+        r.name AS room_name,
+        r.coord_x,
+        r.coord_y,
+
+        f.id AS floor_id,
+        f.floor_label,
+
+        b.code AS building_code,
+        b.name AS building_name,
+
+        e.status AS enrollment_status
+      FROM enrollments e
+      JOIN sections s ON s.id = e.section_id
+      JOIN courses c ON c.id = s.course_id
+      LEFT JOIN instructors i ON i.id = s.instructor_id
+      JOIN section_meetings sm ON sm.section_id = s.id
+      LEFT JOIN rooms r ON r.id = COALESCE(sm.room_id, s.room_id)
+      LEFT JOIN floors f ON f.id = r.floor_id
+      LEFT JOIN buildings b ON b.id = f.building_id
+      WHERE e.student_id = $1
+        AND e.status = 'enrolled'
+        AND s.is_active = TRUE
+        AND sm.day_of_week = $2
+      ORDER BY sm.start_time, c.code
+      `,
       [req.user.id, today]
     );
 
     const now = new Date().toTimeString().slice(0, 5);
 
-    const sections = result.rows.map(sec => ({
+    const sections = result.rows.map((sec) => ({
       ...sec,
       is_current: sec.start_time <= now && sec.end_time > now,
-      is_past:    sec.end_time <= now,
-      is_upcoming: sec.start_time > now,
+      is_past: sec.end_time <= now,
+      is_upcoming: sec.start_time > now
     }));
 
-    res.json({ success: true, data: { sections, day: today } });
+    res.json({
+      success: true,
+      data: {
+        sections,
+        day: today
+      }
+    });
   } catch (error) {
     next(error);
   }

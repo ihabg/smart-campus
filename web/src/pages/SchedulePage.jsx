@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import axios from 'axios';
 import { Link } from 'react-router-dom';
 import { useMySchedule } from '../hooks/index';
 import { Spinner } from '../components/ui/index';
@@ -15,6 +16,7 @@ const DAYS = [
 ];
 
 const TIME_SLOTS = [
+  '07:00',
   '08:00',
   '09:00',
   '10:00',
@@ -27,19 +29,56 @@ const TIME_SLOTS = [
   '17:00',
   '18:00',
   '19:00',
-  '20:00'
+  '20:00',
+  '21:00',
+  '22:00',
+  '23:00'
 ];
 
 export default function SchedulePage() {
   const [view, setView] = useState('table');
   const [semester, setSemester] = useState('spring');
   const [year, setYear] = useState('2025/2026');
+  const [officeHoursModal, setOfficeHoursModal] = useState(false);
+  const [officeHours, setOfficeHours] = useState([]);
+  const [selectedInstructor, setSelectedInstructor] = useState(null);
 
   const { schedule, loading, error } = useMySchedule({
     semester,
     academic_year: year
   });
+const openOfficeHours = async (instructor) => {
+  if (!instructor?.email) return;
 
+  try {
+    const token =
+      localStorage.getItem('token') ||
+      localStorage.getItem('accessToken') ||
+      localStorage.getItem('authToken');
+
+    const response = await axios.get(
+      `http://localhost:5000/api/office-hours/${encodeURIComponent(instructor.email)}`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      }
+    );
+
+    setSelectedInstructor(instructor);
+    setOfficeHours(response.data.data);
+    setOfficeHoursModal(true);
+  } catch (error) {
+    console.error('Professor schedule error:', error);
+    setSelectedInstructor(instructor);
+    setOfficeHours({
+      instructor,
+      schedule: [],
+      office_hours: []
+    });
+    setOfficeHoursModal(true);
+  }
+};
   const sections = schedule?.sections || [];
   const byDay = schedule?.by_day || {};
 
@@ -105,8 +144,19 @@ export default function SchedulePage() {
       ) : view === 'table' ? (
         <TableSchedule byDay={byDay} />
       ) : (
-        <TextSchedule sections={sections} totalCredits={totalCredits} />
+        <TextSchedule
+  sections={sections}
+  totalCredits={totalCredits}
+  openOfficeHours={openOfficeHours}
+/>
       )}
+      {officeHoursModal && (
+  <OfficeHoursModal
+    instructor={selectedInstructor}
+    officeHours={officeHours}
+    onClose={() => setOfficeHoursModal(false)}
+  />
+)}
     </div>
   );
 }
@@ -129,32 +179,93 @@ function TableSchedule({ byDay }) {
         </thead>
 
         <tbody>
-          {DAYS.map((day) => (
-            <tr key={day.id}>
-              <th className="sc-day-name">{day.en}</th>
+          {DAYS.map((day) => {
+            const meetings = byDay[day.id] || [];
+            const cells = buildDayCells(meetings);
 
-              {TIME_SLOTS.map((time) => {
-                const meetings = getMeetingsForSlot(byDay[day.id] || [], time);
+            return (
+              <tr key={day.id}>
+                <th className="sc-day-name">{day.en}</th>
 
-                return (
-                  <td key={`${day.id}-${time}`} className="sc-slot">
-                    {meetings.map((meeting) => (
-                      <CourseBlock
-                        key={`${meeting.section_id}-${meeting.meeting_id || time}`}
-                        meeting={meeting}
+                {cells.map((cell) => {
+                  if (cell.type === 'empty') {
+                    return (
+                      <td
+                        key={`${day.id}-${cell.time}`}
+                        className="sc-slot"
                       />
-                    ))}
-                  </td>
-                );
-              })}
-            </tr>
-          ))}
+                    );
+                  }
+
+                  return (
+                    <td
+                      key={`${day.id}-${cell.meeting.meeting_id}`}
+                      className="sc-slot"
+                      colSpan={cell.colSpan}
+                    >
+                      <CourseBlock meeting={cell.meeting} />
+                    </td>
+                  );
+                })}
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
   );
 }
+function buildDayCells(dayMeetings) {
+  const cells = [];
+  const sortedMeetings = [...dayMeetings].sort((a, b) =>
+    cleanTime(a.start_time).localeCompare(cleanTime(b.start_time))
+  );
 
+  let i = 0;
+
+  while (i < TIME_SLOTS.length) {
+    const slot = TIME_SLOTS[i];
+
+    const meeting = sortedMeetings.find(
+      (m) => cleanTime(m.start_time) === slot
+    );
+
+    if (!meeting) {
+      cells.push({
+        type: 'empty',
+        time: slot
+      });
+
+      i += 1;
+      continue;
+    }
+
+    const duration = getSlotSpan(meeting.start_time, meeting.end_time);
+
+    cells.push({
+      type: 'meeting',
+      meeting,
+      colSpan: duration
+    });
+
+    i += duration;
+  }
+
+  return cells;
+}
+function getSlotSpan(startTime, endTime) {
+  const start = toMinutes(startTime);
+  const end = toMinutes(endTime);
+
+  const diff = Math.max(end - start, 60);
+
+  return Math.ceil(diff / 60);
+}
+
+function toMinutes(time) {
+  const [hours, minutes] = cleanTime(time).split(':').map(Number);
+  return hours * 60 + minutes;
+}
 function CourseBlock({ meeting }) {
   return (
     <Link
@@ -172,16 +283,11 @@ function CourseBlock({ meeting }) {
   );
 }
 
-function TextSchedule({ sections, totalCredits }) {
+function TextSchedule({ sections, totalCredits, openOfficeHours }) {
   const rows = [];
 
   sections.forEach((section) => {
     const meetings = section.meetings || [];
-
-    if (meetings.length === 0) {
-      rows.push({ ...section, rowSpan: 1 });
-      return;
-    }
 
     meetings.forEach((meeting, index) => {
       rows.push({
@@ -193,18 +299,27 @@ function TextSchedule({ sections, totalCredits }) {
   });
 
   return (
-    <div className="sc-text-wrapper">
+    <div className="sc-text-wrapper" dir="rtl">
+      <div className="sc-note">
+        ملاحظة: اضغط على اسم المدرس للاطلاع على الساعات المكتبية
+      </div>
+
       <table className="sc-text-table">
         <thead>
           <tr>
-            <th>Course No.</th>
-            <th>Section</th>
-            <th>Course Name</th>
-            <th>Credits</th>
-            <th>Day</th>
-            <th>Time</th>
-            <th>Room</th>
-            <th>Instructor</th>
+            <th>رقم المساق حسب الخطة</th>
+            <th>رقم المساق/ش</th>
+            <th>اسم المساق</th>
+            <th>س.م</th>
+            <th></th>
+            <th>الأيام</th>
+            <th>من-إلى</th>
+            <th>رقم القاعة</th>
+            <th>الحرم</th>
+            <th>اسم المدرس</th>
+            <th>المجموع الكلي لساعات الغياب</th>
+            <th>ساعات غياب بعذر</th>
+            <th>حرمان</th>
           </tr>
         </thead>
 
@@ -214,31 +329,263 @@ function TextSchedule({ sections, totalCredits }) {
               {row.rowSpan !== 0 && (
                 <>
                   <td rowSpan={row.rowSpan}>{row.course_code}</td>
-                  <td rowSpan={row.rowSpan}>{row.section_number}</td>
-                  <td rowSpan={row.rowSpan}>{row.course_name_ar || row.course_name}</td>
+
+                  <td rowSpan={row.rowSpan}>
+                    {row.course_code}/{row.section_number}
+                  </td>
+
+                  <td rowSpan={row.rowSpan}>
+                    {row.course_name_ar || row.course_name}
+                  </td>
+
                   <td rowSpan={row.rowSpan}>{row.credit_hours || 3}</td>
+
+                  <td rowSpan={row.rowSpan}></td>
                 </>
               )}
 
-              <td>{getDayName(row.day_of_week)}</td>
+              <td>{arabicDayName(row.day_of_week)}</td>
+
               <td>
-                {row.start_time && row.end_time
-                  ? `${cleanTime(row.start_time)} - ${cleanTime(row.end_time)}`
-                  : '—'}
+                {cleanTime(row.start_time)} - {cleanTime(row.end_time)}
               </td>
-              <td>Room {row.room_number || '—'}</td>
+
+              <td>{row.room_number || '—'}</td>
+
+              <td>
+                {row.meeting_type === 'electronic' || row.note ? (
+                  <span className="online-text">{row.note || 'الكتروني'}</span>
+                ) : (
+                  'الجديد'
+                )}
+              </td>
 
               {row.rowSpan !== 0 && (
-                <td rowSpan={row.rowSpan}>{row.instructor_name || '—'}</td>
+                <>
+                  <td rowSpan={row.rowSpan}>
+                    <button
+                      type="button"
+                      className="doctor-link"
+                      onClick={() =>
+                        openOfficeHours({
+                          name: row.instructor_name,
+                          email: row.instructor_email,
+                          department: row.department
+                        })
+                      }
+                    >
+                      {row.instructor_name || '—'}
+                    </button>
+                  </td>
+
+                  <td rowSpan={row.rowSpan}>{row.absence_total ?? 0}</td>
+
+                  <td rowSpan={row.rowSpan}>
+                    {row.excused_absence_total ?? 0}
+                  </td>
+
+                  <td rowSpan={row.rowSpan}>
+                    {row.deprivation_status || 'لا'}
+                  </td>
+                </>
               )}
             </tr>
           ))}
         </tbody>
       </table>
 
-      <div className="sc-total">Total registered hours = {totalCredits}</div>
+      <div className="sc-total">
+        مجموع الساعات المسجلة = {totalCredits}
+      </div>
     </div>
   );
+}
+
+function OfficeHoursModal({ instructor, officeHours, onClose }) {
+  const schedule = officeHours?.schedule || [];
+  const office = officeHours?.office_hours || [];
+  const info = officeHours?.instructor || instructor;
+
+  const doctorName =
+    info?.first_name && info?.last_name
+      ? `${info.title || 'د.'} ${info.first_name} ${info.last_name}`
+      : info?.name || instructor?.name || '—';
+
+  return (
+    <div className="office-hours-modal" onClick={onClose}>
+      <div
+        className="office-hours-card professor-schedule-card"
+        dir="rtl"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="office-hours-header">
+          <div>
+            <h2>الساعات المكتبية ثاني 2025-2026</h2>
+            <p>الاسم: {doctorName}</p>
+            <small>{info?.email || instructor?.email || ''}</small>
+          </div>
+
+          <button type="button" onClick={onClose}>×</button>
+        </div>
+
+        <div className="professor-note">
+          -- ملاحظة: المربع الواحد يمثل نصف ساعة زمنية<br />
+          -- إشارة (++++) تعني تضارب في المواعيد في حال ظهورها
+        </div>
+
+        <ProfessorScheduleGrid schedule={schedule} officeHours={office} />
+
+        <button type="button" className="office-hours-close" onClick={onClose}>
+          إغلاق
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ProfessorScheduleGrid({ schedule, officeHours }) {
+  const items = [
+    ...schedule.map((item) => ({
+      ...item,
+      type: 'course'
+    })),
+    ...officeHours.map((item) => ({
+      ...item,
+      type: 'office',
+      course_name_ar: 'O.H.',
+      course_code: '',
+      section_number: '',
+      room_number: item.office_room || ''
+    }))
+  ];
+
+  return (
+    <div className="prof-grid-wrapper">
+      <table className="prof-grid-table">
+        <thead>
+          <tr>
+            <th className="prof-day-time">اليوم/<br />الوقت</th>
+            {PROF_TIME_SLOTS.map((time) => (
+              <th key={time}>{formatHour(time)}</th>
+            ))}
+          </tr>
+        </thead>
+
+        <tbody>
+          {DAYS.map((day) => {
+            const cells = buildProfessorDayCells(
+              items.filter((x) => Number(x.day_of_week) === day.id)
+            );
+
+            return (
+              <tr key={day.id}>
+                <th className="prof-day-name">{day.ar}</th>
+
+                {cells.map((cell, index) => {
+                  if (cell.type === 'empty') {
+                    return (
+                      <td
+                        key={`${day.id}-${cell.time}-${index}`}
+                        className="prof-slot"
+                      />
+                    );
+                  }
+
+                  return (
+                    <td
+                      key={`${day.id}-${cell.item.type}-${index}`}
+                      className="prof-slot"
+                      colSpan={cell.colSpan}
+                    >
+                      <div className={`prof-block ${cell.item.type}`}>
+                        {cell.item.type === 'office' ? (
+                          <strong>O.H.</strong>
+                        ) : (
+                          <>
+                            <span>
+                              {cell.item.course_name_ar ||
+                                cell.item.course_name}
+                            </span>
+                            <strong>
+                              {cell.item.course_code}
+                              {cell.item.section_number
+                                ? `/${cell.item.section_number}`
+                                : ''}
+                            </strong>
+                            <em>{cell.item.room_number || '—'}</em>
+                            {cell.item.note && (
+                              <small>{cell.item.note}</small>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  );
+                })}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+const PROF_TIME_SLOTS = [
+  '08:00',
+  '09:00',
+  '10:00',
+  '11:00',
+  '12:00',
+  '13:00',
+  '14:00',
+  '15:00',
+  '16:00',
+  '17:00',
+  '18:00',
+  '19:00',
+  '20:00',
+  '21:00',
+  '22:00',
+  '23:00'
+];
+
+function buildProfessorDayCells(dayItems) {
+  const cells = [];
+  const sorted = [...dayItems].sort((a, b) =>
+    cleanTime(a.start_time).localeCompare(cleanTime(b.start_time))
+  );
+
+  let i = 0;
+
+  while (i < PROF_TIME_SLOTS.length) {
+    const slot = PROF_TIME_SLOTS[i];
+
+    const item = sorted.find(
+      (x) => cleanTime(x.start_time) === slot
+    );
+
+    if (!item) {
+      cells.push({
+        type: 'empty',
+        time: slot
+      });
+
+      i += 1;
+      continue;
+    }
+
+    const span = getSlotSpan(item.start_time, item.end_time);
+
+    cells.push({
+      type: 'item',
+      item,
+      colSpan: span
+    });
+
+    i += span;
+  }
+
+  return cells;
 }
 
 function getMeetingsForSlot(dayMeetings, slot) {
@@ -249,6 +596,19 @@ function getMeetingsForSlot(dayMeetings, slot) {
 
     return start <= current && end > current;
   });
+}
+function arabicDayName(day) {
+  const names = {
+    0: 'احد',
+    1: 'اثنين',
+    2: 'ثلاث',
+    3: 'اربعاء',
+    4: 'خميس',
+    5: 'جمعة',
+    6: 'سبت'
+  };
+
+  return names[Number(day)] || '—';
 }
 
 function cleanTime(time) {

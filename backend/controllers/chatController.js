@@ -166,7 +166,20 @@ async function dbTodaySchedule(userId) {
     return true;
   });
 }
+async function dbDepartments() {
+  const result = await query(`
+    SELECT code, name_en, name_ar
+    FROM departments
+    WHERE is_active = true
+    ORDER BY name_en
+  `);
 
+  return result.rows;
+}
+
+function wantsDepartments(message = '') {
+  return /department|departments|major|majors|engineering majors|specializations|تخصص|تخصصات|اقسام|أقسام|كلية الهندسة/i.test(message);
+}
 async function dbFullSchedule(userId) {
   if (!userId) return [];
 
@@ -373,7 +386,8 @@ function buildLocalReply({
   notifications,
   announcements,
   rooms,
-  instructors
+  instructors,
+  departments
 }) {
   const isAr = lang === 'ar';
   const lower = message.toLowerCase();
@@ -398,8 +412,22 @@ function buildLocalReply({
     cards: null,
     action: null
   };
+  
 }
+if (departments?.length) {
+  const lines = departments.map(
+    (d) => `• ${d.code} — ${d.name_en} (${d.name_ar})`
+  );
 
+  return {
+    message:
+      lang === 'ar'
+        ? `تخصصات كلية الهندسة:\n\n${lines.join('\n')}`
+        : `Faculty of Engineering Departments:\n\n${lines.join('\n')}`,
+    cards: null,
+    action: null
+  };
+}
   if (wantsSchedule(message)) {
     if (todaySchedule.length === 0) {
       return {
@@ -678,14 +706,15 @@ async function chat(req, res, next) {
     const instructorTerm = wantsInstructor(text) ? extractInstructorTerm(text) : '';
 
     const [
-      todaySchedule,
-      fullSchedule,
-      attendance,
-      notifications,
-      announcements,
-      rooms,
-      instructors
-    ] = await Promise.all([
+  todaySchedule,
+  fullSchedule,
+  attendance,
+  notifications,
+  announcements,
+  rooms,
+  instructors,
+  departments
+] = await Promise.all([
       dbTodaySchedule(userId).catch((err) => {
         console.error('Chat schedule error:', err.message);
         return [];
@@ -711,31 +740,37 @@ async function chat(req, res, next) {
         return [];
       }),
       roomTerm
-        ? dbRooms(roomTerm).catch((err) => {
-            console.error('Chat rooms error:', err.message);
-            return [];
-          })
-        : Promise.resolve([]),
-      instructorTerm
-        ? dbInstructor(instructorTerm).catch((err) => {
-            console.error('Chat instructor error:', err.message);
-            return [];
-          })
-        : Promise.resolve([])
+  ? dbRooms(roomTerm).catch((err) => {
+      console.error('Chat rooms error:', err.message);
+      return [];
+    })
+  : Promise.resolve([]),
+
+instructorTerm
+  ? dbInstructor(instructorTerm).catch((err) => {
+      console.error('Chat instructor error:', err.message);
+      return [];
+    })
+  : Promise.resolve([]),
+
+wantsDepartments(text)
+  ? dbDepartments().catch(() => [])
+  : Promise.resolve([])
     ]);
 
     const local = buildLocalReply({
-      message: text,
-      lang,
-      user,
-      todaySchedule,
-      fullSchedule,
-      attendance,
-      notifications,
-      announcements,
-      rooms,
-      instructors
-    });
+  message: text,
+  lang,
+  user,
+  todaySchedule,
+  fullSchedule,
+  attendance,
+  notifications,
+  announcements,
+  rooms,
+  instructors,
+  departments
+});
 
     let reply = local.message;
     let action = local.action;

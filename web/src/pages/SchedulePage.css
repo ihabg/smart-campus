@@ -1,142 +1,254 @@
 .sc-page {
-  padding: 32px;
-  color: #071b4d;
+  min-height: 100vh;
+  padding: 14px 18px;
+  background: #fff;
+  color: #000;
+  font-family: Arial, Tahoma, sans-serif;
+  font-size: 14px;
 }
 
 .sc-header {
   display: flex;
+  flex-direction: row-reverse;
   justify-content: space-between;
   align-items: flex-start;
-  gap: 20px;
-  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 8px;
 }
 
 .sc-header h1 {
-  margin: 0 0 8px;
-  font-size: 30px;
-  color: #071b4d;
+  display: none;
 }
 
 .sc-header p {
-  margin: 0;
-  color: #667399;
+  display: none;
 }
 
 .sc-controls {
   display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
+  flex-direction: row-reverse;
+  align-items: center;
+  gap: 6px;
+  margin-right: auto;
+}
+
+.sc-controls::before {
+  content: "الفصل";
+  color: #000;
+  font-size: 14px;
 }
 
 .sc-controls select,
 .sc-controls button {
-  height: 36px;
-  border: 1px solid #c9d3ea;
-  background: #fff;
-  color: #071b4d;
-  border-radius: 8px;
-  padding: 0 12px;
+  height: 24px;
+  border: 1px solid #777;
+  background: #f7f7f7;
+  color: #000;
+  border-radius: 0;
+  padding: 1px 8px;
+  font-size: 13px;
+  font-family: Arial, Tahoma, sans-serif;
   cursor: pointer;
 }
 
 .sc-controls button.active {
-  background: #002b75;
-  color: #fff;
-  border-color: #002b75;
+  background: #e9e9e9;
+  color: #000;
+  border-color: #777;
 }
 
 .sc-semester-title {
-  margin: 18px 0;
-  font-size: 18px;
-  font-weight: 700;
+  text-align: right;
   color: #b00000;
+  font-weight: 700;
+  margin: 18px 0 14px;
+  font-size: 16px;
+  direction: rtl;
 }
 
-/* GRID VIEW */
+.sc-semester-title::before {
+  content: "";
+}
+
+/* University-like timetable */
 .sc-table-wrapper {
-  width: 100%;
+  width: max-content;
+  max-width: 100%;
+  margin-right: 0;
+  margin-left: auto;
   overflow-x: auto;
-  background: #fff;
-  border-radius: 12px;
-  padding: 14px;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.06);
+  background: transparent;
+  border-radius: 0;
+  padding: 0;
+  box-shadow: none;
+  direction: rtl;
 }
 
 .sc-grid-table {
   border-collapse: collapse;
   table-layout: fixed;
-  min-width: 1120px;
-  width: 1120px;
+  width: auto;
+  min-width: 980px;
   background: #fff;
-  border: 2px solid #222;
+  border: 2px solid #333;
+  direction: rtl;
 }
 
 .sc-grid-table th,
 .sc-grid-table td {
-  border: 2px solid #222;
+  border: 2px solid #333;
   text-align: center;
   vertical-align: middle;
+  padding: 0;
 }
 
 .sc-grid-table thead th {
-  height: 42px;
-  font-size: 16px;
-  font-weight: 800;
-  background: #f8fafc;
+  height: 34px;
+  min-width: 52px;
+  width: 52px;
+  background: #fff;
+  color: #000;
+  font-size: 17px;
+  font-weight: 700;
 }
 
-.sc-day-time,
-.sc-day-name {
-  width: 100px;
-  min-width: 100px;
-  background: #f8fafc;
+.sc-day-time {
+  width: 70px !important;
+  min-width: 70px !important;
+  line-height: 1.1;
+  font-size: 14px !important;
+  background: #fff !important;
 }
 
-.sc-day-name {
+.sc-day-time div:first-child {
+  direction: rtl;
+}
+
+.sc-day-time div:first-child::before {
+  content: "اليوم/";
+  font-weight: 700;
+}
+
+.sc-day-time div:first-child {
+  font-size: 0;
+}
+
+.sc-day-time div:last-child {
+  font-size: 0;
+}
+
+.sc-day-time div:last-child::before {
+  content: "الوقت";
   font-size: 14px;
   font-weight: 700;
 }
 
-.sc-slot {
-  width: 78px;
-  height: 82px;
-  min-width: 78px;
-  padding: 2px;
+.sc-day-name {
+  width: 70px !important;
+  min-width: 70px !important;
+  height: 74px;
   background: #fff;
+  color: #000;
+  font-size: 14px;
+  font-weight: 400;
+}
+
+.sc-day-name {
+  font-size: 0;
+}
+
+.sc-grid-table tbody tr:nth-child(1) .sc-day-name::before {
+  content: "احد";
+  font-size: 14px;
+}
+
+.sc-grid-table tbody tr:nth-child(2) .sc-day-name::before {
+  content: "اثنين";
+  font-size: 14px;
+}
+
+.sc-grid-table tbody tr:nth-child(3) .sc-day-name::before {
+  content: "ثلاث";
+  font-size: 14px;
+}
+
+.sc-grid-table tbody tr:nth-child(4) .sc-day-name::before {
+  content: "اربعاء";
+  font-size: 14px;
+}
+
+.sc-grid-table tbody tr:nth-child(5) .sc-day-name::before {
+  content: "خميس";
+  font-size: 14px;
+}
+
+.sc-grid-table tbody tr:nth-child(6) .sc-day-name::before {
+  content: "جمعة";
+  font-size: 14px;
+}
+
+.sc-grid-table tbody tr:nth-child(7) .sc-day-name::before {
+  content: "سبت";
+  font-size: 14px;
+}
+
+.sc-slot {
+  width: 52px;
+  min-width: 52px;
+  height: 74px;
+  background: #fff;
+  padding: 0;
+  position: relative;
 }
 
 .sc-course {
   width: 100%;
-  min-height: 76px;
-  padding: 5px;
+  height: 100%;
+  min-height: 74px;
+  margin: 0;
+  padding: 3px 2px;
   box-sizing: border-box;
+  color: #000;
+  text-decoration: none;
+  font-family: Arial, Tahoma, sans-serif;
+  font-size: 11px;
+  line-height: 1.15;
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 2px;
-  text-decoration: none;
-  color: #000;
-  font-size: 11px;
-  line-height: 1.15;
+  align-items: center;
+  gap: 1px;
   overflow: hidden;
+  border-radius: 0;
 }
 
 .sc-course strong {
-  font-size: 12px;
+  font-size: 11px;
+  font-weight: 700;
+  order: 3;
 }
 
 .sc-course span {
   display: block;
+  font-size: 11px;
+  max-height: 38px;
+  overflow: hidden;
+  order: 1;
 }
 
 .sc-course small {
-  font-size: 10px;
+  display: none;
 }
 
 .sc-course em {
-  font-size: 10px;
   font-style: normal;
   font-weight: 700;
+  font-size: 12px;
+  order: 2;
+}
+
+.sc-course em::before {
+  content: "";
 }
 
 .sc-course.yellow {
@@ -152,7 +264,7 @@
 }
 
 .sc-course.purple {
-  background: #cbc3ff;
+  background: #c9c2f4;
 }
 
 .sc-course.blue {
@@ -163,35 +275,45 @@
   background: #e9ecef;
 }
 
-/* TEXT VIEW */
+/* Text view like university table */
 .sc-text-wrapper {
-  width: 100%;
+  width: max-content;
+  max-width: 100%;
+  margin-right: 0;
+  margin-left: auto;
   overflow-x: auto;
-  background: #fff;
-  border-radius: 12px;
-  padding: 14px;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.06);
+  background: transparent;
+  border-radius: 0;
+  padding: 0;
+  box-shadow: none;
+  direction: rtl;
 }
 
 .sc-text-table {
-  width: 100%;
-  min-width: 900px;
+  min-width: 1050px;
+  width: auto;
   border-collapse: collapse;
+  direction: rtl;
   background: #fff;
+  box-shadow: 4px 5px 3px rgba(0, 0, 0, 0.35);
 }
 
 .sc-text-table th {
   background: #dfe3e6;
   color: #000;
-  padding: 10px;
+  padding: 8px 6px;
   border: 1px solid #fff;
+  font-weight: 700;
+  text-align: center;
+  white-space: nowrap;
 }
 
 .sc-text-table td {
-  padding: 9px;
-  text-align: center;
+  padding: 7px 6px;
   border: 1px solid #fff;
   color: #000;
+  text-align: center;
+  white-space: nowrap;
 }
 
 .sc-text-table tbody tr:nth-child(odd) td {
@@ -203,16 +325,257 @@
 }
 
 .sc-total {
-  margin-top: 10px;
   text-align: right;
   color: #000;
-  font-weight: 700;
+  font-weight: 400;
+  margin-top: 6px;
+  direction: rtl;
 }
 
 .sc-empty {
+  width: 520px;
+  max-width: 100%;
+  margin-right: 0;
+  margin-left: auto;
+  border: 1px solid #ccc;
   background: #fff;
-  padding: 30px;
-  border-radius: 12px;
-  color: #667399;
+  padding: 24px;
+  color: #777;
   text-align: center;
+  border-radius: 0;
+}
+
+/* Hide modern card look around the page */
+.sc-page .card,
+.sc-page .panel {
+  box-shadow: none;
+  border-radius: 0;
+}
+
+@media (max-width: 900px) {
+  .sc-page {
+    padding: 10px;
+  }
+
+  .sc-grid-table {
+    min-width: 980px;
+  }
+}
+
+.sc-note {
+  color: #b00000;
+  text-align: right;
+  margin-bottom: 6px;
+  font-size: 14px;
+}
+
+.online-text {
+  color: red;
+}
+
+.doctor-link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: #0000ee;
+  text-decoration: underline;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: inherit;
+}
+
+.office-hours-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.42);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.office-hours-card {
+  width: 620px;
+  max-width: 95vw;
+  background: #fff;
+  border-radius: 10px;
+  padding: 18px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.25);
+  color: #000;
+}
+
+.office-hours-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  border-bottom: 1px solid #ddd;
+  padding-bottom: 12px;
+  margin-bottom: 14px;
+}
+
+.office-hours-header h2 {
+  margin: 0 0 4px;
+  color: #b00000;
+  font-size: 20px;
+}
+
+.office-hours-header p {
+  margin: 0 0 3px;
+  font-weight: 700;
+}
+
+.office-hours-header small {
+  color: #555;
+}
+
+.office-hours-header button {
+  width: 34px;
+  height: 34px;
+  border: 1px solid #ccc;
+  background: #f7f7f7;
+  cursor: pointer;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.office-hours-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 8px;
+}
+
+.office-hours-table th {
+  background: #dfe3e6;
+  border: 1px solid #fff;
+  padding: 9px;
+  text-align: center;
+}
+
+.office-hours-table td {
+  border: 1px solid #eee;
+  padding: 9px;
+  text-align: center;
+}
+
+.office-hours-table tbody tr:nth-child(odd) td {
+  background: #f8f8f8;
+}
+
+.office-hours-table tbody tr:nth-child(even) td {
+  background: #fbf4ed;
+}
+
+.office-hours-empty {
+  padding: 24px;
+  text-align: center;
+  border: 1px solid #ddd;
+  color: #777;
+}
+
+.office-hours-close {
+  margin-top: 14px;
+  background: #002b75;
+  color: #fff;
+  border: none;
+  padding: 9px 22px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.professor-schedule-card {
+  width: 1100px;
+  max-width: 96vw;
+}
+
+.professor-note {
+  text-align: right;
+  font-size: 14px;
+  line-height: 1.8;
+  margin-bottom: 12px;
+  font-weight: 700;
+}
+
+.prof-grid-wrapper {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.prof-grid-table {
+  border-collapse: collapse;
+  table-layout: fixed;
+  min-width: 1000px;
+  width: 100%;
+  background: #fff;
+  border: 2px solid #222;
+  direction: rtl;
+}
+
+.prof-grid-table th,
+.prof-grid-table td {
+  border: 2px solid #222;
+  text-align: center;
+  vertical-align: middle;
+  padding: 0;
+}
+
+.prof-grid-table thead th {
+  height: 34px;
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.prof-day-time {
+  width: 70px;
+  min-width: 70px;
+}
+
+.prof-day-name {
+  width: 70px;
+  min-width: 70px;
+  font-weight: 400;
+}
+
+.prof-slot {
+  height: 82px;
+  width: 58px;
+  min-width: 58px;
+}
+
+.prof-block {
+  width: 100%;
+  height: 100%;
+  min-height: 82px;
+  box-sizing: border-box;
+  padding: 4px 3px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  color: #000;
+  font-size: 13px;
+  line-height: 1.15;
+  overflow: hidden;
+}
+
+.prof-block.course {
+  background: #f6c4df;
+}
+
+.prof-block.office {
+  background: #fff;
+  color: green;
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.prof-block em {
+  font-style: normal;
+  font-weight: 700;
+}
+
+.prof-block small {
+  color: red;
+  font-size: 12px;
 }

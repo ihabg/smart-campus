@@ -27,6 +27,7 @@ const labAssistantRoutes = require('./routes/labAssistant');
 const secretaryRoutes    = require('./routes/secretary');
 const authPatchRoutes    = require('./routes/auth_patch');
 const facultyRoutes      = require('./routes/faculty');
+const officeHoursRoutes = require('./routes/officeHours');
 
 const app  = express();
 const PORT = process.env.PORT || 5000;
@@ -63,7 +64,7 @@ const authLimiter = rateLimit({
 });
 
 app.use(globalLimiter);
-
+app.use('/api/office-hours', officeHoursRoutes);
 // ─── Body Parsing ────────────────────────────────────────────
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
