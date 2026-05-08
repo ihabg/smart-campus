@@ -226,6 +226,8 @@
   display: flex; align-items: center; justify-content: center; gap: 8px;
   transition: all var(--t-mid) var(--ease);
   animation: fieldIn .5s var(--ease-spring) .6s both;
+    position: relative;
+  z-index: 1;
 }
 .auth-submit-btn::after {
   content:'';
@@ -253,3 +255,111 @@
 }
 .auth-footer-link a { color:var(--navy); font-weight:600; }
 .auth-footer-link a:hover { text-decoration:underline; }
+
+
+.department-field {
+  position: relative;
+  z-index: 100;
+}
+
+.department-select {
+  width: 100%;
+  min-height: 48px;
+  border: 1px solid #d8e1f3;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #071b4d;
+  padding: 0 16px;
+  font-size: 14px;
+  font-family: inherit;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  box-shadow: 0 8px 22px rgba(7, 27, 77, 0.04);
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.2s ease;
+}
+
+.department-select:hover {
+  border-color: #0b2a6f;
+  box-shadow: 0 10px 28px rgba(7, 27, 77, 0.1);
+  transform: translateY(-1px);
+}
+
+.department-select.is-open {
+  border-color: #0b2a6f;
+  box-shadow: 0 0 0 4px rgba(11, 42, 111, 0.08);
+}
+
+.department-chevron {
+  color: #6b7da8;
+  font-size: 16px;
+  transition: transform 0.22s ease;
+}
+
+.department-select.is-open .department-chevron {
+  transform: rotate(180deg);
+}
+
+.department-menu {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 8px);
+  max-height: 230px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid #d8e1f3;
+  border-radius: 16px;
+  box-shadow: 0 22px 55px rgba(7, 27, 77, 0.18);
+  z-index: 9999;
+  padding: 8px;
+  animation: departmentDrop 0.18s ease-out;
+}
+
+@keyframes departmentDrop {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.department-option {
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: #071b4d;
+  text-align: left;
+  padding: 11px 12px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-family: inherit;
+  cursor: pointer;
+  transition:
+    background 0.16s ease,
+    color 0.16s ease,
+    transform 0.16s ease;
+}
+
+.department-option:hover {
+  background: #f2f6ff;
+  transform: translateX(3px);
+}
+
+.department-option.is-selected {
+  background: #08245f;
+  color: #fff;
+}
+
+.auth-submit-btn {
+  position: relative;
+  z-index: 1;
+}

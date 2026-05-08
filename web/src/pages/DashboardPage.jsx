@@ -129,32 +129,43 @@ export default function DashboardPage() {
           )}
         </div>
 
-        {/* Announcements */}
-        <div className="card">
-          <div className="dashboard__card-header">
-            <h2 className="dashboard__card-title">📢 Announcements</h2>
-            <Link to="/announcements" className="dashboard__card-link">See all →</Link>
-          </div>
-          {annLoading ? <Spinner center /> : (
-            <div className="dashboard__announce-list">
-              {(annData?.announcements || []).map(a => (
-                <Link key={a.id} to={`/announcements/${a.id}`} className="dash-announce-item">
-                  {a.is_pinned && <span>📌</span>}
-                  <div>
-                    <div className="dash-announce-item__title">{a.title}</div>
-                    <div className="dash-announce-item__time">{timeAgo(a.published_at)}</div>
-                  </div>
-                </Link>
-              ))}
-              {(!annData?.announcements?.length) && (
-                <div className="empty-state" style={{ padding:'var(--space-xl)' }}>
-                  <p className="empty-state__title">No announcements</p>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
+       {/* Announcements */}
+<div className="card najah-ann-card" dir="rtl">
+  <div className="najah-ann-header">
+    <span>◆ رسائل هامة</span>
+    <Link to="/announcements" className="najah-ann-see-all">
+      عرض الكل
+    </Link>
+  </div>
 
+  {annLoading ? (
+    <Spinner center />
+  ) : (
+    <div className="najah-ann-list">
+      {(annData?.announcements || []).map(a => (
+        <Link
+          key={a.id}
+          to={`/announcements/${a.id}`}
+          className={`najah-ann-item ${a.is_pinned ? 'najah-ann-item--pinned' : ''}`}
+        >
+          <span className="najah-ann-icon">✉</span>
+
+          <div className="najah-ann-content">
+            <h3>{a.title}</h3>
+            <p>{a.content}</p>
+            <small>{timeAgo(a.published_at)}</small>
+          </div>
+        </Link>
+      ))}
+
+      {(!annData?.announcements?.length) && (
+        <div className="empty-state" style={{ padding: 'var(--space-xl)' }}>
+          <p className="empty-state__title">لا توجد إعلانات</p>
+        </div>
+      )}
+    </div>
+  )}
+</div>
         {/* Quick Access */}
         <div className="card">
           <h2 className="dashboard__card-title" style={{ marginBottom:'var(--space-lg)' }}>⚡ Quick Access</h2>

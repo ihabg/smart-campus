@@ -152,38 +152,74 @@ export function AnnouncementsPage() {
   const announcements = data?.announcements || [];
 
   return (
-    <div style={{ maxWidth:800, margin:'0 auto' }}>
-      <div className="page-header"><h1 className="page-title">Announcements</h1></div>
+    <div style={{ maxWidth: 1150, margin: '0 auto', direction: 'rtl' }}>
+      <div
+        style={{
+          background: '#123f78',
+          color: '#fff',
+          padding: '10px 16px',
+          fontWeight: 700,
+          textAlign: 'right',
+          marginBottom: 0,
+        }}
+      >
+        ◆ رسائل هامة
+      </div>
 
-      {loading ? <Spinner center /> : announcements.length === 0 ? (
-        <div className="card">
-          <div className="empty-state">
-            <div className="empty-state__icon">📢</div>
-            <p className="empty-state__title">No announcements</p>
+      {loading ? (
+        <Spinner center />
+      ) : announcements.length === 0 ? (
+        <div style={{ background: '#fff', border: '1px solid #aaa', padding: 24 }}>
+          <div style={{ textAlign: 'center', color: '#0033cc', fontWeight: 700 }}>
+            لا توجد إعلانات حالياً
           </div>
         </div>
       ) : (
-        <div style={{ display:'flex', flexDirection:'column', gap:'var(--space-md)' }}>
+        <div style={{ background: '#fff', border: '1px solid #aaa' }}>
           {announcements.map(a => (
-            <Link key={a.id} to={`/announcements/${a.id}`} style={{ textDecoration:'none' }}>
-              <div className="card"
-                style={{ borderLeft: a.is_pinned ? '4px solid var(--gold)' : undefined, transition:'transform 0.1s, box-shadow 0.1s' }}
-                onMouseEnter={e => { e.currentTarget.style.transform='translateY(-1px)'; e.currentTarget.style.boxShadow='var(--shadow-md)'; }}
-                onMouseLeave={e => { e.currentTarget.style.transform=''; e.currentTarget.style.boxShadow=''; }}
+            <Link
+              key={a.id}
+              to={`/announcements/${a.id}`}
+              style={{ textDecoration: 'none', color: 'inherit' }}
+            >
+              <div
+                style={{
+                  padding: '18px 22px',
+                  borderBottom: '1px solid #aaa',
+                  textAlign: 'right',
+                }}
               >
-                <div style={{ display:'flex', alignItems:'flex-start', gap:12 }}>
-                  {a.is_pinned && <span style={{ fontSize:18, flexShrink:0 }}>📌</span>}
-                  {a.image_url && <img src={a.image_url} alt="" style={{ width:80, height:60, objectFit:'cover', borderRadius:4, flexShrink:0 }}/>}
-                  <div style={{ flex:1 }}>
-                    <h3 style={{ fontSize:15, fontWeight:600, color:'var(--text)', marginBottom:4 }}>{a.title}</h3>
-                    <p style={{ fontSize:13, color:'var(--text-muted)', marginBottom:8, display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', overflow:'hidden' }}>
-                      {a.content}
-                    </p>
-                    <div style={{ fontSize:11, color:'var(--text-faint)' }}>
-                      {a.author_name && <span>{a.author_name} · </span>}
-                      <span>{timeAgo(a.published_at)}</span>
-                    </div>
-                  </div>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <span style={{ color: 'red', fontSize: 16 }}>✉</span>
+                  <span
+                    style={{
+                      color: '#0033cc',
+                      fontWeight: 700,
+                      textDecoration: 'underline',
+                      fontSize: 16,
+                    }}
+                  >
+                    {a.title}
+                  </span>
+                </div>
+
+                <p
+                  style={{
+                    margin: '10px 26px 0 0',
+                    color: '#0033cc',
+                    fontWeight: 700,
+                    lineHeight: 1.9,
+                   fontSize: 16,
+background: a.is_pinned ? 'yellow' : 'transparent',
+                    display: a.is_pinned ? 'inline' : 'block',
+                  }}
+                >
+                  {a.content}
+                </p>
+
+                <div style={{ fontSize: 11, color: '#555', marginTop: 10 }}>
+                  {a.author_name && <span>{a.author_name} · </span>}
+                  <span>{timeAgo(a.published_at)}</span>
                 </div>
               </div>
             </Link>

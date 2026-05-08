@@ -79,7 +79,11 @@ export default function ProfessorDashboard() {
       // Init grade edit state
       const ge = {};
       studs.forEach(s => {
-        ge[s.id] = { midterm: s.midterm||'', final: s.final||'', assignments: s.assignments||'', practical: s.practical||'' };
+        ge[s.id] = {
+  midterm: s.midterm || '',
+  assignments: s.assignments || '',
+  final: s.final || ''
+};
       });
       setGradeEdit(ge);
       // Init attendance
@@ -112,10 +116,10 @@ export default function ProfessorDashboard() {
     try {
       const grades = Object.entries(gradeEdit).map(([sid, g]) => ({
         student_id: sid,
-        midterm:     g.midterm     ? parseFloat(g.midterm)     : null,
-        final:       g.final       ? parseFloat(g.final)       : null,
-        assignments: g.assignments ? parseFloat(g.assignments) : null,
-        practical:   g.practical   ? parseFloat(g.practical)   : null,
+midterm: g.midterm ? parseFloat(g.midterm) : 0,
+assignments: g.assignments ? parseFloat(g.assignments) : 0,
+final: g.final ? parseFloat(g.final) : 0,
+practical: 0,
       }));
       await axiosInstance.post('/professor/grades/bulk', { section_id: activeSection.id, grades });
       showToast('✅ All grades saved');
@@ -329,43 +333,74 @@ export default function ProfessorDashboard() {
                   <table className="table">
                     <thead><tr>
                       <th>Student</th>
-                      <th style={{textAlign:'center'}}>Attendance</th>
-                      <th style={{textAlign:'center'}}>Midterm<br/><small style={{fontWeight:400,opacity:.7}}>/100 × 30%</small></th>
-                      <th style={{textAlign:'center'}}>Final<br/><small style={{fontWeight:400,opacity:.7}}>/100 × 40%</small></th>
-                      <th style={{textAlign:'center'}}>Assign.<br/><small style={{fontWeight:400,opacity:.7}}>/100 × 20%</small></th>
-                      <th style={{textAlign:'center'}}>Pract.<br/><small style={{fontWeight:400,opacity:.7}}>/100 × 10%</small></th>
-                      <th style={{textAlign:'center'}}>Grade</th>
-                      <th>Actions</th>
+<th style={{textAlign:'center'}}>Midterm<br/><small style={{fontWeight:400,opacity:.7}}>/30</small></th>
+<th style={{textAlign:'center'}}>Quizzes & Assign.<br/><small style={{fontWeight:400,opacity:.7}}>/20</small></th>
+<th style={{textAlign:'center'}}>Final<br/><small style={{fontWeight:400,opacity:.7}}>/50</small></th>
+<th style={{textAlign:'center'}}>Grade</th>
+<th>Actions</th>
                     </tr></thead>
                     <tbody>
                       {students.map(s => {
                         const att = attSummary.find(a => a.id === s.id);
                         const ge  = gradeEdit[s.id] || {};
-                        const total = (parseFloat(ge.midterm)||0)*0.3 + (parseFloat(ge.final)||0)*0.4 +
-                                      (parseFloat(ge.assignments)||0)*0.2 + (parseFloat(ge.practical)||0)*0.1;
-                        const lg = total >= 90?'A+':total>=85?'A':total>=80?'B+':total>=75?'B':total>=70?'C+':total>=65?'C':total>=60?'D+':total>=55?'D':total>0?'F':'—';
+                        const total =
+  (parseFloat(ge.midterm) || 0) +
+  (parseFloat(ge.assignments) || 0) +
+  (parseFloat(ge.final) || 0);
+
+const lg =
+  total >= 90 ? 'A' :
+  total >= 88 ? 'A-' :
+  total >= 85 ? 'B+' :
+  total >= 80 ? 'B' :
+  total >= 78 ? 'B-' :
+  total >= 75 ? 'C+' :
+  total >= 70 ? 'C' :
+  total >= 66 ? 'C-' :
+  total >= 63 ? 'D+' :
+  total >= 60 ? 'D' :
+  total >= 45 ? 'D-' :
+  total > 0 ? 'E' : '—';
                         return (
-                          <tr key={s.id}>
-                            <td>
-                              <div style={{fontWeight:600}}>{s.first_name} {s.last_name}</div>
-                              <div style={{fontSize:11,fontFamily:'var(--font-mono)',color:'var(--text-muted)'}}>{s.student_id}</div>
-                            </td>
-                            <td style={{textAlign:'center'}}>
-                              <AttBadge pct={att?.attendance_pct}/>
-                            </td>
-                            {['midterm','final','assignments','practical'].map(field => (
-                              <td key={field} style={{textAlign:'center'}}>
-                                <input type="number" min="0" max="100"
-                                  className="prof-grade-input"
-                                  value={ge[field]}
-                                  onChange={e => setGradeEdit(prev => ({
-                                    ...prev,
-                                    [s.id]: { ...prev[s.id], [field]: e.target.value }
-                                  }))}
-                                  placeholder="—"
-                                />
-                              </td>
-                            ))}
+<tr key={s.id}>
+  <td>
+    <div style={{fontWeight:600}}>{s.first_name} {s.last_name}</div>
+    <div style={{fontSize:11,fontFamily:'var(--font-mono)',color:'var(--text-muted)'}}>
+      {s.student_id}
+    </div>
+  </td>
+
+  {[
+    { field: 'midterm', max: 30 },
+    { field: 'assignments', max: 20 },
+    { field: 'final', max: 50 }
+  ].map(({ field, max }) => (
+  <td key={field} style={{textAlign:'center'}}>
+<input
+  type="number"
+  min="0"
+  max={max}
+  className="prof-grade-input"
+  value={ge[field] || ''}
+  onChange={(e) => {
+    let value = e.target.value;
+
+    if (value !== '') {
+      value = Math.max(0, Math.min(Number(value), max));
+    }
+
+    setGradeEdit(prev => ({
+      ...prev,
+      [s.id]: {
+        ...prev[s.id],
+        [field]: value
+      }
+    }));
+  }}
+  placeholder="—"
+/>
+  </td>
+))}
                             <td style={{textAlign:'center'}}>
                               <span className={`prof-grade-badge prof-grade-badge--${lg==='F'?'f':lg.includes('+')||lg==='A'?'a':lg.includes('B')?'b':lg.includes('C')?'c':'d'}`}>
                                 {lg}

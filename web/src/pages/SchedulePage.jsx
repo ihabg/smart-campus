@@ -16,7 +16,7 @@ const DAYS = [
 ];
 
 const TIME_SLOTS = [
-  '07:00',
+ '07:00',
   '08:00',
   '09:00',
   '10:00',
@@ -636,11 +636,21 @@ function semesterName(semester) {
 
 function getCourseColor(code) {
   const colors = {
+    // Spring
     '10636314': 'yellow',
     '10636332': 'pink',
     '10636451': 'cyan',
     '10636581': 'purple',
-    '11032102': 'blue'
+    '11032102': 'blue',
+
+    // Fall
+    '10606102': 'yellow',
+    '10636410': 'pink',
+    '10636423': 'cyan',
+    '10636455': 'purple',
+    '10636493': 'blue',
+    '10636496': 'pink',
+    '10636568': 'cyan'
   };
 
   return colors[code] || 'gray';

@@ -2,15 +2,18 @@ const { query } = require('../config/db');
 const https = require('https');
 
 function letterGrade(total) {
-  if (total >= 90) return 'A+';
-  if (total >= 85) return 'A';
+  if (total >= 90) return 'A';
+  if (total >= 85) return 'A-';
   if (total >= 80) return 'B+';
   if (total >= 75) return 'B';
-  if (total >= 70) return 'C+';
-  if (total >= 65) return 'C';
-  if (total >= 60) return 'D+';
-  if (total >= 55) return 'D';
-  return 'F';
+  if (total >= 70) return 'B-';
+  if (total >= 65) return 'C+';
+  if (total >= 60) return 'C';
+  if (total >= 55) return 'C-';
+  if (total >= 50) return 'D+';
+  if (total >= 45) return 'D';
+  if (total >= 40) return 'D-';
+  return 'E';
 }
 
 async function getInstructorIdByUserEmail(req) {
@@ -463,10 +466,9 @@ async function saveGradesBulk(req, res, next) {
 
     for (const g of list) {
       const total =
-        (g.midterm || 0) * 0.3 +
-        (g.final || 0) * 0.4 +
-        (g.assignments || 0) * 0.2 +
-        (g.practical || 0) * 0.1;
+  (Number(g.midterm) || 0) +
+  (Number(g.assignments) || 0) +
+  (Number(g.final) || 0);
 
       const lg = letterGrade(total);
 

@@ -6,10 +6,22 @@ import { validateStudentId, getYearOfStudy, getStudentEmail } from '../utils/stu
 import './Auth.css';
 
 const DEPARTMENTS = [
-  'Computer Engineering','Electrical Engineering','Mechanical Engineering',
-  'Civil Engineering','Industrial Engineering','Information Technology',
+  'Computer Engineering',
+  'Electrical Engineering',
+  'Mechanical Engineering',
+  'Civil Engineering',
+  'Industrial Engineering',
+  'Information Technology',
+  'Architectural Engineering',
+  'Chemical Engineering',
+  'Agricultural Engineering',
+  'Energy and Environmental Engineering',
+  'Network and Intelligent Systems Engineering',
+  'Urban Planning and Technology Engineering',
+  'Geomatics Engineering',
+  'Mechanical Engineering Major',
+  'Mechanical Engineering Minor'
 ];
-
 /* ─── Login ──────────────────────────────────────────────── */
 export function LoginPage() {
   const { login } = useAuth();
@@ -17,7 +29,7 @@ export function LoginPage() {
   const [form,    setForm]    = useState({ email:'', password:'' });
   const [errors,  setErrors]  = useState({});
   const [loading, setLoading] = useState(false);
-
+  
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }));
 
   const handleSubmit = async e => {
@@ -85,7 +97,7 @@ export function LoginPage() {
               </div>
             </div>
 
-            <button type="submit" className="auth-submit-btn" disabled={loading} style={{ marginTop:24 }}>
+            <button type="submit" className="auth-submit-btn" disabled={loading} style={{ marginTop:36 }}>
               {loading
                 ? <><span className="spinner spinner--sm" style={{ borderTopColor:'#fff', borderColor:'rgba(255,255,255,.25)' }}/> Signing in…</>
                 : 'Sign In →'}
@@ -114,6 +126,7 @@ export function RegisterPage() {
   });
   const [errors,  setErrors]  = useState({});
   const [loading, setLoading] = useState(false);
+    const [departmentOpen, setDepartmentOpen] = useState(false);
 
   const set = k => e => {
     const val = e.target.value;
@@ -229,13 +242,38 @@ export function RegisterPage() {
                 {errors.password && <span className="form-error">{errors.password}</span>}
               </div>
 
-              <div className="form-group auth-field">
-                <label className="form-label">Department</label>
-                <select className="form-input" value={form.department} onChange={set('department')}>
-                  <option value="">Select department</option>
-                  {DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
-                </select>
-              </div>
+              <div className="form-group auth-field department-field">
+  <label className="form-label">Department</label>
+
+  <button
+    type="button"
+    className={`department-select ${departmentOpen ? 'is-open' : ''}`}
+    onClick={() => setDepartmentOpen(open => !open)}
+  >
+    <span>{form.department || 'Select department'}</span>
+    <span className="department-chevron">⌄</span>
+  </button>
+
+  {departmentOpen && (
+    <div className="department-menu">
+      {DEPARTMENTS.map((department) => (
+        <button
+          type="button"
+          key={department}
+          className={`department-option ${
+            form.department === department ? 'is-selected' : ''
+          }`}
+          onClick={() => {
+            setForm(f => ({ ...f, department }));
+            setDepartmentOpen(false);
+          }}
+        >
+          {department}
+        </button>
+      ))}
+    </div>
+  )}
+</div>
             </div>
 
             <button type="submit" className="auth-submit-btn" disabled={loading} style={{ marginTop:24 }}>
