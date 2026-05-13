@@ -2909,7 +2909,54 @@ G: {
     },
   ],
 },
-
+2: {
+  label: '2',
+  title: 'Second Floor — الطابق الثاني',
+  image: '/maps/2.png',
+  width: 1533,
+  height: 1026,
+  blocks: [
+          {id: '2010',
+      roomNumber: '2010',
+      name: 'دائرة الهندسة المدنية والمعمارية',
+      type: 'office',
+      x: 100,
+      y: 100,
+      width: 120,
+      height: 60,
+    },
+    {
+      id: '2020',
+      roomNumber: '2020',
+      name: 'مرسم سنة رابعة معماري',
+      type: 'engineering_drawing_studio',
+      department: 'الهندسة المعمارية',
+      capacity: 45,
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 402,
+      y: 576,
+      width: 113,
+      height: 159,
+      labelX: 459,
+      labelY: 656,
+    },
+    {
+      id: '2030',
+      roomNumber: '2030',
+      name: 'مكتب د. معتصم بعباع',
+      type: 'office',
+      x: 380,
+      y: 100,
+      width: 120,
+      height: 60,
+    },
+  ]
+},
 3: {
   label: '3',
   title: 'Third Floor — الطابق الثالث',
@@ -3744,7 +3791,7 @@ G: {
 },
 };
 
-const FLOOR_ORDER = ['B2', 'B1', 'G', '1', '3', '4'];
+const FLOOR_ORDER = ['B2', 'B1', 'G', '1','2', '3', '4'];
 
 function getTypeLabel(type) {
   const map = {
@@ -3812,9 +3859,47 @@ export default function MapPage() {
   const [routeInstructions, setRouteInstructions] = useState([]);
   const [routeTarget, setRouteTarget] = useState(null);
   const [routeError, setRouteError] = useState('');
-  
+  //=======================================
 const currentFloor = FLOOR_MAPS[activeFloor];
+const [firstPoint, setFirstPoint] = useState(null);
 
+function handleCoordinatePick(e) {
+  const svg = e.currentTarget.ownerSVGElement;
+  const point = svg.createSVGPoint();
+
+  point.x = e.clientX;
+  point.y = e.clientY;
+
+  const svgPoint = point.matrixTransform(svg.getScreenCTM().inverse());
+
+  const x = Math.round(svgPoint.x);
+  const y = Math.round(svgPoint.y);
+
+  if (!firstPoint) {
+    setFirstPoint({ x, y });
+    console.log("First point:", { x, y });
+    return;
+  }
+
+  const block = {
+    id: "ROOM_NUMBER_HERE",
+    roomNumber: "ROOM_NUMBER_HERE",
+    name: "ROOM_NAME_HERE",
+    type: "lecture_hall",
+    shape: "rect",
+    x: Math.min(firstPoint.x, x),
+    y: Math.min(firstPoint.y, y),
+    width: Math.abs(x - firstPoint.x),
+    height: Math.abs(y - firstPoint.y),
+    labelX: Math.round((firstPoint.x + x) / 2),
+    labelY: Math.round((firstPoint.y + y) / 2),
+  };
+
+  console.log("COPY THIS BLOCK:");
+  console.log(JSON.stringify(block, null, 2));
+
+  setFirstPoint(null);
+} //=========================================
   const visibleBlocks = useMemo(() => {
     return currentFloor.blocks.filter(block => matchesNeed(block, selectedNeed));
   }, [currentFloor, selectedNeed]);
@@ -4152,6 +4237,17 @@ onClick={() => {
                   transition={{ duration: 0.8, ease: 'easeInOut' }}
                      />
                        )}
+                       <rect
+                        x="0"
+                        y="0"
+                       width={currentFloor.width}
+                       height={currentFloor.height}
+                       fill="transparent"
+                       onClick={handleCoordinatePick}
+                      />
+
+                       
+
               {currentFloor.blocks.map(block => {
                 const hiddenByFilter = !matchesNeed(block, selectedNeed);
                 const isActive =
