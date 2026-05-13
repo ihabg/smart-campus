@@ -5,37 +5,86 @@ const { AppError }               = require('../middleware/errorHandler');
 
 async function getRoomsByFloor(req, res, next) {
   try {
-    const { floor_id } = req.params;
-    const { type, active_only = 'true' } = req.query;
+    const { floor_id, type, active_only = 'true' } = req.query;
 
     let sql = `
       SELECT r.*,
-             f.floor_label, f.floor_number,
-             b.code AS building_code, b.name AS building_name
+             f.floor_label,
+             f.floor_number,
+             f.map_image_url,
+             b.code AS building_code,
+             b.name AS building_name
       FROM rooms r
       JOIN floors f ON f.id = r.floor_id
       JOIN buildings b ON b.id = f.building_id
-      WHERE r.floor_id = $1
+      WHERE 1=1
     `;
-    const params = [floor_id];
-    let idx = 2;
+
+    const params = [];
+
+    if (floor_id) {
+      params.push(floor_id);
+      sql += ` AND r.floor_id = $${params.length}`;
+    }
 
     if (type) {
       params.push(type);
-      sql += ` AND r.type = $${idx++}`;
+      sql += ` AND r.type = $${params.length}`;
     }
+
     if (active_only === 'true') {
-      sql += ' AND r.is_active = TRUE';
+      sql += ` AND r.is_active = TRUE`;
     }
-    sql += ' ORDER BY r.room_number';
+
+    sql += ` ORDER BY f.display_order, r.room_number`;
 
     const result = await query(sql, params);
-    res.json({ success: true, data: { rooms: result.rows } });
+
+    res.json({
+      success: true,
+      data: { rooms: result.rows }
+    });
   } catch (error) {
     next(error);
   }
 }
+async function getRoomByNumber(req, res, next) {
+  try {
+    const { roomNumber } = req.params;
 
+    const result = await query(
+      `
+      SELECT r.*,
+             f.id AS floor_id,
+             f.floor_label,
+             f.floor_number,
+             f.map_image_url,
+             b.code AS building_code,
+             b.name AS building_name
+      FROM rooms r
+      JOIN floors f ON f.id = r.floor_id
+      JOIN buildings b ON b.id = f.building_id
+      WHERE LOWER(r.room_number) = LOWER($1)
+      LIMIT 1
+      `,
+      [roomNumber]
+    );
+
+    if (!result.rows.length) {
+      return res.status(404).json({
+        success: false,
+        message: 'Room not found.'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: { room: result.rows[0] }
+    });
+  } catch (error) {
+    next(error);
+  }
+}
 // ─── Get room by ID ──────────────────────────────────────────
 
 async function getRoomById(req, res, next) {
@@ -227,33 +276,53 @@ async function bulkUpdateCoordinates(req, res, next) {
 
 async function setAdjacency(req, res, next) {
   try {
-    const { room_a_id, room_b_id, weight = 1.0, is_active = true } = req.body;
+    const {
+      room_a_id,
+      room_b_id,
+      distance_meters = 1.0,
+      direction_note = null,
+      is_accessible = true,
+      is_active = true,
+    } = req.body;
 
-    // Upsert both directions
     await withTransaction(async client => {
       await client.query(
-        `INSERT INTO room_adjacency (room_a_id, room_b_id, weight, is_active)
-         VALUES ($1,$2,$3,$4)
-         ON CONFLICT (room_a_id, room_b_id) DO UPDATE
-           SET weight=$3, is_active=$4`,
-        [room_a_id, room_b_id, weight, is_active]
+        `INSERT INTO room_adjacency
+           (room_a_id, room_b_id, distance_meters, direction_note, is_accessible, is_active)
+         VALUES ($1,$2,$3,$4,$5,$6)
+         ON CONFLICT (room_a_id, room_b_id) DO UPDATE SET
+           distance_meters = EXCLUDED.distance_meters,
+           direction_note = EXCLUDED.direction_note,
+           is_accessible = EXCLUDED.is_accessible,
+           is_active = EXCLUDED.is_active`,
+        [room_a_id, room_b_id, distance_meters, direction_note, is_accessible, is_active]
       );
+
       await client.query(
-        `INSERT INTO room_adjacency (room_a_id, room_b_id, weight, is_active)
-         VALUES ($1,$2,$3,$4)
-         ON CONFLICT (room_a_id, room_b_id) DO UPDATE
-           SET weight=$3, is_active=$4`,
-        [room_b_id, room_a_id, weight, is_active]
+        `INSERT INTO room_adjacency
+           (room_a_id, room_b_id, distance_meters, direction_note, is_accessible, is_active)
+         VALUES ($1,$2,$3,$4,$5,$6)
+         ON CONFLICT (room_a_id, room_b_id) DO UPDATE SET
+           distance_meters = EXCLUDED.distance_meters,
+           direction_note = EXCLUDED.direction_note,
+           is_accessible = EXCLUDED.is_accessible,
+           is_active = EXCLUDED.is_active`,
+        [room_b_id, room_a_id, distance_meters, direction_note, is_accessible, is_active]
       );
     });
 
-    res.json({ success: true, message: 'Adjacency updated (bidirectional).' });
+    res.json({ success: true, message: 'Adjacency updated.' });
   } catch (error) {
     next(error);
   }
 }
-
 module.exports = {
-  getRoomsByFloor, getRoomById, createRoom, updateRoom,
-  deleteRoom, bulkUpdateCoordinates, setAdjacency,
+  getRoomsByFloor,
+  getRoomById,
+  getRoomByNumber,
+  createRoom,
+  updateRoom,
+  deleteRoom,
+  bulkUpdateCoordinates,
+  setAdjacency,
 };

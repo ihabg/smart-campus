@@ -1,255 +1,4202 @@
-import React, { useState } from 'react';
-import GroundFloorMap from '../components/map/GroundFloorMap';
-import FloorMap4      from '../components/map/FloorMap4';
-import FloorMap3      from '../components/map/FloorMap3';
+import React, { useMemo, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { G_START_NODES, findGroundFloorRoute } from '../data/groundFloorNavigation';
+import { B2_START_NODES, findB2Route } from '../data/navigation/b2Navigation';
 import './MapPage.css';
 
-const FLOORS = [
-  { id:'B2', label:'B2', desc:'Basement 2 — الطابق السفلي 2',  available:false },
-  { id:'B1', label:'B1', desc:'Basement 1 — الطابق السفلي 1',  available:false },
-  { id:'G',  label:'G',  desc:'Ground Floor — الطابق الأرضي',  available:true  },
-  { id:'1',  label:'1',  desc:'Floor 1 — الطابق الأول',         available:false },
-  { id:'2',  label:'2',  desc:'Floor 2 — الطابق الثاني',        available:false },
-  { id:'3',  label:'3',  desc:'Third Floor — الطابق الثالث',    available:true  },
-  { id:'4',  label:'4',  desc:'Fourth Floor — الطابق الرابع',   available:true  },
+const REQUEST_OPTIONS = [
+  { value: 'all', label: 'Everything' },
+  { value: 'lab', label: 'Labs' },
+  { value: 'lecture_hall', label: 'Lecture Halls' },
+  { value: 'engineering_drawing_studio', label: 'Drawing Studios' },
+  { value: 'bookstore', label: 'Bookstore / Printing' },
+  { value: 'office', label: 'Doctor Offices' },
+  { value: 'meeting_room', label: 'Meeting Rooms' },
+  { value: 'professor_lounge', label: 'Professor Lounge' },
+  { value: 'storage', label: 'Storage' },
+  { value: 'stairs', label: 'Stairs' },
+  { value: 'restroom', label: 'Restrooms' },
+  { value: 'amphitheater', label: 'Amphitheater' },
+  { value: 'entrance', label: 'Entrances' },
+  { value: 'bathroom', label: 'Accessible Restrooms' },
+  { value: 'elevator', label: 'Elevators' },
+  { value: 'emergency_stairs', label: 'Emergency Stairs' },
+  { value: 'accessible', label: 'Accessible Places' },
 ];
 
-// All rooms across all floors for global navigation
-const ALL_ROOMS = {
-  G: [
-    { id:'G0110', label:'G0110 — Classroom', floor:'G', floorLabel:'Ground Floor' },
-    { id:'G0120', label:'G0120 — Classroom', floor:'G', floorLabel:'Ground Floor' },
-    { id:'G0130', label:'G0130 — Classroom', floor:'G', floorLabel:'Ground Floor' },
-    { id:'G0140', label:'G0140 — Classroom', floor:'G', floorLabel:'Ground Floor' },
-    { id:'G0150', label:'G0150 — Classroom', floor:'G', floorLabel:'Ground Floor' },
-    { id:'G0180', label:'G0180 — Room',      floor:'G', floorLabel:'Ground Floor' },
-    { id:'G0190', label:'G0190 — Room',      floor:'G', floorLabel:'Ground Floor' },
-    { id:'G0070', label:'G0070 — Room',      floor:'G', floorLabel:'Ground Floor' },
-    { id:'G0220', label:'G0220 — Hall',      floor:'G', floorLabel:'Ground Floor' },
-    { id:'G0280', label:'G0280 — Room',      floor:'G', floorLabel:'Ground Floor' },
-    { id:'G0010', label:'G0010 — Room',      floor:'G', floorLabel:'Ground Floor' },
-    { id:'G0011', label:'G0011 — Room',      floor:'G', floorLabel:'Ground Floor' },
-    { id:'G0230', label:'G0230 — Classroom', floor:'G', floorLabel:'Ground Floor' },
-    { id:'G0240', label:'G0240 — Classroom', floor:'G', floorLabel:'Ground Floor' },
-    { id:'G0250', label:'G0250 — Classroom', floor:'G', floorLabel:'Ground Floor' },
-    { id:'G0260', label:'G0260 — Classroom', floor:'G', floorLabel:'Ground Floor' },
-    { id:'G0040A',label:'G0040 — Room',      floor:'G', floorLabel:'Ground Floor' },
-    { id:'G0050', label:'G0050 — Room',      floor:'G', floorLabel:'Ground Floor' },
-    { id:'G0060', label:'G0060 — Amphitheater', floor:'G', floorLabel:'Ground Floor' },
+const FLOOR_MAPS = {
+  B2: {
+    label: 'B2',
+    title: 'Basement 2 — الطابق السفلي 2',
+    image: '/maps/B2.png',
+    width: 1537,
+    height: 1023,
+    blocks: [
+      {
+        id: 'B2050',
+        roomNumber: 'B2050',
+        name: 'مختبر الاسفلت',
+        type: 'lab',
+        department: 'الهندسة المدنية',
+        capacity: 20,
+        status: 'Available',
+        lecturerName: '—',
+        lecturerEmail: '—',
+        currentCourse: '—',
+        lectureTime: '—',
+        shape: 'rect',
+        x: 217,
+        y: 208,
+        width: 113,
+        height: 115,
+        labelX: 265,
+        labelY: 260,
+      },
+      {
+        id: 'B2040',
+        roomNumber: 'B2040',
+        name: 'مختبر مواد البناء',
+        type: 'lab',
+        department: 'الهندسة المدنية',
+        capacity: 24,
+        status: 'Available',
+        lecturerName: '—',
+        lecturerEmail: '—',
+        currentCourse: '—',
+        lectureTime: '—',
+        shape: 'polygon',
+        points: '332,208 548,208 548,279 501,279 501,330 332,329',
+        labelX: 425,
+        labelY: 260,
+      },
+      {
+        id: 'B2080',
+        roomNumber: 'B2080',
+        name: 'مختبر',
+        type: 'lab',
+        department: 'الهندسة المدنية',
+        capacity: 30,
+        status: 'Available',
+        lecturerName: '—',
+        lecturerEmail: '—',
+        currentCourse: '—',
+        lectureTime: '—',
+        shape: 'rect',
+        x: 42,
+        y: 376,
+        width: 171,
+        height: 152,
+        labelX: 128,
+        labelY: 438,
+      },
+      {
+        id: 'B2090',
+        roomNumber: 'B2090',
+        name: 'مختبر هندسة الصيانة',
+        type: 'lab',
+        department: 'الهندسة الميكانيكية',
+        capacity: 30,
+        status: 'Available',
+        lecturerName: '—',
+        lecturerEmail: '—',
+        currentCourse: '—',
+        lectureTime: '—',
+        shape: 'rect',
+        x: 42,
+        y: 530,
+        width: 171,
+        height: 260,
+        labelX: 128,
+        labelY: 655,
+      },
+      {
+        id: 'B2100',
+        roomNumber: 'B2100',
+        name: 'المشاغل الهندسية',
+        type: 'lab',
+        department: 'الهندسة',
+        capacity: 50,
+        status: 'Available',
+        lecturerName: '—',
+        lecturerEmail: '—',
+        currentCourse: '—',
+        lectureTime: '—',
+        shape: 'polygon',
+        points: '214,602 492,602 492,530 556,530 556,662 544,662 544,790 214,790',
+        labelX: 365,
+        labelY: 675,
+      },
+      {
+        id: 'B2-INTERNAL-STAIRS',
+        roomNumber: 'B2-INTERNAL-STAIRS',
+        name: 'درج داخلي',
+        type: 'stairs',
+        status: 'Available',
+        accessible: false,
+        shape: 'polygon',
+        points: '506,425 615,445 615,525 505,525 505,490 505,490',
+        labelX: 562,
+        labelY: 465,
+      },
+
+      {
+        id: 'B2-STAIRS-1',
+        roomNumber: 'B2-STAIRS-1',
+        name: 'Emergency Stairs',
+        type: 'emergency_stairs',
+        department: '—',
+        capacity: '—',
+        status: 'Available',
+        lecturerName: '—',
+        lecturerEmail: '—',
+        currentCourse: '—',
+        lectureTime: '—',
+        accessible: false,
+        shape: 'polygon',
+        points: '76,242 121,225 144,289 215,289 215,327 110,327 91,286 90,283',
+        labelX: 125,
+        labelY: 230,
+      },
+      {
+        id: 'B2-DISABLED-RESTROOM',
+        roomNumber: 'B2-DISABLED-RESTROOM',
+        name: 'دورة مياه لذوي الإعاقة',
+        type: 'bathroom',
+        department: '—',
+        capacity: '—',
+        status: 'Available',
+        lecturerName: '—',
+        lecturerEmail: '—',
+        currentCourse: '—',
+        lectureTime: '—',
+        accessible: true,
+        shape: 'rect',
+        x: 108,
+        y: 328,
+        width: 70,
+        height: 48,
+        labelX: 140,
+        labelY: 328,
+      },
+      {
+        id: 'B2-ELEVATOR',
+        roomNumber: 'B2-ELEVATOR',
+        name: 'مصعد',
+        type: 'elevator',
+        department: '—',
+        capacity: '—',
+        status: 'Available',
+        lecturerName: '—',
+        lecturerEmail: '—',
+        currentCourse: '—',
+        lectureTime: '—',
+        accessible: true,
+        shape: 'rect',
+        x: 506,
+        y: 285,
+        width: 38,
+        height: 43,
+        labelX: 522,
+        labelY: 278,
+      },
+      {
+        id: 'B2-M-RESTROOM',
+        roomNumber: 'B2-M-RESTROOM',
+        name: 'دورة مياه رجال',
+        type: 'restroom',
+        department: '—',
+        capacity: '—',
+        status: 'Available',
+        lecturerName: '—',
+        lecturerEmail: '—',
+        currentCourse: '—',
+        lectureTime: '—',
+        gender: 'Male',
+        shape: 'rect',
+        x: 620,
+        y: 326,
+        width: 67,
+        height: 62,
+        labelX: 654,
+        labelY: 320,
+      },
+      {
+        id: 'B2-W-RESTROOM',
+        roomNumber: 'B2-W-RESTROOM',
+        name: 'دورة مياه نساء',
+        type: 'restroom',
+        department: '—',
+        capacity: '—',
+        status: 'Available',
+        lecturerName: '—',
+        lecturerEmail: '—',
+        currentCourse: '—',
+        lectureTime: '—',
+        gender: 'Female',
+        shape: 'rect',
+        x: 620,
+        y: 390,
+        width: 67,
+        height: 60,
+        labelX: 654,
+        labelY: 390,
+      },
+    ],
+  },
+
+B1: {
+  label: 'B1',
+  title: 'Basement 1 — الطابق السفلي 1',
+  image: '/maps/B1.png',
+  width: 1554,
+  height: 1012,
+  blocks: [
+    {
+  id: 'B1070',
+  roomNumber: 'B1070',
+  name: 'مختبر الدوائر الإلكترونية',
+  type: 'lab',
+  department: 'الهندسة الكهربائية',
+  capacity: 30,
+  status: 'Available',
+  lecturerName: '—',
+  lecturerEmail: '—',
+  currentCourse: '—',
+  lectureTime: '—',
+  shape: 'polygon',
+  points: '522,126 635,126 635,290 610,290 610,258 552,258 522,258',
+  labelX: 578,
+  labelY: 214,
+},
+{
+  id: 'B1060',
+  roomNumber: 'B1060',
+  name: 'مختبر أنظمة القوى الكهربائية',
+  type: 'lab',
+  department: 'الهندسة الكهربائية',
+  capacity: 30,
+  status: 'Available',
+  lecturerName: '—',
+  lecturerEmail: '—',
+  currentCourse: '—',
+  lectureTime: '—',
+  shape: 'polygon',
+  points: '635,126 746,126 746,300 676,300 676,286 653,286 653,286 635,286',
+  labelX: 690,
+  labelY: 210,
+},
+{
+  id: 'B1050',
+  roomNumber: 'B1050',
+  name: 'مختبر الدوائر الكهربائية',
+  type: 'lab',
+  department: 'الهندسة الكهربائية',
+  capacity: 30,
+  status: 'Available',
+  lecturerName: '—',
+  lecturerEmail: '—',
+  currentCourse: '—',
+  lectureTime: '—',
+  shape: 'polygon',
+  points: '746,117 865,117 865,287 830,286 830,286 820,286 820,300 746,300',
+  labelX: 802,
+  labelY: 210,
+},
+{
+  id: 'B1051',
+  roomNumber: 'B1051',
+  name: 'مختبر المساحة',
+  type: 'lab',
+  department: 'الهندسة المدنية',
+  capacity: 30,
+  status: 'Available',
+  lecturerName: '—',
+  lecturerEmail: '—',
+  currentCourse: '—',
+  lectureTime: '—',
+  shape: 'polygon',
+  points: '865,117 978,117 978,300 908,300 908,289 884,289 884,289 865,289',
+  labelX: 915,
+  labelY: 210,
+},
+{
+  id: 'B1040',
+  roomNumber: 'B1040',
+  name: 'مختبر ميكانيكا التربة',
+  type: 'lab',
+  department: 'الهندسة المدنية',
+  capacity: 30,
+  status: 'Available',
+  lecturerName: '—',
+  lecturerEmail: '—',
+  currentCourse: '—',
+  lectureTime: '—',
+  shape: 'polygon',
+  points: '983,126 1088,126 1088,286 1046,286 1046,300 1020,300 1000,300 983,300',
+  labelX: 1027,
+  labelY: 214,
+},
+{
+  id: 'B1030',
+  roomNumber: 'B1030',
+  name: 'مختبر الورشة الكهربائية',
+  type: 'lab',
+  department: 'الهندسة الكهربائية',
+  capacity: 30,
+  status: 'Available',
+  lecturerName: '—',
+  lecturerEmail: '—',
+  currentCourse: '—',
+  lectureTime: '—',
+  shape: 'polygon',
+  points: '1088,126 1195,126 1195,255 1162,255 1162,255 1122,255 1122,286 1102,286 1102,286 1088,286',
+  labelX: 1138,
+  labelY: 214,
+},
+
+    {
+      id: 'B1110',
+      roomNumber: 'B1110',
+      name: 'مختبر معالجة الإشارات الرقمية',
+      type: 'lab',
+      department: 'الهندسة الكهربائية',
+      capacity: 30,
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 200,
+      y: 197,
+      width: 129,
+      height: 124,
+      labelX: 262,  
+      labelY: 259,
+    },
+    {
+      id: 'B1100',
+      roomNumber: 'B1100',
+      name: 'مختبر الاتصالات',
+      type: 'lab',
+      department: 'الهندسة الكهربائية',
+      capacity: 30,
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 327,
+      y: 197,
+      width: 146,
+      height: 124,
+      labelX: 400,
+      labelY: 259,
+    },
+
+    {
+      id: 'B1141',
+      roomNumber: 'B1141',
+      name: 'مختبر الشبكات',
+      type: 'lab',
+      department: 'هندسة الحاسوب',
+      capacity: 30,
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 17,
+      y: 370,
+      width: 135,
+      height: 98,
+      labelX: 84,
+      labelY: 414,
+    },
+    {
+      id: 'B1140',
+      roomNumber: 'B1140',
+      name: 'مختبر الدوائر الإلكترونية المطبوعة / مختبر مايكروبروسيسور',
+      type: 'lab',
+      department: 'هندسة الحاسوب',
+      capacity: 30,
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 18,
+      y: 468,
+      width: 131,
+      height: 173,
+      labelX: 84,
+      labelY: 550,
+    },
+    {
+      id: 'B1150',
+      roomNumber: 'B1150',
+      name: 'مختبر التحكم المنطقي المبرمج / مختبر CPU',
+      type: 'lab',
+      department: 'هندسة الحاسوب',
+      capacity: 30,
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 17,
+      y: 646,
+      width: 187,
+      height: 129,
+      labelX: 110,
+      labelY: 705,
+    },
+    {
+      id: 'B1160',
+      roomNumber: 'B1160',
+      name: 'مختبر تصميم الدوائر المنطقية',
+      type: 'lab',
+      department: 'هندسة الحاسوب',
+      capacity: 30,
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 204,
+      y: 646,
+      width: 111,
+      height: 129,
+      labelX: 260,
+      labelY: 705,
+    },
+    {
+      id: 'B1170',
+      roomNumber: 'B1170',
+      name: 'مختبر أنظمة التحكم',
+      type: 'lab',
+      department: 'الهندسة الكهربائية',
+      capacity: 30,
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 315,
+      y: 646,
+      width: 211,
+      height: 129,
+      labelX: 420,
+      labelY: 705,
+    },
+
+{
+  id: 'B1180',
+  roomNumber: 'B1180',
+  name: 'مختبر المفاعلات الكيماوية',
+  type: 'lab',
+  department: 'الهندسة الكيميائية',
+  capacity: 30,
+  status: 'Available',
+  lecturerName: '—',
+  lecturerEmail: '—',
+  currentCourse: '—',
+  lectureTime: '—',
+  shape: 'polygon',
+  points: '474,524 633,524 633,658 531,658 531,641 472,642 472,544 472,604',
+  labelX: 565,
+  labelY: 590,
+},
+{
+  id: 'B1190',
+  roomNumber: 'B1190',
+  name: 'مختبر التحكم',
+  type: 'lab',
+  department: 'الهندسة الكيميائية',
+  capacity: 30,
+  status: 'Available',
+  lecturerName: '—',
+  lecturerEmail: '—',
+  currentCourse: '—',
+  lectureTime: '—',
+  shape: 'polygon',
+  points: '598,490 633,490 682,490 746,490 746,658 633,658 633,526 598,526',
+  labelX: 688,
+  labelY: 572,
+},
+{
+  id: 'B1200',
+  roomNumber: 'B1200',
+  name: 'مختبر ميكانيكا الموائع',
+  type: 'lab',
+  department: 'الهندسة المدنية',
+  capacity: 30,
+  status: 'Available',
+  lecturerName: '—',
+  lecturerEmail: '—',
+  currentCourse: '—',
+  lectureTime: '—',
+  shape: 'polygon',
+  points: '750,488 820,488 820,500 860,500 860,700 750,700',
+  labelX: 798,
+  labelY: 620,
+},
+{
+  id: 'B1210',
+  roomNumber: 'B1210',
+  name: 'مختبر الآلات الكهربائية',
+  type: 'lab',
+  department: 'الهندسة الكهربائية',
+  capacity: 30,
+  status: 'Available',
+  lecturerName: '—',
+  lecturerEmail: '—',
+  currentCourse: '—',
+  lectureTime: '—',
+  shape: 'polygon',
+  points: '863,500 906,500 906,488 975,488 975,700 863,700',
+  labelX: 912,
+  labelY: 620,
+},
+{
+  id: 'B1220',
+  roomNumber: 'B1220',
+  name: 'مختبر المرور',
+  type: 'lab',
+  department: 'الهندسة المدنية',
+  capacity: 30,
+  status: 'Available',
+  lecturerName: '—',
+  lecturerEmail: '—',
+  currentCourse: '—',
+  lectureTime: '—',
+  shape: 'polygon',
+  points: '975,487 1043,487 1043,500 1082,500 1082,658 975,658',
+  labelX: 1028,
+  labelY: 575,
+},
+{
+  id: 'B1230',
+  roomNumber: 'B1230',
+  name: 'مختبر البيئة',
+  type: 'lab',
+  department: 'الهندسة المدنية',
+  capacity: 30,
+  status: 'Available',
+  lecturerName: '—',
+  lecturerEmail: '—',
+  currentCourse: '—',
+  lectureTime: '—',
+  shape: 'polygon',
+  points: '1082,500 1122,500 1122,534 1150,534 1150,534 1188,534 1188,658 1082,658',
+  labelX: 1135,
+  labelY: 572,
+},
+
+    {
+      id: 'B1-BOOKSTORE',
+      roomNumber: 'B1-BOOKSTORE',
+      name: 'مكتبة كلية الهندسة / Printing & Bookstore',
+      type: 'bookstore',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 1204,
+      y: 349,
+      width: 40,
+      height: 100,
+      labelX: 1219,
+      labelY: 398,
+    },
+
+    {
+      id: 'B1-STAIRS-LEFT',
+      roomNumber: 'B1-STAIRS-LEFT',
+      name: 'مخرج طوارئ',
+      type: 'emergency_stairs',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'polygon',
+      points: '55,240 104,214 130,284 197,284 197,319 90,319 75,284 75,285',
+      labelX: 115,
+      labelY: 245,
+    },
+    {
+      id: 'B1-DISABLED-RESTROOM',
+      roomNumber: 'B1-DISABLED-RESTROOM',
+      name: 'دورة مياه لذوي الإعاقة',
+      type: 'bathroom',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      accessible: true,
+      shape: 'rect',
+      x: 86,
+      y: 319,
+      width: 70,
+      height: 48,
+      labelX: 121,
+      labelY: 343,
+    },
+
+    {
+      id: 'B1-W-RESTROOM-LEFT',
+      roomNumber: 'B1-W-RESTROOM-LEFT',
+      name: 'دورة مياه نساء',
+      type: 'restroom',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      gender: 'Female',
+      shape: 'rect',
+      x: 474,
+      y: 197,
+      width: 50,
+      height: 80,
+      labelX: 499,
+      labelY: 237,
+    },
+    {
+      id: 'B1-M-RESTROOM-LEFT',
+      roomNumber: 'B1-M-RESTROOM-LEFT',
+      name: 'دورة مياه رجال',
+      type: 'restroom',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      gender: 'Male',
+      shape: 'rect',
+      x: 555,
+      y: 256,
+      width: 48,
+      height: 66,
+      labelX: 569,
+      labelY: 289,
+    },
+    {
+      id: 'B1-W-RESTROOM-RIGHT',
+      roomNumber: 'B1-W-RESTROOM-RIGHT',
+      name: 'دورة مياه نساء',
+      type: 'restroom',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      gender: 'Female',
+      shape: 'rect',
+      x: 1120,
+      y: 253,
+      width: 40,
+      height: 70,
+      labelX: 1140,
+      labelY: 288,
+    },
+    {
+      id: 'B1-M-RESTROOM-RIGHT',
+      roomNumber: 'B1-M-RESTROOM-RIGHT',
+      name: 'دورة مياه رجال',
+      type: 'restroom',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      gender: 'Male',
+      shape: 'rect',
+      x: 1160,
+      y: 253,
+      width: 30,
+      height: 70,
+      labelX: 1180,
+      labelY: 288,
+    },
+
+    {
+      id: 'B1-ELEVATOR-LEFT',
+      roomNumber: 'B1-ELEVATOR-LEFT',
+      name: 'مصعد',
+      type: 'elevator',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      accessible: true,
+      shape: 'rect',
+      x: 474,
+      y: 277,
+      width: 58,
+      height: 61,
+      labelX: 503,
+      labelY: 308,
+    },
+    {
+      id: 'B1-ELEVATOR-CENTER-LEFT',
+      roomNumber: 'B1-ELEVATOR-CENTER-LEFT',
+      name: 'مصعد',
+      type: 'elevator',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      accessible: true,
+      shape: 'rect',
+      x: 683,
+      y: 359,
+      width: 61,
+      height: 65,
+      labelX: 716,
+      labelY: 389,
+    },
+    {
+      id: 'B1-ELEVATOR-CENTER-RIGHT',
+      roomNumber: 'B1-ELEVATOR-CENTER-RIGHT',
+      name: 'مصعد',
+      type: 'elevator',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      accessible: true,
+      shape: 'rect',
+      x: 975,
+      y: 356,
+      width: 70,
+      height: 70,
+      labelX: 1010,
+      labelY: 389,
+    },
+    {
+      id: 'B1-ELEVATOR-RIGHT',
+      roomNumber: 'B1-ELEVATOR-RIGHT',
+      name: 'مصعد',
+      type: 'elevator',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      accessible: true,
+      shape: 'rect',
+      x: 1195,
+      y: 273,
+      width: 60,
+      height: 60,
+      labelX: 1227,
+      labelY: 304,
+    },
+
+    {
+      id: 'B1-STAIRS-LEFT-INTERNAL',
+      roomNumber: 'B1-STAIRS-LEFT-INTERNAL',
+      name: 'درج داخلي',
+      type: 'emergency_stairs',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 485,
+      y: 448,
+      width: 110,
+      height: 80,
+      labelX: 535,
+      labelY: 488,
+    },
+    {
+      id: 'B1-STAIRS-RIGHT-INTERNAL',
+      roomNumber: 'B1-STAIRS-RIGHT-INTERNAL',
+      name: 'درج داخلي',
+      type: 'emergency_stairs',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 1120,
+      y: 450,
+      width: 115,
+      height: 80,
+      labelX: 1182,
+      labelY: 490,
+    },
   ],
-  '4': [
-    { id:'4030', label:'4030 — Lecture Hall',  floor:'4', floorLabel:'Fourth Floor' },
-    { id:'4040', label:'4040 — Lecture Hall',  floor:'4', floorLabel:'Fourth Floor' },
-    { id:'4050', label:'4050 — Lecture Hall',  floor:'4', floorLabel:'Fourth Floor' },
-    { id:'4060', label:'4060 — Lab',           floor:'4', floorLabel:'Fourth Floor' },
-    { id:'4070', label:'4070 — Lecture Hall',  floor:'4', floorLabel:'Fourth Floor' },
-    { id:'4080', label:'4080 — Lecture Hall',  floor:'4', floorLabel:'Fourth Floor' },
-    { id:'SSDC', label:'Steel Structure Design Center', floor:'4', floorLabel:'Fourth Floor' },
+},
+
+G: {
+  label: 'G',
+  title: 'Ground Floor — الطابق الأرضي',
+  image: '/maps/G.png',
+  width: 1601,
+  height: 983,
+  blocks: [
+    {
+      id: 'G0150',
+      roomNumber: 'G0150',
+      name: 'قاعة محاضرات',
+      type: 'lecture_hall',
+      department: '—',
+      capacity: 60,
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 490,
+      y: 155,
+      width: 97,
+      height: 127,
+      labelX: 532,
+      labelY: 215,
+    },
+    {
+      id: 'G0140',
+      roomNumber: 'G0140',
+      name: 'قاعة محاضرات',
+      type: 'lecture_hall',
+      department: '—',
+      capacity: 60,
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 580,
+      y: 155,
+      width: 100,
+      height: 127,
+      labelX: 627,
+      labelY: 215,
+    },
+    {
+      id: 'G0130',
+      roomNumber: 'G0130',
+      name: 'مختبر حاسوب',
+      type: 'lab',
+      department: 'الهندسة المدنية',
+      capacity: 30,
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 680,
+      y: 145,
+      width: 99,
+      height: 134,
+      labelX: 724,
+      labelY: 212,
+    },
+    {
+      id: 'G0131',
+      roomNumber: 'G0131',
+      name: 'مختبر حاسوب',
+      type: 'lab',
+      department: '—',
+      capacity: 30,
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 780,
+      y: 145,
+      width: 93,
+      height: 134,
+      labelX: 820,
+      labelY: 212,
+    },
+    {
+      id: 'G0120',
+      roomNumber: 'G0120',
+      name: 'قاعة محاضرات',
+      type: 'lecture_hall',
+      department: '—',
+      capacity: 60,
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 873,
+      y: 155,
+      width: 100,
+      height: 130,
+      labelX: 914,
+      labelY: 215,
+    },
+    {
+      id: 'G0110',
+      roomNumber: 'G0110',
+      name: 'قاعة محاضرات',
+      type: 'lecture_hall',
+      department: '—',
+      capacity: 60,
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 969,
+      y: 154,
+      width: 100,
+      height: 126,
+      labelX: 1013,
+      labelY: 215,
+    },
+
+    {
+      id: 'G0190',
+      roomNumber: 'G0190',
+      name: 'قاعة محاضرات',
+      type: 'lecture_hall',
+      department: '—',
+      capacity: 50,
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 202,
+      y: 233,
+      width: 98,
+      height: 121,
+      labelX: 251,
+      labelY: 290,
+    },
+    {
+      id: 'G0180',
+      roomNumber: 'G0180',
+      name: 'مختبر الديناميكا الحرارية وانتقال الحرارة',
+      type: 'lab',
+      department: 'الهندسة الكيميائية',
+      capacity: 30,
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 300,
+      y: 233,
+      width: 143,
+      height: 121,
+      labelX: 371,
+      labelY: 290,
+    },
+
+    {
+      id: 'G0220',
+      roomNumber: 'G0220',
+      name: 'مختبر الوحدات الصناعية',
+      type: 'lab',
+      department: 'الهندسة الكيميائية',
+      capacity: 35,
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 62,
+      y: 397,
+      width: 108,
+      height: 213,
+      labelX: 115,
+      labelY: 495,
+    },
+{
+  id: 'G0230',
+  roomNumber: 'G0230',
+  name: 'مختبر الحاسوب',
+  type: 'lab',
+  department: 'الهندسة الكهربائية',
+  capacity: 30,
+  status: 'Available',
+  lecturerName: '—',
+  lecturerEmail: '—',
+  currentCourse: '—',
+  lectureTime: '—',
+  shape: 'polygon',
+  points: '61,610 166,610 166,640 204,640 204,759 61,759',
+  labelX: 132,
+  labelY: 690,
+},
+    {
+      id: 'G0240',
+      roomNumber: 'G0240',
+      name: 'مختبر الحاسوب',
+      type: 'lab',
+      department: 'الهندسة الكيميائية',
+      capacity: 30,
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 207,
+      y: 641,
+      width: 101,
+      height: 119,
+      labelX: 254,
+      labelY: 695,
+    },
+    {
+      id: 'G0250',
+      roomNumber: 'G0250',
+      name: 'قاعة محاضرات',
+      type: 'lecture_hall',
+      department: '—',
+      capacity: 50,
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 305,
+      y: 636,
+      width: 94,
+      height: 128,
+      labelX: 352,
+      labelY: 695,
+    },
+    {
+      id: 'G0260',
+      roomNumber: 'G0260',
+      name: 'قاعة محاضرات',
+      type: 'lecture_hall',
+      department: '—',
+      capacity: 50,
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 399,
+      y: 636,
+      width: 94,
+      height: 128,
+      labelX: 446,
+      labelY: 695,
+    },
+
+    {
+      id: 'G0280',
+      roomNumber: 'G0280',
+      name: 'مختبر الحاسوب',
+      type: 'lab',
+      department: 'الهندسة المدنية',
+      capacity: 30,
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 495,
+      y: 530,
+      width: 190,
+      height: 122,
+      labelX: 585,
+      labelY: 586,
+    },
+
+    {
+      id: 'G0010',
+      roomNumber: 'G0010',
+      name: 'قاعة محاضرات',
+      type: 'lecture_hall',
+      department: '—',
+      capacity: 40,
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 874,
+      y: 530,
+      width: 96,
+      height: 126,
+      labelX: 922,
+      labelY: 586,
+    },
+    {
+      id: 'G0011',
+      roomNumber: 'G0011',
+      name: 'قاعة محاضرات',
+      type: 'lecture_hall',
+      department: '—',
+      capacity: 40,
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 970,
+      y: 530,
+      width: 99,
+      height: 126,
+      labelX: 1020,
+      labelY: 586,
+    },
+
+{
+  id: 'G0030',
+  roomNumber: 'G0030',
+  name: 'مختبر ميكانيكا المواد',
+  type: 'lab',
+  department: 'الهندسة المدنية والمعمارية',
+  capacity: 30,
+  status: 'Available',
+  lecturerName: '—',
+  lecturerEmail: '—',
+  currentCourse: '—',
+  lectureTime: '—',
+  shape: 'polygon',
+  points: '1070,600 1170,600 1170,760 1070,760',
+  labelX: 1110,
+  labelY: 704,
+},
+{
+  id: 'G0040',
+  roomNumber: 'G0040',
+  name: 'مختبر الهيدروليك',
+  type: 'lab',
+  department: 'الهندسة الميكانيكية',
+  capacity: 30,
+  status: 'Available',
+  lecturerName: '—',
+  lecturerEmail: '—',
+  currentCourse: '—',
+  lectureTime: '—',
+  shape: 'polygon',
+  points: '1170,595 1265,595 1265,760 1170,760 1170,710',
+  labelX: 1207,
+  labelY: 704,
+},
+{
+  id: 'G0050',
+  roomNumber: 'G0050',
+  name: 'مختبر الهندسة الميكانيكية',
+  type: 'lab',
+  department: 'الهندسة الميكانيكية',
+  capacity: 35,
+  status: 'Available',
+  lecturerName: '—',
+  lecturerEmail: '—',
+  currentCourse: '—',
+  lectureTime: '—',
+  shape: 'polygon',
+  points: '1265,595 1360,595 1360,760 1265,760',
+  labelX: 1302,
+  labelY: 695,
+},
+    {
+      id: 'G0060',
+      roomNumber: 'G0060',
+      name: 'مدرج كلية الهندسة',
+      type: 'amphitheater',
+      department: 'كلية الهندسة',
+      capacity: 180,
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'polygon',
+      points: '1364,400 1513,400 1513,758 1364,760',
+      labelX: 1430,
+      labelY: 575,
+    },
+
+{
+  id: 'G0080',
+  roomNumber: 'G0080',
+  name: 'مختبر',
+  type: 'lab',
+  department: '—',
+  capacity: 25,
+  status: 'Available',
+  lecturerName: '—',
+  lecturerEmail: '—',
+  currentCourse: '—',
+  lectureTime: '—',
+  shape: 'polygon',
+  points: '1188,355 1220,291 1265,291 1265,355 1242,354 1242,355',
+  labelX: 1225,
+  labelY: 318,
+},
+    {
+      id: 'G0070',
+      roomNumber: 'G0070',
+      name: 'مختبر العمليات الإنتاجية',
+      type: 'lab',
+      department: '—',
+      capacity: 30,
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 1270,
+      y: 230,
+      width: 90,
+      height: 125,
+      labelX: 1311,
+      labelY: 288,
+    },
+
+    // Entrances
+    {
+      id: 'G-NORTH-ENTRANCE',
+      roomNumber: 'G-NORTH-ENTRANCE',
+      name: 'Entrance — المدخل الشمالي',
+      type: 'entrance',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'polygon',
+      points: '750,706 820,706 860,780 710,780',
+      labelX: 765,
+      labelY: 800,
+    },
+    {
+      id: 'G-SOUTH-ENTRANCE',
+      roomNumber: 'G-SOUTH-ENTRANCE',
+      name: 'Entrance — المدخل الجنوبي',
+      type: 'entrance',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'polygon',
+      points: '1190,125 1320,125 1290,220 1220,220',
+      labelX: 1240,
+      labelY: 165,
+    },
+
+    // Emergency stairs
+    {
+      id: 'G-STAIRS-LEFT',
+      roomNumber: 'G-STAIRS-LEFT',
+      name: 'مخرج طوارئ',
+      type: 'emergency_stairs',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'polygon',
+      points: '109,260 125,255 150,319 199,319 199,351 118,351 80,270',
+      labelX: 120,
+      labelY: 270,
+    },
+    {
+      id: 'G-STAIRS-RIGHT',
+      roomNumber: 'G-STAIRS-RIGHT',
+      name: 'مخرج طوارئ',
+      type: 'emergency_stairs',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'polygon',
+      points: '1450,250 1492,270 1455,352 1365,352 1365,320 1423,320',
+      labelX: 1475,
+      labelY: 275,
+    },
+
+    // Accessible restrooms
+    {
+      id: 'G-DISABLED-RESTROOM-LEFT',
+      roomNumber: 'G-DISABLED-RESTROOM-LEFT',
+      name: 'دورة مياه لذوي الإعاقة',
+      type: 'bathroom',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      accessible: true,
+      shape: 'rect',
+      x: 110,
+      y: 348,
+      width: 62,
+      height: 46,
+      labelX: 134,
+      labelY: 371,
+    },
+    {
+      id: 'G-DISABLED-RESTROOM-RIGHT',
+      roomNumber: 'G-DISABLED-RESTROOM-RIGHT',
+      name: 'دورة مياه لذوي الإعاقة',
+      type: 'bathroom',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      accessible: true,
+      shape: 'rect',
+      x: 1540,
+      y: 325,
+      width: 50,
+      height: 50,
+      labelX: 1565,
+      labelY: 350,
+    },
+
+    // Elevators
+    {
+      id: 'G-ELEVATOR-LEFT-TOP',
+      roomNumber: 'G-ELEVATOR-LEFT-TOP',
+      name: 'مصعد',
+      type: 'elevator',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      accessible: true,
+      shape: 'rect',
+      x: 445,
+      y: 310,
+      width: 46,
+      height: 46,
+      labelX: 471,
+      labelY: 338,
+    },
+    {
+      id: 'G-ELEVATOR-CENTER-LEFT',
+      roomNumber: 'G-ELEVATOR-CENTER-LEFT',
+      name: 'مصعد',
+      type: 'elevator',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      accessible: true,
+      shape: 'rect',
+      x: 623,
+      y: 378,
+      width: 56,
+      height: 58,
+      labelX: 672,
+      labelY: 417,
+    },
+    {
+      id: 'G-ELEVATOR-CENTER-RIGHT',
+      roomNumber: 'G-ELEVATOR-CENTER-RIGHT',
+      name: 'مصعد',
+      type: 'elevator',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      accessible: true,
+      shape: 'rect',
+      x: 884,
+      y: 388,
+      width: 52,
+      height: 52,
+      labelX: 913,
+      labelY: 417,
+    },
+    {
+      id: 'G-ELEVATOR-RIGHT-TOP',
+      roomNumber: 'G-ELEVATOR-RIGHT-TOP',
+      name: 'مصعد',
+      type: 'elevator',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      accessible: true,
+      shape: 'rect',
+      x: 1070,
+      y: 310,
+      width: 49,
+      height: 49,
+      labelX: 1112,
+      labelY: 338,
+    },
+
+    // Restrooms
+    {
+      id: 'G-W-RESTROOM-LEFT',
+      roomNumber: 'G-W-RESTROOM-LEFT',
+      name: 'دورة مياه نساء',
+      type: 'restroom',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      gender: 'Female',
+      shape: 'rect',
+      x: 443,
+      y: 230,
+      width: 43,
+      height: 77,
+      labelX: 464,
+      labelY: 266,
+    },
+    {
+      id: 'G-M-RESTROOM-LEFT',
+      roomNumber: 'G-M-RESTROOM-LEFT',
+      name: 'دورة مياه رجال',
+      type: 'restroom',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      gender: 'Male',
+      shape: 'rect',
+      x: 510,
+      y: 280,
+      width: 55,
+      height: 72,
+      labelX: 535,
+      labelY: 317,
+    },
+    {
+      id: 'G-M-RESTROOM-RIGHT',
+      roomNumber: 'G-M-RESTROOM-RIGHT',
+      name: 'دورة مياه رجال',
+      type: 'restroom',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      gender: 'Male',
+      shape: 'rect',
+      x: 997,
+      y: 280,
+      width: 52,
+      height: 72,
+      labelX: 1030,
+      labelY: 317,
+    },
+    {
+      id: 'G-W-RESTROOM-RIGHT',
+      roomNumber: 'G-W-RESTROOM-RIGHT',
+      name: 'دورة مياه نساء',
+      type: 'restroom',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      gender: 'Female',
+      shape: 'rect',
+      x: 1073,
+      y: 228,
+      width: 45,
+      height: 77,
+      labelX: 1086,
+      labelY: 266,
+    },
+
+    // Internal stairs for navigation
+    {
+      id: 'G-STAIRS-LEFT-INTERNAL',
+      roomNumber: 'G-STAIRS-LEFT-INTERNAL',
+      name: 'درج داخلي',
+      type: 'emergency_stairs',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 443,
+      y: 450,
+      width: 122,
+      height: 78,
+      labelX: 498,
+      labelY: 495,
+    },
+    {
+      id: 'G-STAIRS-RIGHT-INTERNAL',
+      roomNumber: 'G-STAIRS-RIGHT-INTERNAL',
+      name: 'درج داخلي',
+      type: 'emergency_stairs',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 999,
+      y: 454,
+      width: 125,
+      height: 79,
+      labelX: 1042,
+      labelY: 495,
+    },
   ],
+},
+
+  1: {
+  label: '1',
+  title: 'First Floor — الطابق الأول',
+  image: '/maps/1.png',
+  width: 1688,
+  height: 932,
+  blocks: [
+    {
+      id: '1191',
+      roomNumber: '1191',
+      name: 'قاعة محاضرات',
+      type: 'lecture_hall',
+      department: '—',
+      capacity: 60,
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 510,
+      y: 101,
+      width: 108,
+      height: 137,
+      labelX: 564,
+      labelY: 168,
+    },
+    {
+      id: '1190',
+      roomNumber: '1190',
+      name: 'قاعة محاضرات',
+      type: 'lecture_hall',
+      department: '—',
+      capacity: 60,
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 618,
+      y: 101,
+      width: 110,
+      height: 137,
+      labelX: 672,
+      labelY: 168,
+    },
+    {
+      id: '1181',
+      roomNumber: '1181',
+      name: 'قاعة محاضرات',
+      type: 'lecture_hall',
+      department: '—',
+      capacity: 90,
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 728,
+      y: 96,
+      width: 224,
+      height: 142,
+      labelX: 840,
+      labelY: 168,
+    },
+    {
+      id: '1180',
+      roomNumber: '1180',
+      name: 'قاعة محاضرات',
+      type: 'lecture_hall',
+      department: '—',
+      capacity: 60,
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 953,
+      y: 101,
+      width: 112,
+      height: 137,
+      labelX: 1009,
+      labelY: 168,
+    },
+    {
+      id: '1170',
+      roomNumber: '1170',
+      name: 'قاعة محاضرات',
+      type: 'lecture_hall',
+      department: '—',
+      capacity: 60,
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 1065,
+      y: 101,
+      width: 122,
+      height: 137,
+      labelX: 1125,
+      labelY: 168,
+    },
+
+    // Computer / electrical side labs
+    {
+      id: '1140',
+      roomNumber: '1140',
+      name: 'مختبر خواص المواد الهندسية و مختبر السلامة والعوامل الإنسانية',
+      type: 'lab',
+      department: 'الهندسة الصناعية',
+      capacity: 30,
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 1230,
+      y: 177,
+      width: 144,
+      height: 140,
+      labelX: 1302,
+      labelY: 245,
+    },
+    {
+      id: '1130',
+      roomNumber: '1130',
+      name: 'مختبر الأتمتة والروبوتات',
+      type: 'lab',
+      department: 'الهندسة الميكاترونيكس',
+      capacity: 30,
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 1376,
+      y: 177,
+      width: 120,
+      height: 140,
+      labelX: 1445,
+      labelY: 245,
+    },
+
+    // Right block
+    {
+      id: '1100',
+      roomNumber: '1100',
+      name: 'قاعة محاضرات',
+      type: 'lecture_hall',
+      department: '—',
+      capacity: 80,
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 1535,
+      y: 362,
+      width: 114,
+      height: 145,
+      labelX: 1594,
+      labelY: 425,
+    },
+    {
+      id: '1091',
+      roomNumber: '1091',
+      name: 'مختبر التحكم والقياسات',
+      type: 'lab',
+      department: 'الهندسة الميكانيكية',
+      capacity: 25,
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 1535,
+      y: 509,
+      width: 118,
+      height: 155,
+      labelX: 1594,
+      labelY: 580,
+    },
+    {
+      id: '1090',
+      roomNumber: '1090',
+      name: 'مختبر التصنيع والتصميم',
+      type: 'lab',
+      department: 'الهندسة الميكانيكية',
+      capacity: 35,
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 1488,
+      y: 662,
+      width: 165,
+      height: 141,
+      labelX: 1570,
+      labelY: 735,
+    },
+    {
+      id: '1080',
+      roomNumber: '1080',
+      name: 'قاعة محاضرات',
+      type: 'lecture_hall',
+      department: '—',
+      capacity: 60,
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 1385 ,
+      y: 662,
+      width: 110,
+      height: 141,
+      labelX: 1432,
+      labelY: 735,
+    },
+    {
+      id: '1070',
+      roomNumber: '1070',
+      name: 'قاعة محاضرات',
+      type: 'lecture_hall',
+      department: '—',
+      capacity: 60,
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 1275,
+      y: 662,
+      width: 111,
+      height: 141,
+      labelX: 1320,
+      labelY: 735,
+    },
+    {
+      id: '1060',
+      roomNumber: '1060',
+      name: 'قاعة دراسية',
+      type: 'lecture_hall',
+      department: '—',
+      capacity: 60,
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 1163,
+      y: 662,
+      width: 114,
+      height: 141,
+      labelX: 1207,
+      labelY: 735,
+    },
+
+    // Storage
+    {
+      id: '1040',
+      roomNumber: '1040',
+      name: 'مخزن الخدمات',
+      type: 'storage',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 1159,
+      y: 535,
+      width: 66,
+      height: 63,
+      labelX: 1188,
+      labelY: 565,
+    },
+    {
+      id: '1050',
+      roomNumber: '1050',
+      name: 'مخزن الخدمات',
+      type: 'storage',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 1159,
+      y: 598,
+      width: 66,
+      height: 64,
+      labelX: 1188,
+      labelY: 630,
+    },
+
+    // Middle lecture halls / studios
+    {
+      id: '1010',
+      roomNumber: '1010',
+      name: 'ستوديو الرسم الهندسي',
+      type: 'engineering_drawing_studio',
+      department: '—',
+      capacity: 50,
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 540,
+      y: 537,
+      width: 196,
+      height: 134,
+      labelX: 638,
+      labelY: 607,
+    },
+    {
+      id: '1021',
+      roomNumber: '1021',
+      name: 'قاعة محاضرات',
+      type: 'lecture_hall',
+      department: '—',
+      capacity: 50,
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 739,
+      y: 550,
+      width: 112,
+      height: 158,
+      labelX: 790,
+      labelY: 632,
+    },
+    {
+      id: '1020',
+      roomNumber: '1020',
+      name: 'قاعة محاضرات',
+      type: 'lecture_hall',
+      department: '—',
+      capacity: 50,
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 854,
+      y: 550,
+      width: 90,
+      height: 155,
+      labelX: 900,
+      labelY: 632,
+    },
+    {
+      id: '1030',
+      roomNumber: '1030',
+      name: 'قاعة محاضرات',
+      type: 'lecture_hall',
+      department: '—',
+      capacity: 50,
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 952,
+      y: 540,
+      width: 103,
+      height: 130,
+      labelX: 1003,
+      labelY: 607,
+    },
+    {
+      id: '1031',
+      roomNumber: '1031',
+      name: 'قاعة محاضرات',
+      type: 'lecture_hall',
+      department: '—',
+      capacity: 50,
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 1060,
+      y: 537,
+      width: 98,
+      height: 134,
+      labelX: 1104,
+      labelY: 607,
+    },
+
+    // Left top rooms
+    {
+      id: '1240',
+      roomNumber: '1240',
+      name: 'مكتب',
+      type: 'office',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 190,
+      y: 177,
+      width: 101,
+      height: 139,
+      labelX: 238,
+      labelY: 245,
+    },
+    {
+      id: '1230',
+      roomNumber: '1230',
+      name: 'قاعة محاضرات',
+      type: 'lecture_hall',
+      department: '—',
+      capacity: 50,
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 288,
+      y: 177,
+      width: 91,
+      height: 139,
+      labelX: 333,
+      labelY: 245,
+    },
+    {
+      id: '1220',
+      roomNumber: '1220',
+      name: 'مكتب',
+      type: 'office',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: 'د. مجد شحادة / د. نهى عودة / د. سليمان أبو خرمة',
+      lecturerEmail: 'majdshhadi@najah.edu / nuhaodeh@najah.edu / sabukharmeh@najah.edu',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 379,
+      y: 177,
+      width: 83,
+      height: 139,
+      labelX: 420,
+      labelY: 245,
+    },
+
+    // Left offices vertical
+    {
+      id: '1250',
+      roomNumber: '1250',
+      name: 'مكتب د. سامر ميالة',
+      type: 'office',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: 'د. سامر ميالة',
+      lecturerEmail: 'smayaleh@najah.edu',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 29,
+      y: 359,
+      width: 68,
+      height: 55,
+      labelX: 63,
+      labelY: 383,
+    },
+    {
+      id: '1260',
+      roomNumber: '1260',
+      name: 'مكتب د. امجد القني / د. مريم حموضة',
+      type: 'office',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: 'د. امجد القني / د. مريم حموضة',
+      lecturerEmail: 'a.elqanni@najah.edu / maryam.h@najah.edu',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 29,
+      y: 418,
+      width: 68,
+      height: 55,
+      labelX: 63,
+      labelY: 438,
+    },
+    {
+      id: '1270',
+      roomNumber: '1270',
+      name: 'مكتب د. ماهر خماش',
+      type: 'office',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: 'د. ماهر خماش',
+      lecturerEmail: 'maherkh@najah.edu',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 29,
+      y: 473,
+      width: 68,
+      height: 55,
+      labelX: 63,
+      labelY: 493,
+    },
+    {
+      id: '1280',
+      roomNumber: '1280',
+      name: 'مكتب د. فلاح محمد',
+      type: 'office',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: 'د. فلاح محمد',
+      lecturerEmail: 'fmohammed@najah.edu',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 29,
+      y: 530,
+      width: 68,
+      height: 55,
+      labelX: 63,
+      labelY: 548,
+    },
+    {
+      id: '1290',
+      roomNumber: '1290',
+      name: 'مكتب د. عمر التميمي / د. عماد بريك',
+      type: 'office',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: 'د. عمر التميمي / د. عماد بريك',
+      lecturerEmail: 'o.tamimi@najah.edu / iibrik@najah.edu',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 29,
+      y: 586,
+      width: 68,
+      height: 55,
+      labelX: 63,
+      labelY: 603,
+    },
+    {
+      id: '1300',
+      roomNumber: '1300',
+      name: 'مكتب د. عامر هموز',
+      type: 'office',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: 'د. عامر هموز',
+      lecturerEmail: 'elhamouz@najah.edu',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 29,
+      y: 643,
+      width: 68,
+      height: 55,
+      labelX: 63,
+      labelY: 658,
+    },
+    {
+      id: '1310',
+      roomNumber: '1310',
+      name: 'مكتب د. محمد السيد',
+      type: 'office',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: 'د. محمد السيد',
+      lecturerEmail: 'malsayed@najah.edu',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 29,
+      y: 700,
+      width: 68,
+      height: 100,
+      labelX: 63,
+      labelY: 743,
+    },
+
+    // Inner left offices
+    {
+      id: '1430',
+      roomNumber: '1430',
+      name: 'مكتب د. معين عمر',
+      type: 'office',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: 'د. معين عمر',
+      lecturerEmail: 'moien.omar@najah.edu',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 129,
+      y: 360,
+      width: 88,
+      height: 67,
+      labelX: 173,
+      labelY: 392,
+    },
+    {
+      id: '1440',
+      roomNumber: '1440',
+      name: 'مكتب د. علام موسى',
+      type: 'office',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: 'د. علام موسى',
+      lecturerEmail: 'allam@najah.edu',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 129,
+      y: 429,
+      width: 88,
+      height: 64,
+      labelX: 173,
+      labelY: 464,
+    },
+    {
+      id: '1450',
+      roomNumber: '1450',
+      name: 'مكتب د. جمال خروشة',
+      type: 'office',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: 'د. جمال خروشة',
+      lecturerEmail: 'jkrousheh@najah.edu',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 129,
+      y: 490,
+      width: 88,
+      height: 70,
+      labelX: 173,
+      labelY: 537,
+    },
+    {
+      id: '1460',
+      roomNumber: '1460',
+      name: 'قاعة اجتماعات قسم الهندسة الكيماوية',
+      type: 'meeting_room',
+      department: 'الهندسة الكيميائية',
+      capacity: 20,
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 129,
+      y: 560,
+      width: 90,
+      height: 109,
+      labelX: 173,
+      labelY: 620,
+    },
+
+    // Bottom offices row
+    {
+      id: '1320',
+      roomNumber: '1320',
+      name: 'مكتب د. محمود اسعد',
+      type: 'office',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: 'د. محمود اسعد',
+      lecturerEmail: 'm_assad@najah.edu',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 97,
+      y: 725,
+      width: 50,
+      height: 78,
+      labelX: 127,
+      labelY: 760,
+    },
+    {
+      id: '1330',
+      roomNumber: '1330',
+      name: 'مكتب د. عبد الرحيم ابو صفا',
+      type: 'office',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: 'د. عبد الرحيم ابو صفا',
+      lecturerEmail: 'abusafa@najah.edu',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 147,
+      y: 728,
+      width: 47,
+      height: 78,
+      labelX: 177,
+      labelY: 760,
+    },
+    {
+      id: '1340',
+      roomNumber: '1340',
+      name: 'مكتب د. هيا سماعنة',
+      type: 'office',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: 'د. هيا سماعنة',
+      lecturerEmail: 'hayasam@najah.edu',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 198,
+      y: 729,
+      width: 47,
+      height: 75,
+      labelX: 247,
+      labelY: 760,
+    },
+    {
+      id: '1350',
+      roomNumber: '1350',
+      name: 'مكتب د. سفيان سمارة',
+      type: 'office',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: 'د. سفيان سمارة',
+      lecturerEmail: 'sufyan_sa@najah.edu',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 247,
+      y: 729,
+      width: 47,
+      height: 75,
+      labelX: 306,
+      labelY: 760,
+    },
+    {
+      id: '1360',
+      roomNumber: '1360',
+      name: 'مكتب د. سامر العرندي',
+      type: 'office',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: 'د. سامر العرندي',
+      lecturerEmail: 'arandi@najah.edu',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 290,
+      y: 728,
+      width: 50,
+      height: 78,
+      labelX: 367,
+      labelY: 760,
+    },
+    {
+      id: '1370',
+      roomNumber: '1370',
+      name: 'مكتب د. مهند الجابي',
+      type: 'office',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: 'د. مهند الجابي',
+      lecturerEmail: 'mjabi@najah.edu',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 343,
+      y: 728,
+      width: 50,
+      height: 78,
+      labelX: 429,
+      labelY: 760,
+    },
+    {
+      id: '1380',
+      roomNumber: '1380',
+      name: 'مكتب د. لؤي ملحيس',
+      type: 'office',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: 'د. لؤي ملحيس',
+      lecturerEmail: 'malhis@najah.edu',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 390,
+      y: 728,
+      width: 38,
+      height: 78,
+      labelX: 481,
+      labelY: 760,
+    },
+    {
+      id: '1390',
+      roomNumber: '1390',
+      name: 'مكتب د. علاء الدين المصري',
+      type: 'office',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: 'د. علاء الدين المصري',
+      lecturerEmail: 'masri@najah.edu',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 430,
+      y: 728,
+      width: 42,
+      height: 78,
+      labelX: 524,
+      labelY: 760,
+    },
+
+    // Small bottom-mid offices
+    {
+      id: '1470',
+      roomNumber: '1470',
+      name: 'مكتب د. علا مرداوي / د. اسماء عفيفي',
+      type: 'office',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: 'د. علا مرداوي / د. اسماء عفيفي',
+      lecturerEmail: 'oula.mardawi@najah.edu / asmaafeefy@najah.edu',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 223,
+      y: 603,
+      width: 60,
+      height: 69,
+      labelX: 247,
+      labelY: 644,
+    },
+    {
+      id: '1480',
+      roomNumber: '1480',
+      name: 'مكتب د. امجد ابو حسان / د. ميس شديد',
+      type: 'office',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: 'د. امجد ابو حسان / د. ميس شديد',
+      lecturerEmail: 'amjad.abuhassan@najah.edu / mays.shadeed@najah.edu',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 281,
+      y: 606,
+      width: 50,
+      height: 68,
+      labelX: 303,
+      labelY: 644,
+    },
+    {
+      id: '1490',
+      roomNumber: '1490',
+      name: 'مكتب د. ايسر ياسين',
+      type: 'office',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: 'د. ايسر ياسين',
+      lecturerEmail: 'aysar.yasin@najah.edu',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 328,
+      y: 603,
+      width: 48,
+      height: 68,
+      labelX: 370,
+      labelY: 644,
+    },
+    {
+      id: '1500',
+      roomNumber: '1500',
+      name: 'مكتب د. اشرف عرموش',
+      type: 'office',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: 'د. اشرف عرموش',
+      lecturerEmail: 'armoush@najah.edu',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 380,
+      y: 610,
+      width: 56,
+      height: 57,
+      labelX: 427,
+      labelY: 644,
+    },
+
+    // Middle vertical offices
+    {
+      id: '1420',
+      roomNumber: '1420',
+      name: 'استراحة المدرسين',
+      type: 'professor_lounge',
+      department: '—',
+      capacity: 12,
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 470,
+      y: 530,
+      width: 70,
+      height: 100,
+      labelX: 502,
+      labelY: 585,
+    },
+    {
+      id: '1410',
+      roomNumber: '1410',
+      name: 'مكتب د. رائد القاضي',
+      type: 'office',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: 'د. رائد القاضي',
+      lecturerEmail: 'alqadi@najah.edu',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 469,
+      y: 632,
+      width: 73,
+      height: 72,
+      labelX: 502,
+      labelY: 678,
+    },
+    {
+      id: '1400',
+      roomNumber: '1400',
+      name: 'مكتب د. انس طعمة',
+      type: 'office',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: 'د. انس طعمة',
+      lecturerEmail: 'anas.toma@najah.edu',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 470,
+      y: 705,
+      width: 72,
+      height: 100,
+      labelX: 502,
+      labelY: 760,
+    },
+
+    // Facilities: stairs, elevators, restrooms
+    {
+      id: 'F1-STAIRS-LEFT',
+      roomNumber: 'F1-STAIRS-LEFT',
+      name: 'مخرج طوارئ',
+      type: 'emergency_stairs',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'polygon',
+      points: '52,220 102,196 125,275 190,275 190,310 90,310 54,220',
+      labelX: 15,
+      labelY: 220,
+    },
+    {
+      id: 'F1-STAIRS-RIGHT',
+      roomNumber: 'F1-STAIRS-RIGHT',
+      name: 'مخرج طوارئ',
+      type: 'emergency_stairs',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'polygon',
+      points: '1590,198 1635,220 1595,316 1495,316 1495,277 1558,279',
+      labelX: 1535,
+      labelY: 220,
+    },
+    {
+      id: 'F1-DISABLED-RESTROOM',
+      roomNumber: 'F1-DISABLED-RESTROOM',
+      name: 'دورة مياه لذوي الإعاقة',
+      type: 'bathroom',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      accessible: true,
+      shape: 'rect',
+      x: 1535,
+      y: 315,
+      width: 60,
+      height: 52,
+      labelX: 1562,
+      labelY: 340,
+    },
+    {
+      id: 'F1-ELEVATOR-LEFT',
+      roomNumber: 'F1-ELEVATOR-LEFT',
+      name: 'مصعد',
+      type: 'elevator',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      accessible: true,
+      shape: 'rect',
+      x: 468,
+      y: 279,
+      width: 40,
+      height: 40,
+      labelX: 485,
+      labelY: 297,
+    },
+    {
+      id: 'F1-ELEVATOR-CENTER-LEFT',
+      roomNumber: 'F1-ELEVATOR-CENTER-LEFT',
+      name: 'مصعد',
+      type: 'elevator',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      accessible: true,
+      shape: 'rect',
+      x: 655,
+      y: 360,
+      width: 65,
+      height: 70,
+      labelX: 685,
+      labelY: 400,
+    },
+    {
+      id: 'F1-ELEVATOR-CENTER-RIGHT',
+      roomNumber: 'F1-ELEVATOR-CENTER-RIGHT',
+      name: 'مصعد',
+      type: 'elevator',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      accessible: true,
+      shape: 'rect',
+      x: 965,
+      y: 360,
+      width: 60,
+      height: 70,
+      labelX: 991,
+      labelY: 400,
+    },
+    {
+      id: 'F1-ELEVATOR-RIGHT',
+      roomNumber: 'F1-ELEVATOR-RIGHT',
+      name: 'مصعد',
+      type: 'elevator',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      accessible: true,
+      shape: 'rect',
+      x: 1190,
+      y: 275,
+      width: 40,
+      height: 45,
+      labelX: 1201,
+      labelY: 297,
+    },
+    {
+      id: 'F1-W-RESTROOM-LEFT',
+      roomNumber: 'F1-W-RESTROOM-LEFT',
+      name: 'دورة مياه نساء',
+      type: 'restroom',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      gender: 'Female',
+      shape: 'rect',
+      x: 464,
+      y: 177,
+      width: 46,
+      height: 90,
+      labelX: 496,
+      labelY: 210,
+    },
+    {
+      id: 'F1-M-RESTROOM-LEFT',
+      roomNumber: 'F1-M-RESTROOM-LEFT',
+      name: 'دورة مياه رجال',
+      type: 'restroom',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      gender: 'Male',
+      shape: 'rect',
+      x: 528,
+      y: 239,
+      width: 65,
+      height: 80,
+      labelX: 556,
+      labelY: 278,
+    },
+    {
+      id: 'F1-W-RESTROOM-RIGHT',
+      roomNumber: 'F1-W-RESTROOM-RIGHT',
+      name: 'دورة مياه نساء',
+      type: 'restroom',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      gender: 'Female',
+      shape: 'rect',
+      x: 1185,
+      y: 177,
+      width: 48,
+      height: 90,
+      labelX: 1209,
+      labelY: 210,
+    },
+    {
+      id: 'F1-M-RESTROOM-RIGHT',
+      roomNumber: 'F1-M-RESTROOM-RIGHT',
+      name: 'دورة مياه رجال',
+      type: 'restroom',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      gender: 'Male',
+      shape: 'rect',
+      x: 1093,
+      y: 236,
+      width: 67,
+      height: 82,
+      labelX: 1126,
+      labelY: 278,
+    },
+  ],
+},
+
+3: {
+  label: '3',
+  title: 'Third Floor — الطابق الثالث',
+  image: '/maps/3.png',
+  width: 1533,
+  height: 1026,
+  blocks: [
+    {
+      id: '3150',
+      roomNumber: '3150',
+      name: 'مرسم سنة رابعة معماري',
+      type: 'engineering_drawing_studio',
+      department: 'الهندسة المعمارية',
+      capacity: 45,
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 414,
+      y: 184,
+      width: 190,
+      height: 125,
+      labelX: 506,
+      labelY: 245,
+    },
+    {
+      id: '3140',
+      roomNumber: '3140',
+      name: 'مرسم الهندسة المدنية وهندسة البناء',
+      type: 'engineering_drawing_studio',
+      department: 'الهندسة المدنية وهندسة البناء',
+      capacity: 45,
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 605,
+      y: 170,
+      width: 200,
+      height: 139,
+      labelX: 708,
+      labelY: 245,
+    },
+    {
+      id: '3130',
+      roomNumber: '3130',
+      name: 'مرسم سنة خامسة معماري',
+      type: 'engineering_drawing_studio',
+      department: 'الهندسة المعمارية',
+      capacity: 45,
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 805,
+      y: 184,
+      width: 210,
+      height: 125,
+      labelX: 910,
+      labelY: 245,
+    },
+
+    {
+      id: '3110',
+      roomNumber: '3110',
+      name: 'مختبر حاسوب',
+      type: 'lab',
+      department: '—',
+      capacity: 30,
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 1052,
+      y: 255,
+      width: 160,
+      height: 130,
+      labelX: 1132,
+      labelY: 320,
+    },
+    {
+      id: '3100',
+      roomNumber: '3100',
+      name: 'مختبر حاسوب',
+      type: 'lab',
+      department: '—',
+      capacity: 30,
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 1212,
+      y: 255,
+      width: 125,
+      height: 130,
+      labelX: 1287,
+      labelY: 320,
+    },
+{
+  id: '3080',
+  roomNumber: '3080',
+  name: 'مرسم هندسي',
+  type: 'engineering_drawing_studio',
+  department: '—',
+  capacity: 40,
+  status: 'Available',
+  lecturerName: '—',
+  lecturerEmail: '—',
+  currentCourse: '—',
+  lectureTime: '—',
+  shape: 'rect',
+  x: 1375,
+  y: 430,
+  width: 115,
+  height: 224,
+  labelX: 1392,
+  labelY: 532,
+},
+
+{
+  id: '3070',
+  roomNumber: '3070',
+  name: 'مرسم هندسي',
+  type: 'engineering_drawing_studio',
+  department: '—',
+  capacity: 40,
+  status: 'Available',
+  lecturerName: '—',
+  lecturerEmail: '—',
+  currentCourse: '—',
+  lectureTime: '—',
+  shape: 'polygon',
+  points: '1330,680 1375,680 1375,650 1490,650 1490,804 1330,804',
+  labelX: 1392,
+  labelY: 730,
+},
+{
+  id: '3032',
+  roomNumber: '3032',
+  name: 'مرسم سنة أولى معماري',
+  type: 'engineering_drawing_studio',
+  department: 'الهندسة المعمارية',
+  capacity: 45,
+  status: 'Available',
+  lecturerName: '—',
+  lecturerEmail: '—',
+  currentCourse: '—',
+  lectureTime: '—',
+  shape: 'rect',
+  x: 1122,
+  y: 640,
+  width: 210,
+  height: 169,
+  labelX: 1216,
+  labelY: 730,
+},
+{
+  id: '3060',
+  roomNumber: '3060',
+  name: 'مرسم هندسي',
+  type: 'engineering_drawing_studio',
+  department: '—',
+  capacity: 35,
+  status: 'Available',
+  lecturerName: '—',
+  lecturerEmail: '—',
+  currentCourse: '—',
+  lectureTime: '—',
+  shape: 'polygon',
+  points: '1015,685 1070,685 1070,665 1122,665 1122,804 1015,804',
+  labelX: 1055,
+  labelY: 730,
+},
+
+    {
+      id: '3030',
+      roomNumber: '3030',
+      name: 'مرسم سنة ثالثة معماري',
+      type: 'engineering_drawing_studio',
+      department: 'الهندسة المعمارية',
+      capacity: 45,
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 805,
+      y: 563,
+      width: 205,
+      height: 125,
+      labelX: 899,
+      labelY: 625,
+    },
+    {
+      id: '3020',
+      roomNumber: '3020',
+      name: 'مرسم سنة أولى عام',
+      type: 'lecture_hall',
+      department: '—',
+      capacity: 50,
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 719,
+      y: 592,
+      width: 86,
+      height: 137,
+      labelX: 754,
+      labelY: 660,
+    },
+    {
+      id: '3021',
+      roomNumber: '3021',
+      name: 'قاعة محاضرات',
+      type: 'lecture_hall',
+      department: '—',
+      capacity: 50,
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 612,
+      y: 592,
+      width: 107,
+      height: 137,
+      labelX: 655,
+      labelY: 660,
+    },
+    {
+      id: '3010',
+      roomNumber: '3010',
+      name: 'مرسم سنة ثانية معماري',
+      type: 'engineering_drawing_studio',
+      department: 'الهندسة المعمارية',
+      capacity: 45,
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 418,
+      y: 563,
+      width: 186,
+      height: 130,
+      labelX: 506,
+      labelY: 628,
+    },
+
+    {
+      id: '3160',
+      roomNumber: '3160',
+      name: 'مكتب د. آية هال',
+      type: 'office',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: 'د. آية هال',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 439,
+      y: 486,
+      width: 42,
+      height: 44,
+      labelX: 460,
+      labelY: 513,
+    },
+
+    // Elevators - brown icons
+    {
+      id: 'F3-ELEVATOR-LEFT',
+      roomNumber: 'F3-ELEVATOR-LEFT',
+      name: 'مصعد',
+      type: 'elevator',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      accessible: true,
+      shape: 'rect',
+      x: 370,
+      y: 335,
+      width: 45,
+      height: 50,
+      labelX: 390,
+      labelY: 362,
+    },
+    {
+      id: 'F3-ELEVATOR-CENTER-LEFT',
+      roomNumber: 'F3-ELEVATOR-CENTER-LEFT',
+      name: 'مصعد',
+      type: 'elevator',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      accessible: true,
+      shape: 'rect',
+      x: 552,
+      y: 415,
+      width: 55,
+      height: 52,
+      labelX: 552,
+      labelY: 444,
+    },
+    {
+      id: 'F3-ELEVATOR-CENTER-RIGHT',
+      roomNumber: 'F3-ELEVATOR-CENTER-RIGHT',
+      name: 'مصعد',
+      type: 'elevator',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      accessible: true,
+      shape: 'rect',
+      x: 825,
+      y: 415,
+      width: 50,
+      height: 50,
+      labelX: 845,
+      labelY: 444,
+    },
+    {
+      id: 'F3-ELEVATOR-RIGHT',
+      roomNumber: 'F3-ELEVATOR-RIGHT',
+      name: 'مصعد',
+      type: 'elevator',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      accessible: true,
+      shape: 'rect',
+      x: 1010,
+      y: 335,
+      width: 50,
+      height: 50,
+      labelX: 1035,
+      labelY: 362,
+    },
+
+    // Restrooms
+    {
+      id: 'F3-W-RESTROOM',
+      roomNumber: 'F3-W-RESTROOM',
+      name: 'دورة مياه نساء',
+      type: 'restroom',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      gender: 'Female',
+      shape: 'rect',
+      x: 1015,
+      y: 567,
+      width: 55,
+      height: 59,
+      labelX: 1035,
+      labelY: 596,
+    },
+    {
+      id: 'F3-M-RESTROOM',
+      roomNumber: 'F3-M-RESTROOM',
+      name: 'دورة مياه رجال',
+      type: 'restroom',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      gender: 'Male',
+      shape: 'rect',
+      x: 1015,
+      y: 626,
+      width: 50,
+      height: 55  ,
+      labelX: 1035,
+      labelY: 656,
+    },
+    {
+      id: 'F3-DISABLED-RESTROOM',
+      roomNumber: 'F3-DISABLED-RESTROOM',
+      name: 'دورة مياه لذوي الإعاقة',
+      type: 'bathroom',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      accessible: true,
+      shape: 'rect',
+      x: 1373,
+      y: 382,
+      width: 65,
+      height: 45,
+      labelX: 100,
+      labelY: 399,
+    },
+
+    // Emergency exit / stairs
+    {
+      id: 'F3-STAIRS-RIGHT',
+      roomNumber: 'F3-STAIRS-RIGHT',
+      name: 'مخرج طوارئ',
+      type: 'emergency_stairs',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'polygon',
+      points: '1430,280 1480,300 1440,382 1338,382 1338,345 1397,345',
+      labelX: 1388,
+      labelY: 305,
+    },
+
+    // Optional stair zones, not red emergency, but still useful for navigation
+{
+  id: 'F3-STAIRS-LEFT-INTERNAL',
+  roomNumber: 'F3-STAIRS-LEFT-INTERNAL',
+  name: 'درج داخلي',
+  type: 'stairs',
+  department: '—',
+  capacity: '—',
+  status: 'Available',
+  lecturerName: '—',
+  lecturerEmail: '—',
+  currentCourse: '—',
+  lectureTime: '—',
+  shape: 'polygon',
+  points: '370,500 440,500 440,532 475,532 475,565 370,565 370,565 370,565',
+  labelX: 401,
+  labelY: 555,
+},
+{
+  id: 'F3-STAIRS-RIGHT-INTERNAL',
+  roomNumber: 'F3-STAIRS-RIGHT-INTERNAL',
+  name: 'درج داخلي',
+  type: 'stairs',
+  department: '—',
+  capacity: '—',
+  status: 'Available',
+  lecturerName: '—',
+  lecturerEmail: '—',
+  currentCourse: '—',
+  lectureTime: '—',
+  shape: 'polygon',
+  points: '945,500 1050,500 1050,565 945,565 945,545 945,545 945,515 945,515',
+  labelX: 980,
+  labelY: 552,
+},
+  ],
+},
+
+4: {
+  label: '4',
+  title: 'Fourth Floor — الطابق الرابع',
+  image: '/maps/4.png',
+  width: 1539,
+  height: 1022,
+  blocks: [
+{
+  id: 'F4-STEEL-CENTER',
+  roomNumber: 'F4-STEEL-CENTER',
+  name: 'مركز تصميم المنشآت المعدنية',
+  type: 'lab',
+  department: 'الهندسة المدنية / الإنشائية',
+  capacity: 35,
+  status: 'Available',
+  lecturerName: '—',
+  lecturerEmail: '—',
+  currentCourse: '—',
+  lectureTime: '—',
+  shape: 'polygon',
+  points: '990,229 1200,229 1200,352 1040,352 1040,305 990,305',
+  labelX: 1094,
+  labelY: 288,
+},
+
+    {
+      id: '4100',
+      roomNumber: '4100',
+      name: 'قاعة محاضرات',
+      type: 'lecture_hall',
+      department: '—',
+      capacity: 60,
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 1200,
+      y: 229,
+      width: 112,
+      height: 124,
+      labelX: 1256,
+      labelY: 288,
+    },
+
+    {
+      id: '4080',
+      roomNumber: '4080',
+      name: 'مختبر VLSI / مختبر ديجيتال 2',
+      type: 'lab',
+      department: 'هندسة الحاسوب',
+      capacity: 30,
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 1358,
+      y: 398,
+      width: 133,
+      height: 120,
+      labelX: 1408,
+      labelY: 453,
+    },
+
+    {
+      id: '4070',
+      roomNumber: '4070',
+      name: 'قاعة محاضرات',
+      type: 'lecture_hall',
+      department: '—',
+      capacity: 60,
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 1355,
+      y: 515,
+      width: 135,
+      height: 150,
+      labelX: 1408,
+      labelY: 586,
+    },
+
+    {
+      id: '4060',
+      roomNumber: '4060',
+      name: 'مرسم هندسي',
+      type: 'engineering_drawing_studio',
+      department: '—',
+      capacity: 40,
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 1315,
+      y: 665,
+      width: 175,
+      height: 132,
+      labelX: 1377,
+      labelY: 727,
+    },
+
+    {
+      id: '4050',
+      roomNumber: '4050',
+      name: 'قاعة محاضرات',
+      type: 'lecture_hall',
+      department: '—',
+      capacity: 50,
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 1202,
+      y: 665,
+      width: 106,
+      height: 131,
+      labelX: 1247,
+      labelY: 727,
+    },
+
+    {
+      id: '4040',
+      roomNumber: '4040',
+      name: 'قاعة محاضرات',
+      type: 'lecture_hall',
+      department: '—',
+      capacity: 50,
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 1087,
+      y: 665,
+      width: 112,
+      height: 131,
+      labelX: 1143,
+      labelY: 727,
+    },
+
+    {
+      id: '4030',
+      roomNumber: '4030',
+      name: 'قاعة محاضرات',
+      type: 'lecture_hall',
+      department: '—',
+      capacity: 50,
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 976,
+      y: 665,
+      width: 113,
+      height: 131,
+      labelX: 1030,
+      labelY: 727,
+    },
+
+    {
+      id: '4120',
+      roomNumber: '4120',
+      name: 'مكتب د. بهاء شقور',
+      type: 'office',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: 'د. بهاء شقور',
+      lecturerEmail: 'bahaa.shaqour@najah.edu',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 940,
+      y: 351,
+      width: 60,
+      height: 65,
+      labelX: 965,
+      labelY: 381,
+    },
+
+    {
+      id: '4130',
+      roomNumber: '4130',
+      name: 'المنظمة الدولية لتبادل تدريب الطلبة',
+      type: 'office',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 875,
+      y: 350,
+      width: 65,
+      height: 68,
+      labelX: 906,
+      labelY: 381,
+    },
+
+    {
+      id: 'F4-ELEVATOR-TOP',
+      roomNumber: 'F4-ELEVATOR-TOP',
+      name: 'مصعد',
+      type: 'elevator',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      accessible: true,
+      shape: 'rect',
+      x: 990,
+      y: 306,
+      width: 44,
+      height: 44,
+      labelX: 1016,
+      labelY: 331,
+    },
+
+    {
+      id: 'F4-W-RESTROOM',
+      roomNumber: 'F4-W-RESTROOM',
+      name: 'دورة مياه نساء',
+      type: 'restroom',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      gender: 'Female',
+      shape: 'rect',
+      x: 977,
+      y: 552,
+      width: 60,
+      height: 55,
+      labelX: 1007,
+      labelY: 580,
+    },
+
+    {
+      id: 'F4-M-RESTROOM',
+      roomNumber: 'F4-M-RESTROOM',
+      name: 'دورة مياه رجال',
+      type: 'restroom',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      gender: 'Male',
+      shape: 'rect',
+      x: 977,
+      y: 607,
+      width: 60,
+      height: 58,
+      labelX: 1007,
+      labelY: 636,
+    },
+{
+  id: 'F4-DISABLED-RESTROOM',
+  roomNumber: 'F4-DISABLED-RESTROOM',
+  name: 'دورة مياه لذوي الإعاقة',
+  type: 'bathroom',
+  department: '—',
+  capacity: '—',
+  status: 'Available',
+  lecturerName: '—',
+  lecturerEmail: '—',
+  currentCourse: '—',
+  lectureTime: '—',
+  accessible: true,
+  shape: 'polygon',
+  points: '1355,350 1430,350 1430,396 1355,396',
+  labelX: 1392,
+  labelY: 365,
+},
+
+{
+  id: 'F4-STAIRS-RIGHT',
+  roomNumber: 'F4-STAIRS-RIGHT',
+  name: 'مخرج طوارئ',
+  type: 'emergency_stairs',
+  department: '—',
+  capacity: '—',
+  status: 'Available',
+  lecturerName: '—',
+  lecturerEmail: '—',
+  currentCourse: '—',
+  lectureTime: '—',
+  shape: 'polygon',
+  points: '1316,316 1380,318 1415,249 1461,269 1424,350 1316,350',
+  labelX: 1380,
+  labelY: 286,
+},
+
+    {
+      id: 'F4-STAIRS-INTERNAL',
+      roomNumber: 'F4-STAIRS-INTERNAL',
+      name: 'درج داخلي',
+      type: 'emergency_stairs',
+      department: '—',
+      capacity: '—',
+      status: 'Available',
+      lecturerName: '—',
+      lecturerEmail: '—',
+      currentCourse: '—',
+      lectureTime: '—',
+      shape: 'rect',
+      x: 958,
+      y: 470,
+      width: 72,
+      height: 72,
+      labelX: 999,
+      labelY: 528,
+    },
+  ],
+},
 };
 
-const FLAT_ROOMS = Object.values(ALL_ROOMS).flat();
+const FLOOR_ORDER = ['B2', 'B1', 'G', '1', '3', '4'];
 
-export default function MapPage() {
-  const [activeFloor,  setActiveFloor]  = useState('G');
-  const [selectedRoom, setSelectedRoom] = useState(null);
-  const [showNav,      setShowNav]      = useState(false);
-  const [navFrom,      setNavFrom]      = useState('');
-  const [navTo,        setNavTo]        = useState('');
-  const [navResult,    setNavResult]    = useState(null);
-  const [fromSearch,   setFromSearch]   = useState('');
-  const [toSearch,     setToSearch]     = useState('');
-
-  const filteredFrom = FLAT_ROOMS.filter(r =>
-    r.label.toLowerCase().includes(fromSearch.toLowerCase()) ||
-    r.floorLabel.toLowerCase().includes(fromSearch.toLowerCase())
-  );
-
-  const filteredTo = FLAT_ROOMS.filter(r =>
-    r.label.toLowerCase().includes(toSearch.toLowerCase()) ||
-    r.floorLabel.toLowerCase().includes(toSearch.toLowerCase())
-  );
-
-  const handleNavigate = () => {
-    if (!navFrom || !navTo) return;
-    const from = FLAT_ROOMS.find(r => r.id === navFrom);
-    const to   = FLAT_ROOMS.find(r => r.id === navTo);
-    if (!from || !to) return;
-
-    if (from.floor === to.floor) {
-      // Same floor — switch to that floor
-      setActiveFloor(from.floor);
-      setNavResult({ type:'same', from, to, message:`Navigate on ${from.floorLabel}` });
-    } else {
-      // Different floors — show step by step
-      setNavResult({
-        type:'cross',
-        from, to,
-        steps: [
-          `📍 Start at ${from.label} on ${from.floorLabel}`,
-          `🛗 Go to the elevator or stairs`,
-          `🔢 Go to ${to.floorLabel}`,
-          `📍 Arrive at ${to.label}`,
-        ]
-      });
-      setActiveFloor(from.floor);
-    }
+function getTypeLabel(type) {
+  const map = {
+    lab: 'Lab',
+    lecture_hall: 'Lecture Hall',
+    engineering_drawing_studio: 'Engineering Drawing Studio',
+    office: 'Doctor Office',
+    meeting_room: 'Meeting Room',
+    professor_lounge: 'Professor Lounge',
+    storage: 'Storage',
+    bookstore: 'Bookstore / Printing',
+    amphitheater: 'Amphitheater',
+    entrance: 'Entrance',
+    restroom: 'Restroom',
+    bathroom: 'Accessible Restroom',
+    elevator: 'Elevator',
+    stairs: 'Stairs',
+    emergency_stairs: 'Emergency Stairs',
   };
 
-  const clearNav = () => { setNavFrom(''); setNavTo(''); setNavResult(null); setFromSearch(''); setToSearch(''); };
+  return map[type] || type || 'Room';
+}
 
-  return (
+function matchesNeed(block, need) {
+  if (need === 'all') return true;
+  if (need === 'accessible') return Boolean(block.accessible);
+  return block.type === need;
+}
+
+function getBlockClass(block, selectedBlock, selectedNeed) {
+  const classes = ['map-block-zone'];
+
+  if (selectedBlock?.id === block.id) classes.push('selected');
+  if (selectedNeed !== 'all' && matchesNeed(block, selectedNeed)) {
+    classes.push('need-match');
+  }
+
+  if (block.type === 'lab') classes.push('lab-zone');
+  if (block.type === 'lecture_hall') classes.push('lecture-zone');
+  if (block.type === 'engineering_drawing_studio') classes.push('studio-zone');
+  if (block.type === 'office') classes.push('office-zone');
+  if (block.type === 'meeting_room') classes.push('meeting-zone');
+  if (block.type === 'professor_lounge') classes.push('lounge-zone');
+  if (block.type === 'bookstore') classes.push('bookstore-zone');
+  if (block.type === 'storage') classes.push('storage-zone');
+  if (block.type === 'stairs') classes.push('stairs-normal-zone');
+  if (block.type === 'restroom') classes.push('restroom-zone');
+  if (block.type === 'bathroom') classes.push('accessible-zone');
+  if (block.type === 'elevator') classes.push('elevator-zone');
+  if (block.type === 'amphitheater') classes.push('amphitheater-zone');
+  if (block.type === 'entrance') classes.push('entrance-zone');
+  if (block.type === 'emergency_stairs') classes.push('stairs-zone');
+
+  return classes.join(' ');
+}
+
+export default function MapPage() {
+  const [activeFloor, setActiveFloor] = useState('B2');
+  const [selectedBlock, setSelectedBlock] = useState(null);
+  const [hoveredBlock, setHoveredBlock] = useState(null);
+  const [selectedNeed, setSelectedNeed] = useState('all');
+  const [startNodeId, setStartNodeId] = useState('B2_LEFT_STAIRS');
+  const [accessibleRoute, setAccessibleRoute] = useState(false);
+  const [routePath, setRoutePath] = useState([]);
+  const [routeInstructions, setRouteInstructions] = useState([]);
+  const [routeTarget, setRouteTarget] = useState(null);
+  const [routeError, setRouteError] = useState('');
+  
+const currentFloor = FLOOR_MAPS[activeFloor];
+
+  const visibleBlocks = useMemo(() => {
+    return currentFloor.blocks.filter(block => matchesNeed(block, selectedNeed));
+  }, [currentFloor, selectedNeed]);
+
+  const activeStartNodes = useMemo(() => {
+    if (activeFloor === 'G') return G_START_NODES;
+    if (activeFloor === 'B2') return B2_START_NODES;
+    return [];
+  }, [activeFloor]);
+
+  function clearRoute() {
+    setRoutePath([]);
+    setRouteInstructions([]);
+    setRouteTarget(null);
+    setRouteError('');
+  }
+
+  function handleNavigateToBlock(block) {
+    let result = null;
+
+    if (activeFloor === 'G') {
+      result = findGroundFloorRoute({
+        fromNodeId: startNodeId,
+        toRoomNumber: block.roomNumber,
+        accessibleOnly: accessibleRoute,
+      });
+    } else if (activeFloor === 'B2') {
+      result = findB2Route({
+        fromNodeId: startNodeId,
+        toRoomNumber: block.roomNumber,
+        accessibleOnly: accessibleRoute,
+      });
+    } else {
+      setRoutePath([]);
+      setRouteInstructions([]);
+      setRouteTarget(null);
+      setRouteError('Navigation is available for G and B2 first. Other floors will be added next.');
+      return;
+    }
+
+    if (!result.success) {
+      setRoutePath([]);
+      setRouteInstructions([]);
+      setRouteTarget(null);
+      setRouteError(result.message || 'No route found.');
+      return;
+    }
+
+    setRoutePath(result.path || result.points || []);
+    setRouteInstructions(result.instructions || []);
+    setRouteTarget(block.roomNumber);
+    setRouteError('');
+  }
+
+  function handleSelectBlock(block) {
+    setSelectedBlock(block);
+  }
+
+  function closeCard() {
+    setSelectedBlock(null);
+  }
+
+return (
     <div className="map-page">
-      {/* ── Floor tabs ──────────────────────────────────── */}
       <div className="map-floor-bar">
-        <span className="map-floor-label">Floor:</span>
-        <div className="map-floor-tabs">
-          {FLOORS.map(f => (
-            <button
-              key={f.id}
-              className={`map-floor-btn ${activeFloor===f.id?'active':''} ${!f.available?'disabled':''}`}
-              onClick={() => f.available && setActiveFloor(f.id)}
-              title={f.desc}
-            >
-              {f.label}
-              {!f.available && <span className="map-soon-dot"/>}
-            </button>
-          ))}
-        </div>
-        <span className="map-floor-desc">
-          {FLOORS.find(f => f.id === activeFloor)?.desc}
-        </span>
+        <div className="map-floor-left">
+          <span className="map-floor-label">Floor:</span>
 
+          <div className="map-floor-tabs">
+            {FLOOR_ORDER.map(floorKey => (
+              <button
+                key={floorKey}
+                type="button"
+                className={`map-floor-btn ${activeFloor === floorKey ? 'active' : ''}`}
+onClick={() => {
+  setActiveFloor(floorKey);
+  setSelectedBlock(null);
+  setHoveredBlock(null);
+  setSelectedNeed('all');
+  clearRoute();
+
+  if (floorKey === 'G') {
+    setStartNodeId('G_NORTH_ENTRANCE_NODE');
+  }
+
+  if (floorKey === 'B2') {
+    setStartNodeId('B2_LEFT_STAIRS');
+  }
+}}
+                    >
+                {FLOOR_MAPS[floorKey].label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="map-floor-title">{currentFloor.title}</div>
       </div>
 
-      {/* ── Global Navigation Panel ──────────────────────── */}
-      {showNav && (
-        <div className="map-nav-panel">
-          <div className="map-nav-panel-header">
-            <span>🧭 Campus Navigation</span>
-            <button className="map-nav-close" onClick={() => { setShowNav(false); clearNav(); }}>✕</button>
+      <div className="map-layout">
+       <div className="map-tools-panel">
+        <div className="map-tools-card">
+    <h3>What do you need?</h3>
+    <p>Choose what you want to find on this floor.</p>
+
+    <select
+      className="map-need-select"
+      value={selectedNeed}
+      onChange={event => {
+        setSelectedNeed(event.target.value);
+        setSelectedBlock(null);
+        clearRoute();
+      }}
+    >
+      {REQUEST_OPTIONS.map(option => (
+        <option key={option.value} value={option.value}>
+          {option.label}
+        </option>
+      ))}
+    </select>
+
+    <div className="map-tools-note">
+      {selectedNeed === 'all'
+        ? 'Showing all interactive blocks.'
+        : `Showing ${
+            REQUEST_OPTIONS.find(option => option.value === selectedNeed)?.label
+          }.`}
+    </div>
+
+    <div className="map-tools-count">
+      Found: <strong>{visibleBlocks.length}</strong>
+    </div>
+
+    {['G', 'B2'].includes(activeFloor) && (
+      <div className="route-control-box">
+        <label className="route-control-label">Start from</label>
+
+        <select
+          className="map-need-select"
+          value={startNodeId}
+          onChange={event => {
+            setStartNodeId(event.target.value);
+            clearRoute();
+          }}
+        >
+          {activeStartNodes.map(node => (
+            <option key={node.value} value={node.value}>
+              {node.label}
+            </option>
+          ))}
+        </select>
+
+        <label className="route-check-row">
+          <input
+            type="checkbox"
+            checked={accessibleRoute}
+            onChange={event => {
+              setAccessibleRoute(event.target.checked);
+              clearRoute();
+            }}
+          />
+          <span>Accessible route only</span>
+        </label>
+      </div>
+    )}
+  </div>
+
+  {activeFloor === 'G' && (routePath.length > 0 || routeError) && (
+    <div className="route-result-card">
+      <div className="route-result-header">
+        <h3>Navigation</h3>
+
+        <button type="button" onClick={clearRoute}>
+          Clear
+        </button>
+      </div>
+
+      {routeError ? (
+        <p className="route-error">{routeError}</p>
+      ) : (
+        <>
+          <p className="route-target">
+            Route to <strong>{routeTarget}</strong>
+          </p>
+
+          <ol className="route-instructions">
+            {routeInstructions.map((item, index) => (
+              <li key={`${item}-${index}`}>{item}</li>
+            ))}
+          </ol>
+        </>
+      )}
+    </div>
+  )}
+
+  <AnimatePresence mode="wait">
+    {selectedBlock && (
+      <motion.div
+        key={selectedBlock.id}
+        className="room-popup-card"
+        initial={{ opacity: 0, x: -24, scale: 0.97 }}
+        animate={{ opacity: 1, x: 0, scale: 1 }}
+        exit={{ opacity: 0, x: -18, scale: 0.97 }}
+        transition={{ duration: 0.22, ease: 'easeOut' }}
+      >
+        <div className="room-popup-header">
+          <div>
+            <h2>{selectedBlock.roomNumber}</h2>
+            <p>{selectedBlock.name}</p>
           </div>
 
-          <div className="map-nav-panel-body">
-            {/* FROM */}
-            <div className="form-group">
-              <label className="form-label">📍 From</label>
-              <input className="form-input" placeholder="Search room or floor..."
-                value={fromSearch} onChange={e => { setFromSearch(e.target.value); setNavFrom(''); }}/>
-              {fromSearch && !navFrom && (
-                <div className="map-nav-dropdown">
-                  {filteredFrom.slice(0,8).map(r => (
-                    <div key={r.id} className="map-nav-dropdown-item"
-                      onClick={() => { setNavFrom(r.id); setFromSearch(r.label); }}>
-                      <span className="map-nav-item-room">{r.label}</span>
-                      <span className="map-nav-item-floor">{r.floorLabel}</span>
-                    </div>
-                  ))}
-                  {filteredFrom.length === 0 && (
-                    <div className="map-nav-dropdown-empty">No rooms found</div>
-                  )}
-                </div>
-              )}
-              {navFrom && (
-                <div className="map-nav-selected">
-                  ✅ {FLAT_ROOMS.find(r=>r.id===navFrom)?.floorLabel}
-                </div>
-              )}
-            </div>
+          <button
+            type="button"
+            className="room-popup-close"
+            onClick={closeCard}
+            aria-label="Close room card"
+          >
+            ×
+          </button>
+        </div>
 
-            {/* Swap button */}
-            <div style={{textAlign:'center',margin:'4px 0'}}>
-              <button className="map-nav-swap" onClick={() => {
-                const tmpFrom = navFrom, tmpFromS = fromSearch;
-                setNavFrom(navTo); setFromSearch(toSearch);
-                setNavTo(tmpFrom); setToSearch(tmpFromS);
-              }}>⇅ Swap</button>
-            </div>
+        <div className="room-popup-status">
+          <div className="room-status-left">
+            <span className="room-status-dot" />
 
-            {/* TO */}
-            <div className="form-group">
-              <label className="form-label">🎯 To</label>
-              <input className="form-input" placeholder="Search room or floor..."
-                value={toSearch} onChange={e => { setToSearch(e.target.value); setNavTo(''); }}/>
-              {toSearch && !navTo && (
-                <div className="map-nav-dropdown">
-                  {filteredTo.slice(0,8).map(r => (
-                    <div key={r.id} className="map-nav-dropdown-item"
-                      onClick={() => { setNavTo(r.id); setToSearch(r.label); }}>
-                      <span className="map-nav-item-room">{r.label}</span>
-                      <span className="map-nav-item-floor">{r.floorLabel}</span>
-                    </div>
-                  ))}
-                  {filteredTo.length === 0 && (
-                    <div className="map-nav-dropdown-empty">No rooms found</div>
-                  )}
-                </div>
-              )}
-              {navTo && (
-                <div className="map-nav-selected">
-                  ✅ {FLAT_ROOMS.find(r=>r.id===navTo)?.floorLabel}
-                </div>
-              )}
+            <div>
+              <strong>{selectedBlock.status || 'Available'}</strong>
+              <small>
+                {selectedBlock.type === 'lab'
+                  ? 'Ready for use'
+                  : 'Facility available'}
+              </small>
             </div>
+          </div>
 
-            <div style={{display:'flex',gap:6,marginTop:10}}>
-              <button className="btn btn--primary" style={{flex:1}}
-                onClick={handleNavigate} disabled={!navFrom || !navTo}>
-                🗺️ Find Route
-              </button>
-              <button className="btn btn--secondary" onClick={clearNav}>Clear</button>
-            </div>
+          <span className="room-status-badge">
+            {selectedBlock.status === 'Occupied' ? 'LIVE' : 'OPEN'}
+          </span>
+        </div>
 
-            {/* Result */}
-            {navResult && (
-              <div className={`map-nav-result ${navResult.type==='cross'?'map-nav-result--cross':''}`}>
-                {navResult.type === 'same' ? (
-                  <>
-                    <div className="map-nav-result-title">✅ Route on {navResult.from.floorLabel}</div>
-                    <div style={{fontSize:12,color:'var(--text-muted)',marginTop:4}}>
-                      The map has switched to show this floor. Use the floor map to navigate.
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div className="map-nav-result-title">🔢 Cross-Floor Route</div>
-                    {navResult.steps.map((s,i) => (
-                      <div key={i} className="map-nav-step">
-                        <span className="map-nav-step-num">{i+1}</span>
-                        <span>{s}</span>
-                      </div>
-                    ))}
-                    <div style={{marginTop:8,display:'flex',gap:6}}>
-                      <button className="btn btn--sm btn--secondary"
-                        onClick={() => setActiveFloor(navResult.from.floor)}>
-                        View {navResult.from.floorLabel}
-                      </button>
-                      <button className="btn btn--sm btn--primary"
-                        onClick={() => setActiveFloor(navResult.to.floor)}>
-                        View {navResult.to.floorLabel}
-                      </button>
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
+        <div className="room-popup-empty">
+          <span className="room-popup-empty-icon">✨</span>
+          <h4>No classes scheduled now</h4>
+          <p>
+            {selectedBlock.type === 'lab'
+              ? 'This location is currently free'
+              : 'You can use this facility now'}
+          </p>
+        </div>
+
+        <div className="room-popup-grid">
+          <div className="room-info-box">
+            <span>Type</span>
+            <strong>{getTypeLabel(selectedBlock.type)}</strong>
+          </div>
+
+          <div className="room-info-box">
+            <span>Floor</span>
+            <strong>{currentFloor.title}</strong>
+          </div>
+
+          <div className="room-info-box">
+            <span>Capacity</span>
+            <strong>{selectedBlock.capacity || '—'}</strong>
+          </div>
+
+          <div className="room-info-box">
+            <span>Department</span>
+            <strong>{selectedBlock.department || '—'}</strong>
+          </div>
+
+          <div className="room-info-box">
+            <span>Lecturer</span>
+            <strong>{selectedBlock.lecturerName || '—'}</strong>
+          </div>
+
+          <div className="room-info-box">
+            <span>Email</span>
+            <strong>{selectedBlock.lecturerEmail || '—'}</strong>
+          </div>
+
+          <div className="room-info-box">
+            <span>Current Course</span>
+            <strong>{selectedBlock.currentCourse || '—'}</strong>
+          </div>
+
+          <div className="room-info-box">
+            <span>Lecture Time</span>
+            <strong>{selectedBlock.lectureTime || '—'}</strong>
           </div>
         </div>
-      )}
 
-      {/* ── Map content ──────────────────────────────────── */}
-      <div className="map-content">
-        {activeFloor === 'G' && <GroundFloorMap onRoomSelect={setSelectedRoom}/>}
-        {activeFloor === '4' && <FloorMap4      onRoomSelect={setSelectedRoom}/>}
-        {activeFloor === '3' && <FloorMap3      onRoomSelect={setSelectedRoom}/>}
-        {!['G','4','3'].includes(activeFloor) && (
-          <div className="map-no-floor">
-            <div style={{fontSize:54}}>🗺️</div>
-            <h3>Map Coming Soon</h3>
-            <p>The map for <strong>Floor {activeFloor}</strong> will be available once the AutoCAD design is finalized.</p>
-            <p style={{marginTop:8,fontSize:13,color:'#999'}}>خريطة هذا الطابق ستكون متاحة قريباً</p>
-          </div>
+       {['G', 'B2'].includes(activeFloor) && (
+          <button
+            type="button"
+            className="room-popup-action route-action"
+            onClick={() => handleNavigateToBlock(selectedBlock)}
+          >
+            Navigate to this location
+          </button>
         )}
+
+        <button
+          type="button"
+          className="room-popup-action"
+          onClick={closeCard}
+        >
+          Close
+        </button>
+        </motion.div>
+        )}
+        </AnimatePresence>
+        </div>
+
+        <div className="map-canvas-card">
+          <div className="map-canvas-wrap">
+            <img
+              src={currentFloor.image}
+              alt={currentFloor.title}
+              className="map-floor-image"
+              draggable="false"
+            />
+
+            <svg
+              className="map-svg-overlay"
+              viewBox={`0 0 ${currentFloor.width} ${currentFloor.height}`}
+              preserveAspectRatio="xMidYMid meet"
+            >
+              {['G', 'B2'].includes(activeFloor) && routePath.length > 1 && (
+              <motion.polyline
+                 className="navigation-route"
+                 points={routePath.map(point => `${point.x},${point.y}`).join(' ')}
+                  initial={{ pathLength: 0, opacity: 0 }}
+                    animate={{ pathLength: 1, opacity: 1 }}
+                  transition={{ duration: 0.8, ease: 'easeInOut' }}
+                     />
+                       )}
+              {currentFloor.blocks.map(block => {
+                const hiddenByFilter = !matchesNeed(block, selectedNeed);
+                const isActive =
+                  hoveredBlock?.id === block.id || selectedBlock?.id === block.id;
+
+                return (
+                  <g key={block.id}>
+                    {block.shape === 'polygon' ? (
+                      <polygon
+                        points={block.points}
+                        className={`${getBlockClass(
+                          block,
+                          selectedBlock,
+                          selectedNeed
+                        )} ${hiddenByFilter ? 'dimmed' : ''}`}
+                        onMouseEnter={() => setHoveredBlock(block)}
+                        onMouseLeave={() => setHoveredBlock(null)}
+                        onClick={() => handleSelectBlock(block)}
+                      />
+                    ) : (
+                      <rect
+                        x={block.x}
+                        y={block.y}
+                        width={block.width}
+                        height={block.height}
+                        className={`${getBlockClass(
+                          block,
+                          selectedBlock,
+                          selectedNeed
+                        )} ${hiddenByFilter ? 'dimmed' : ''}`}
+                        onMouseEnter={() => setHoveredBlock(block)}
+                        onMouseLeave={() => setHoveredBlock(null)}
+                        onClick={() => handleSelectBlock(block)}
+                      />
+                    )}
+
+                    {isActive && (
+                      <foreignObject
+                        x={block.labelX - 58}
+                        y={block.labelY - 45}
+                        width="145"
+                        height="40"
+                        className="map-hover-chip-wrap"
+                      >
+                        <div className="map-hover-chip">{block.roomNumber}</div>
+                      </foreignObject>
+                    )}
+                  </g>
+                );
+              })}
+            </svg>
+          </div>
+
+          <div className="map-legend">
+            <span className="legend-item">
+              <i className="legend-dot legend-lab" />
+              Lab
+            </span>
+
+            <span className="legend-item">
+              <i className="legend-dot legend-restroom" />
+              Restroom
+            </span>
+
+            <span className="legend-item">
+              <i className="legend-dot legend-accessible" />
+              Accessible Restroom
+            </span>
+
+            <span className="legend-item">
+              <i className="legend-dot legend-elevator" />
+              Elevator
+            </span>
+
+            <span className="legend-item">
+              <i className="legend-dot legend-stairs" />
+              Emergency Stairs
+            </span>
+          </div>
+        </div>
       </div>
     </div>
   );

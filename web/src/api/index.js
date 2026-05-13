@@ -2,13 +2,14 @@ import api from './axiosInstance';
 
 // ─── roomAPI ─────────────────────────────────────────────────
 export const roomAPI = {
-  getByFloor:         (floor_id, params) => api.get('/rooms', { params: { floor_id, ...params } }),
-  getById:            id                 => api.get(`/rooms/${id}`),
-  create:             data               => api.post('/rooms', data),
-  update:             (id, data)         => api.patch(`/rooms/${id}`, data),
-  delete:             id                 => api.delete(`/rooms/${id}`),
-  bulkCoordinates:    rooms              => api.patch('/rooms/bulk-coordinates', { rooms }),
-  setAdjacency:       data               => api.patch('/rooms/adjacency', data),
+  getByFloor:      (floor_id, params) => api.get('/rooms', { params: { floor_id, ...params } }),
+  getById:         id => api.get(`/rooms/${id}`),
+  getByNumber:     roomNumber => api.get(`/rooms/number/${roomNumber}`),
+  create:          data => api.post('/rooms', data),
+  update:          (id, data) => api.patch(`/rooms/${id}`, data),
+  delete:          id => api.delete(`/rooms/${id}`),
+  bulkCoordinates: rooms => api.patch('/rooms/bulk-coordinates', { rooms }),
+  setAdjacency:    data => api.patch('/rooms/adjacency', data),
 };
 
 // ─── scheduleAPI ─────────────────────────────────────────────
