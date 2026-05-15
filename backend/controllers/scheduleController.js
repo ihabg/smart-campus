@@ -1,4 +1,6 @@
 const { query, withTransaction } = require('../config/db');
+const DASHBOARD_SEMESTER = 'spring';
+const DASHBOARD_ACADEMIC_YEAR = '2025/2026';
 
 // ─── Get student's full schedule ─────────────────────────────
 async function getMySchedule(req, res, next) {
@@ -203,6 +205,8 @@ async function getMySchedule(req, res, next) {
 
 // ─── Get today's schedule ────────────────────────────────────
 
+// ─── Get today's schedule ────────────────────────────────────
+
 async function getTodaySchedule(req, res, next) {
   try {
     const today = new Date().getDay();
@@ -211,6 +215,10 @@ async function getTodaySchedule(req, res, next) {
       `
       SELECT
         s.id AS section_id,
+        s.section_number,
+        s.semester,
+        s.academic_year,
+
         c.code AS course_code,
         c.name AS course_name,
         c.name_ar AS course_name_ar,
@@ -222,6 +230,7 @@ async function getTodaySchedule(req, res, next) {
         sm.note,
 
         CONCAT(i.title, ' ', i.first_name, ' ', i.last_name) AS instructor_name,
+        i.email AS instructor_email,
 
         r.id AS room_id,
         r.room_number,
@@ -236,6 +245,7 @@ async function getTodaySchedule(req, res, next) {
         b.name AS building_name,
 
         e.status AS enrollment_status
+
       FROM enrollments e
       JOIN sections s ON s.id = e.section_id
       JOIN courses c ON c.id = s.course_id
@@ -244,13 +254,22 @@ async function getTodaySchedule(req, res, next) {
       LEFT JOIN rooms r ON r.id = COALESCE(sm.room_id, s.room_id)
       LEFT JOIN floors f ON f.id = r.floor_id
       LEFT JOIN buildings b ON b.id = f.building_id
+
       WHERE e.student_id = $1
         AND e.status = 'enrolled'
         AND s.is_active = TRUE
-        AND sm.day_of_week = $2
+        AND s.semester = $2
+        AND s.academic_year = $3
+        AND sm.day_of_week = $4
+
       ORDER BY sm.start_time, c.code
       `,
-      [req.user.id, today]
+      [
+        req.user.id,
+        DASHBOARD_SEMESTER,
+        DASHBOARD_ACADEMIC_YEAR,
+        today
+      ]
     );
 
     const now = new Date().toTimeString().slice(0, 5);
@@ -266,7 +285,9 @@ async function getTodaySchedule(req, res, next) {
       success: true,
       data: {
         sections,
-        day: today
+        day: today,
+        semester: DASHBOARD_SEMESTER,
+        academic_year: DASHBOARD_ACADEMIC_YEAR
       }
     });
   } catch (error) {

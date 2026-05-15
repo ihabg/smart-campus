@@ -29,6 +29,7 @@ export function LoginPage() {
   const [form,    setForm]    = useState({ email:'', password:'' });
   const [errors,  setErrors]  = useState({});
   const [loading, setLoading] = useState(false);
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
   
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }));
 
@@ -86,15 +87,33 @@ export function LoginPage() {
               </div>
 
               <div className="form-group auth-field">
-                <label className="form-label">Password</label>
-                <div className="auth-input-wrap">
-                  <span className="auth-input-icon"><LockIcon /></span>
-                  <input className={`form-input ${errors.password ? 'form-input--error' : ''}`}
-                    type="password" placeholder="••••••••"
-                    value={form.password} onChange={set('password')} autoComplete="current-password"/>
-                </div>
-                {errors.password && <span className="form-error">{errors.password}</span>}
-              </div>
+  <label className="form-label">Password</label>
+
+  <div className="auth-input-wrap">
+    <span className="auth-input-icon"><LockIcon /></span>
+
+    <input
+      className={`form-input auth-password-input ${errors.password ? 'form-input--error' : ''}`}
+      type={showLoginPassword ? 'text' : 'password'}
+      placeholder="••••••••"
+      value={form.password}
+      onChange={set('password')}
+      autoComplete="current-password"
+    />
+
+    <button
+      type="button"
+      className="auth-password-toggle"
+      onClick={() => setShowLoginPassword(prev => !prev)}
+      aria-label={showLoginPassword ? 'Hide password' : 'Show password'}
+      title={showLoginPassword ? 'Hide password' : 'Show password'}
+    >
+      {showLoginPassword ? <EyeOffIcon /> : <EyeIcon />}
+    </button>
+  </div>
+
+  {errors.password && <span className="form-error">{errors.password}</span>}
+</div>
             </div>
 
             <button type="submit" className="auth-submit-btn" disabled={loading} style={{ marginTop:36 }}>
@@ -126,7 +145,8 @@ export function RegisterPage() {
   });
   const [errors,  setErrors]  = useState({});
   const [loading, setLoading] = useState(false);
-    const [departmentOpen, setDepartmentOpen] = useState(false);
+  const [departmentOpen, setDepartmentOpen] = useState(false);
+  const [showRegisterPassword, setShowRegisterPassword] = useState(false);
 
   const set = k => e => {
     const val = e.target.value;
@@ -231,16 +251,34 @@ export function RegisterPage() {
                 {errors.email && <span className="form-error">{errors.email}</span>}
               </div>
 
-              <div className="form-group auth-field">
-                <label className="form-label form-label--req">Password</label>
-                <div className="auth-input-wrap">
-                  <span className="auth-input-icon"><LockIcon /></span>
-                  <input className={`form-input ${errors.password ? 'form-input--error' : ''}`}
-                    type="password" placeholder="Min 8 chars, 1 uppercase, 1 number"
-                    value={form.password} onChange={set('password')}/>
-                </div>
-                {errors.password && <span className="form-error">{errors.password}</span>}
-              </div>
+             <div className="form-group auth-field">
+  <label className="form-label form-label--req">Password</label>
+
+  <div className="auth-input-wrap">
+    <span className="auth-input-icon"><LockIcon /></span>
+
+    <input
+      className={`form-input auth-password-input ${errors.password ? 'form-input--error' : ''}`}
+      type={showRegisterPassword ? 'text' : 'password'}
+      placeholder="Min 8 chars, 1 uppercase, 1 number"
+      value={form.password}
+      onChange={set('password')}
+      autoComplete="new-password"
+    />
+
+    <button
+      type="button"
+      className="auth-password-toggle"
+      onClick={() => setShowRegisterPassword(prev => !prev)}
+      aria-label={showRegisterPassword ? 'Hide password' : 'Show password'}
+      title={showRegisterPassword ? 'Hide password' : 'Show password'}
+    >
+      {showRegisterPassword ? <EyeOffIcon /> : <EyeIcon />}
+    </button>
+  </div>
+
+  {errors.password && <span className="form-error">{errors.password}</span>}
+</div>
 
               <div className="form-group auth-field department-field">
   <label className="form-label">Department</label>
@@ -352,4 +390,41 @@ function MailIcon() {
 }
 function LockIcon() {
   return <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="3" y="7" width="10" height="8" rx="1"/><path d="M5 7V5a3 3 0 0 1 6 0v2"/></svg>;
+}
+function EyeIcon() {
+  return (
+    <svg
+      width="17"
+      height="17"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
+
+function EyeOffIcon() {
+  return (
+    <svg
+      width="17"
+      height="17"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M3 3l18 18" />
+      <path d="M10.6 10.6A2 2 0 0 0 12 14a2 2 0 0 0 1.4-.6" />
+      <path d="M9.9 4.2A10.5 10.5 0 0 1 12 4c6.5 0 10 8 10 8a18.3 18.3 0 0 1-3.1 4.3" />
+      <path d="M6.1 6.1C3.5 8 2 12 2 12s3.5 8 10 8a10.8 10.8 0 0 0 4.1-.8" />
+    </svg>
+  );
 }

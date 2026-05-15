@@ -363,3 +363,45 @@
   position: relative;
   z-index: 1;
 }
+.auth-input-wrap {
+  position: relative;
+  width: 100%;
+}
+
+.auth-input-wrap .form-input {
+  width: 100%;
+}
+
+.auth-password-input {
+  padding-left: 42px !important;
+  padding-right: 44px !important;
+}
+
+.auth-password-toggle {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border-radius: 8px;
+  padding: 0;
+  z-index: 5;
+}
+
+.auth-password-toggle:hover {
+  background: rgba(15, 42, 91, 0.08);
+  color: var(--navy);
+}
+
+.auth-password-toggle:focus-visible {
+  outline: 2px solid rgba(13, 45, 116, 0.35);
+  outline-offset: 2px;
+}

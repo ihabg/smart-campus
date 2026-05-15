@@ -267,10 +267,17 @@ function toMinutes(time) {
   return hours * 60 + minutes;
 }
 function CourseBlock({ meeting }) {
+  const targetRoomNumber = normalizeScheduleRoomNumber(meeting.room_number);
+
   return (
     <Link
       to="/map"
-      state={{ roomId: meeting.room_id }}
+      state={{
+        roomId: meeting.room_id,
+        roomNumber: meeting.room_number,
+        targetRoomNumber,
+        fromSchedule: true
+      }}
       className={`sc-course ${getCourseColor(meeting.course_code)}`}
     >
       <strong>{meeting.course_code}</strong>
@@ -283,6 +290,17 @@ function CourseBlock({ meeting }) {
   );
 }
 
+function normalizeScheduleRoomNumber(roomNumber) {
+  const raw = String(roomNumber || '').trim();
+
+  if (!raw || raw === '—') return '';
+
+  if (/^\d{6}$/.test(raw)) {
+    return raw.slice(2);
+  }
+
+  return raw;
+}
 function TextSchedule({ sections, totalCredits, openOfficeHours }) {
   const rows = [];
 

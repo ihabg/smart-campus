@@ -558,7 +558,18 @@
   line-height: 1.15;
   overflow: hidden;
 }
-
+.sc-fixed-semester {
+  min-height: 38px;
+  padding: 0 14px;
+  border-radius: 10px;
+  border: 1px solid #cbd8ee;
+  background: #eef5ff;
+  color: #0b2c6f;
+  font-size: 13px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+}
 .prof-block.course {
   background: #f6c4df;
 }

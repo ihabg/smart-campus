@@ -1,4 +1,5 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { G_START_NODES, findGroundFloorRoute } from '../data/groundFloorNavigation';
 import { B2_START_NODES, findB2Route } from '../data/navigation/b2Navigation';
@@ -5833,8 +5834,69 @@ function getBlockClass(block, selectedBlock, selectedNeed) {
 
   return classes.join(' ');
 }
+function normalizeScheduleRoomNumber(roomNumber) {
+  const raw = String(roomNumber || '').trim();
 
+  if (!raw || raw === '—') return '';
+
+  // Examples:
+  // 111181 -> 1181
+  // 114030 -> 4030
+  // 111060 -> 1060
+  if (/^\d{6}$/.test(raw)) {
+    return raw.slice(2);
+  }
+
+  return raw;
+}
+
+function getPossibleMapRoomIds(roomNumber) {
+  const raw = String(roomNumber || '').trim();
+  const normalized = normalizeScheduleRoomNumber(raw);
+
+  const values = new Set();
+
+  if (raw) values.add(raw);
+  if (normalized) values.add(normalized);
+
+  // If room is numeric, also try basement/ground prefixes.
+  // Example: 2100 -> B2100, 0280 -> G0280
+  if (/^\d{4}$/.test(normalized)) {
+    values.add(`B${normalized}`);
+    values.add(`G${normalized}`);
+  }
+
+  return Array.from(values);
+}
+
+function findBlockByScheduleRoom(roomNumber) {
+  const possibleIds = getPossibleMapRoomIds(roomNumber);
+
+  for (const [floorKey, floor] of Object.entries(FLOOR_MAPS)) {
+    const block = floor.blocks.find((item) => {
+      return (
+        possibleIds.includes(String(item.id)) ||
+        possibleIds.includes(String(item.roomNumber))
+      );
+    });
+
+    if (block) {
+      return {
+        floorKey,
+        block
+      };
+    }
+  }
+
+  return null;
+}
 export default function MapPage() {
+  const location = useLocation();
+
+  const scheduleTargetRoom =
+    location.state?.targetRoomNumber ||
+    location.state?.roomNumber ||
+    null;
   const [activeFloor, setActiveFloor] = useState('B2');
   const [selectedBlock, setSelectedBlock] = useState(null);
   const [hoveredBlock, setHoveredBlock] = useState(null);
@@ -5848,7 +5910,45 @@ export default function MapPage() {
   //=======================================
 const currentFloor = FLOOR_MAPS[activeFloor];
 const [firstPoint, setFirstPoint] = useState(null);
+useEffect(() => {
+  if (!scheduleTargetRoom) return;
 
+  const found = findBlockByScheduleRoom(scheduleTargetRoom);
+
+  if (!found) {
+    console.warn('Room not found on map:', scheduleTargetRoom);
+    return;
+  }
+
+  setActiveFloor(found.floorKey);
+  setSelectedNeed('all');
+  setSelectedBlock(found.block);
+  setHoveredBlock(null);
+
+  setRoutePath([]);
+  setRouteInstructions([]);
+  setRouteTarget(null);
+  setRouteError('');
+
+  if (found.floorKey === 'G') {
+    setStartNodeId('G_NORTH_ENTRANCE_NODE');
+  }
+
+  if (found.floorKey === 'B2') {
+    setStartNodeId('B2_LEFT_STAIRS');
+  }
+
+  setTimeout(() => {
+    const mapCard = document.querySelector('.map-canvas-card');
+
+    if (mapCard) {
+      mapCard.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center'
+      });
+    }
+  }, 150);
+}, [scheduleTargetRoom]);
 function handleCoordinatePick(e) {
   const svg = e.currentTarget.ownerSVGElement;
   const point = svg.createSVGPoint();
