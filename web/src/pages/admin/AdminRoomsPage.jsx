@@ -34,15 +34,19 @@ export default function AdminRoomsPage() {
   const [delRoom,    setDelRoom]    = useState(null);
   const [delLoading, setDelLoading] = useState(false);
 
-  // Load buildings + floors for filter
-  const { data: bldData } = useAsync(() => floorAPI.getBuildings(), []);
-  const buildings = bldData?.buildings || [];
+// Load floors for filter.
+// Important: always load floors once. Do NOT depend on floorId,
+// otherwise the dropdown options disappear after selecting a floor.
+const { data: floorsData, loading: floorsLoading } = useAsync(
+  () => floorAPI.getAll({ active_only: 'false' }),
+  []
+);
 
-  const { data: floorsData } = useAsync(
-    () => floorId ? Promise.resolve(null) : floorAPI.getAll({ active_only: 'false' }),
-    [floorId]
-  );
-  const allFloors = floorsData?.floors || [];
+const allFloors = (floorsData?.floors || []).sort((a, b) => {
+  const orderA = Number(a.display_order ?? a.floor_number ?? 0);
+  const orderB = Number(b.display_order ?? b.floor_number ?? 0);
+  return orderA - orderB;
+});
 
   // Load rooms
   const { data, loading, refetch } = useAsync(
@@ -91,7 +95,10 @@ export default function AdminRoomsPage() {
           <p className="page-sub">Manage all rooms across all floors and buildings</p>
         </div>
         <div style={{ display:'flex', gap:8 }}>
-          <Link to="/admin/map-editor" className="btn btn--secondary">Open Map Editor</Link>
+          <Link
+  to={floorId ? `/admin/map-editor?floor=${floorId}` : '/admin/map-editor'}
+  className="btn btn--secondary"
+>Open Map Editor</Link>
           <Button variant="primary" icon={<PlusIcon />} onClick={() => setShowCreate(true)} disabled={!floorId}>
             Add Room
           </Button>
@@ -100,13 +107,19 @@ export default function AdminRoomsPage() {
 
       {/* Filters */}
       <div className="card card--sm" style={{ marginBottom:'var(--space-lg)', display:'flex', gap:10, flexWrap:'wrap', alignItems:'center' }}>
-        <Select
-          value={floorId}
-          onChange={e => { setFloorId(e.target.value); setPage(1); }}
-          options={allFloors.map(f => ({ value: f.id, label: `${f.building_code} ${f.floor_label} — ${f.name}` }))}
-          placeholder="Select floor to view rooms…"
-          style={{ flex:1, minWidth:240 }}
-        />
+      <Select
+  value={floorId}
+  onChange={(e) => {
+    setFloorId(e.target.value);
+    setPage(1);
+  }}
+  options={allFloors.map((floor) => ({
+    value: floor.id,
+    label: `${floor.building_code || 'ENG'} ${floor.floor_label} — ${floor.name || 'Unnamed floor'}`
+  }))}
+  placeholder={floorsLoading ? 'Loading floors...' : 'Select floor to view rooms…'}
+  style={{ flex: 1, minWidth: 240 }}
+/>
         <Select
           value={typeFilter}
           onChange={e => { setTypeFilter(e.target.value); setPage(1); }}

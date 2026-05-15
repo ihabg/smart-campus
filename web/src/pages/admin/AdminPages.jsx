@@ -1,7 +1,12 @@
 import React, { useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { userAPI, roomAPI, scheduleAPI, notificationAPI } from '../../api/index';
-import { floorAPI } from '../../api/floorAPI';
+import {
+  userAPI,
+  roomAPI,
+  scheduleAPI,
+  notificationAPI,
+  floorAPI
+} from '../../api/index';
 import { useAsync, useAllSections } from '../../hooks/index';
 import {
   Table, Pagination, Button, Input, Select, Textarea,
@@ -15,12 +20,22 @@ import {
 import toast from 'react-hot-toast';
 
 // ─── Admin Dashboard ──────────────────────────────────────────
+// ─── Admin Dashboard ──────────────────────────────────────────
 export function AdminDashboard() {
   const { data, loading } = useAsync(() => userAPI.getStats(), []);
 
   if (loading) return <Spinner center />;
 
   const stats = data || {};
+
+  const roomTypes = Array.isArray(stats.rooms?.by_type)
+    ? stats.rooms.by_type
+    : [];
+
+  const activeSections =
+    stats.sections?.spring_active ??
+    stats.sections?.active ??
+    0;
 
   return (
     <div>
@@ -30,43 +45,96 @@ export function AdminDashboard() {
       </div>
 
       <div className="grid-4" style={{ marginBottom: 'var(--space-xl)' }}>
-        <StatCard label="Total Students" value={stats.users?.students || 0} sub="Registered accounts" color="blue" />
-        <StatCard label="Total Rooms"    value={stats.rooms?.total    || 0} sub={`${stats.rooms?.labs || 0} labs, ${stats.rooms?.classrooms || 0} classrooms`} color="green" />
-        <StatCard label="Active Sections"value={stats.sections?.active || 0} sub="This semester" color="gold" />
-        
+        <StatCard
+          label="Total Students"
+          value={stats.users?.students || 0}
+          sub={`${stats.users?.active || 0} active users`}
+          color="blue"
+        />
+
+        <StatCard
+          label="Total Rooms"
+          value={stats.rooms?.total || 0}
+          sub="All active mapped locations"
+          color="green"
+        />
+
+        <StatCard
+          label="Spring Sections"
+          value={activeSections}
+          sub="Spring 2025/2026"
+          color="gold"
+        />
+
+        <StatCard
+          label="Buildings"
+          value={stats.buildings?.total || 0}
+          sub="Active buildings"
+          color="blue"
+        />
       </div>
 
       <div className="grid-2">
         <div className="card">
-          <SectionHeader title="Room Types" />
+          <SectionHeader title="Room Types From Database" />
+
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {[
-              ['Classrooms',    stats.rooms?.classrooms,    'classroom'],
-              ['Lecture Halls', stats.rooms?.lecture_halls, 'lecture'],
-              ['Labs',          stats.rooms?.labs,          'lab'],
-              ['Offices',       stats.rooms?.offices,       'office'],
-            ].map(([label, count, type]) => (
-              <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
-                <span style={{ fontSize: 13 }}>{label}</span>
-                <Badge variant={type}>{count || 0}</Badge>
+            {roomTypes.length === 0 ? (
+              <div
+                style={{
+                  fontSize: 13,
+                  color: 'var(--text-muted)',
+                  padding: '10px 0'
+                }}
+              >
+                No room type statistics found. Restart the backend and make sure
+                <code style={{ marginLeft: 4 }}>rooms.by_type</code> is returned
+                from <code>/api/users/stats</code>.
               </div>
-            ))}
+            ) : (
+              roomTypes.map((item) => (
+                <div
+                  key={item.type}
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '7px 0',
+                    borderBottom: '1px solid var(--border)'
+                  }}
+                >
+                  <span style={{ fontSize: 13 }}>
+                    {roomTypeLabel(item.type)}
+                  </span>
+
+                  <Badge variant={getRoomTypeBadgeVariant(item.type)}>
+                    {Number(item.count) || 0}
+                  </Badge>
+                </div>
+              ))
+            )}
           </div>
         </div>
 
         <div className="card">
           <SectionHeader title="Quick Actions" />
+
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {[
-              { to: '/admin/floors',        label: 'Manage Floors & Upload Maps' },
-              { to: '/admin/rooms',         label: 'Manage Rooms' },
-              { to: '/admin/map-editor',    label: '✏️ Open Map Editor' },
-              { to: '/admin/schedule',      label: 'Manage Schedule' },
+              { to: '/admin/floors', label: 'Manage Floors & Upload Maps' },
+              { to: '/admin/rooms', label: 'Manage Rooms' },
+              { to: '/admin/map-editor', label: '✏️ Open Map Editor' },
+              { to: '/admin/schedule', label: 'Manage Schedule' },
               { to: '/admin/notifications', label: '🔔 Send Notification' },
-              { to: '/admin/users',         label: 'Manage Users' },
-            ].map(a => (
-              <Link key={a.to} to={a.to} className="btn btn--secondary" style={{ justifyContent: 'flex-start' }}>
-                {a.label} →
+              { to: '/admin/users', label: 'Manage Users' }
+            ].map((action) => (
+              <Link
+                key={action.to}
+                to={action.to}
+                className="btn btn--secondary"
+                style={{ justifyContent: 'flex-start' }}
+              >
+                {action.label} →
               </Link>
             ))}
           </div>
@@ -85,6 +153,35 @@ function StatCard({ label, value, sub, color }) {
     </div>
   );
 }
+
+function getRoomTypeBadgeVariant(type) {
+  const map = {
+    classroom: 'classroom',
+    lecture_hall: 'lecture',
+    lab: 'lab',
+    office: 'office',
+    restroom: 'blue',
+    bathroom: 'blue',
+    elevator: 'gray',
+    stairs: 'gray',
+    emergency_exit: 'red',
+    storage: 'amber',
+    meeting_room: 'green',
+    professor_lounge: 'green',
+    amphitheater: 'amber',
+    engineering_drawing_room: 'blue',
+    engineering_drawing_studio: 'blue',
+    corridor: 'gray',
+    atrium: 'gray',
+    library: 'green',
+    cafeteria: 'amber',
+    bookstore: 'amber',
+    other: 'gray'
+  };
+
+  return map[type] || 'gray';
+}
+
 
 // ─── Admin Users ──────────────────────────────────────────────
 export function AdminUsers() {
@@ -202,85 +299,322 @@ export function AdminUsers() {
 // ─── Admin Floors ─────────────────────────────────────────────
 export function AdminFloors() {
   const [showCreate, setShowCreate] = useState(false);
-  const [editFloor,  setEditFloor]  = useState(null);
-  const [delFloor,   setDelFloor]   = useState(null);
-  const [uploading,  setUploading]  = useState(null);
+  const [editFloor, setEditFloor] = useState(null);
+  const [delFloor, setDelFloor] = useState(null);
+  const [uploading, setUploading] = useState(null);
   const [delLoading, setDelLoading] = useState(false);
 
-  const { data: bldData } = useAsync(() => floorAPI.getBuildings(), []);
-  const buildings = bldData?.buildings || [];
+  const { data: bldData, loading: buildingsLoading } = useAsync(
+    () => floorAPI.getBuildings(),
+    []
+  );
 
-  const { data, loading, refetch } = useAsync(() => floorAPI.getAll({ active_only: 'false' }), []);
+const allBuildings = bldData?.buildings || [];
+
+const buildings =
+  allBuildings.filter((building) => building.code === 'ENG').length > 0
+    ? allBuildings.filter((building) => building.code === 'ENG')
+    : allBuildings;
+
+  const { data, loading, refetch } = useAsync(
+    () => floorAPI.getAll({ active_only: 'false' }),
+    []
+  );
+
   const floors = data?.floors || [];
 
-  // Group by building
   const byBuilding = {};
-  floors.forEach(f => {
-    const k = f.building_code;
-    if (!byBuilding[k]) byBuilding[k] = { name: f.building_name, code: f.building_code, id: f.building_id, floors: [] };
-    byBuilding[k].floors.push(f);
+
+  floors.forEach((floor) => {
+    const key = floor.building_code || 'UNKNOWN';
+
+    if (!byBuilding[key]) {
+      byBuilding[key] = {
+        name: floor.building_name,
+        code: floor.building_code,
+        id: floor.building_id,
+        floors: []
+      };
+    }
+
+    byBuilding[key].floors.push(floor);
+  });
+
+  Object.values(byBuilding).forEach((building) => {
+    building.floors.sort((a, b) => {
+      const aOrder = Number(a.display_order ?? a.floor_number ?? 0);
+      const bOrder = Number(b.display_order ?? b.floor_number ?? 0);
+      return aOrder - bOrder;
+    });
   });
 
   const handleUploadMap = async (floorId, file) => {
+    if (!file) return;
+
     setUploading(floorId);
+
     try {
       await floorAPI.uploadMap(floorId, file);
-      toast.success('Map uploaded successfully!');
+      toast.success('Map uploaded successfully');
       refetch();
-    } catch (err) { toast.error(getErrorMessage(err)); }
-    finally { setUploading(null); }
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setUploading(null);
+    }
   };
 
   const handleDelete = async () => {
+    if (!delFloor?.id) return;
+
     setDelLoading(true);
+
     try {
       await floorAPI.delete(delFloor.id);
       toast.success('Floor deleted');
       setDelFloor(null);
       refetch();
-    } catch (err) { toast.error(getErrorMessage(err)); }
-    finally { setDelLoading(false); }
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setDelLoading(false);
+    }
   };
 
   return (
     <div>
-      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+      <div
+        className="page-header"
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'flex-start',
+          gap: 16
+        }}
+      >
         <div>
           <h1 className="page-title">Floors & Maps</h1>
-          <p className="page-sub">Upload and manage floor map images for each building</p>
+          <p className="page-sub">
+            Add floors, upload floor map images, and open the room map editor.
+          </p>
         </div>
-        <Button variant="primary" icon={<PlusIcon />} onClick={() => setShowCreate(true)}>Add Floor</Button>
+
+        <Button
+          variant="primary"
+          icon={<PlusIcon />}
+          onClick={() => setShowCreate(true)}
+          disabled={buildingsLoading || buildings.length === 0}
+        >
+          Add Floor
+        </Button>
       </div>
 
-      {loading ? <Spinner center /> : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-xl)' }}>
-          {Object.values(byBuilding).map(bld => (
-            <div key={bld.code} className="card card--no-pad">
-              <div style={{ padding: '12px 16px', background: 'var(--bg)', borderBottom: '1px solid var(--border)', fontWeight: 600, fontSize: 15 }}>
-                Block {bld.code} — {bld.name}
+      {loading ? (
+        <Spinner center />
+      ) : floors.length === 0 ? (
+        <div className="card">
+          <div className="empty-state">
+            <div className="empty-state__icon">🏢</div>
+            <p className="empty-state__title">No floors found</p>
+            <p className="empty-state__sub">
+              Create the first floor for your building.
+            </p>
+          </div>
+        </div>
+      ) : (
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 'var(--space-xl)'
+          }}
+        >
+          {Object.values(byBuilding).map((building) => (
+            <div key={building.code} className="card card--no-pad">
+              <div
+                style={{
+                  padding: '12px 16px',
+                  background: 'var(--bg)',
+                  borderBottom: '1px solid var(--border)',
+                  fontWeight: 700,
+                  fontSize: 15,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 12
+                }}
+              >
+                <span>
+                  Block {building.code} — {building.name}
+                </span>
+
+                <Badge variant="gray">
+                  {building.floors.length} floor
+                  {building.floors.length !== 1 ? 's' : ''}
+                </Badge>
               </div>
-              {bld.floors.map(floor => (
-                <div key={floor.id} style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '14px 16px', borderBottom: '1px solid var(--border)' }}>
-                  {/* Map thumbnail */}
-                  <div style={{ width: 100, height: 60, border: '1px solid var(--border)', borderRadius: 4, overflow: 'hidden', flexShrink: 0, background: 'var(--bg)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    {floor.map_image_url
-                      ? <img src={floor.map_image_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                      : <span style={{ fontSize: 11, color: 'var(--text-faint)' }}>No map</span>
-                    }
+
+              {building.floors.map((floor) => (
+                <div
+                  key={floor.id}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 16,
+                    padding: '14px 16px',
+                    borderBottom: '1px solid var(--border)'
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 112,
+                      height: 68,
+                      border: '1px solid var(--border)',
+                      borderRadius: 8,
+                      overflow: 'hidden',
+                      flexShrink: 0,
+                      background: 'var(--bg)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}
+                  >
+                    {floor.map_image_url ? (
+                      <img
+                        src={floor.map_image_url}
+                        alt={`${floor.floor_label} map`}
+                        style={{
+                          width: '100%',
+                          height: '100%',
+                          objectFit: 'cover'
+                        }}
+                      />
+                    ) : (
+                      <span
+                        style={{
+                          fontSize: 11,
+                          color: 'var(--text-faint)'
+                        }}
+                      >
+                        No map
+                      </span>
+                    )}
                   </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 600, fontSize: 14 }}>{floor.floor_label} — {floor.name}</div>
-                    <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Floor {floor.floor_number}</div>
-                    {floor.map_image_url && <div style={{ fontSize: 11, color: 'var(--green)', marginTop: 2 }}>✓ Map uploaded</div>}
+
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div
+                      style={{
+                        fontWeight: 700,
+                        fontSize: 14,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        flexWrap: 'wrap'
+                      }}
+                    >
+                      <span>
+                        {floor.floor_label} — {floor.name || 'Unnamed floor'}
+                      </span>
+
+                      <Badge variant={floor.is_active ? 'green' : 'gray'}>
+                        {floor.is_active ? 'Active' : 'Inactive'}
+                      </Badge>
+                    </div>
+
+                    <div
+                      style={{
+                        fontSize: 12,
+                        color: 'var(--text-muted)',
+                        marginTop: 3
+                      }}
+                    >
+                      Floor number: {floor.floor_number} · Display order:{' '}
+                      {floor.display_order ?? '—'}
+                    </div>
+
+                    <div
+                      style={{
+                        fontSize: 11,
+                        color: floor.map_image_url
+                          ? 'var(--green)'
+                          : 'var(--text-faint)',
+                        marginTop: 3
+                      }}
+                    >
+                      {floor.map_image_url
+                        ? `✓ Map uploaded: ${floor.map_image_url}`
+                        : 'No map image uploaded'}
+                    </div>
+
+                    {(floor.map_width || floor.map_height) && (
+                      <div
+                        style={{
+                          fontSize: 11,
+                          color: 'var(--text-muted)',
+                          marginTop: 2
+                        }}
+                      >
+                        Size: {floor.map_width || '—'} ×{' '}
+                        {floor.map_height || '—'}
+                      </div>
+                    )}
                   </div>
-                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                    <label className="btn btn--secondary btn--sm" style={{ cursor: 'pointer' }}>
-                      {uploading === floor.id ? <Spinner size="sm" /> : '⬆ Upload Map'}
-                      <input type="file" accept="image/*,.svg" style={{ display: 'none' }}
-                        onChange={e => { if (e.target.files[0]) handleUploadMap(floor.id, e.target.files[0]); }} />
+
+                  <div
+                    style={{
+                      display: 'flex',
+                      gap: 6,
+                      alignItems: 'center',
+                      flexWrap: 'wrap',
+                      justifyContent: 'flex-end'
+                    }}
+                  >
+                    <label
+                      className="btn btn--secondary btn--sm"
+                      style={{ cursor: 'pointer' }}
+                    >
+                      {uploading === floor.id ? (
+                        <Spinner size="sm" />
+                      ) : (
+                        '⬆ Upload Map'
+                      )}
+
+                      <input
+                        type="file"
+                        accept="image/*,.svg"
+                        style={{ display: 'none' }}
+                        onChange={(event) => {
+                          const file = event.target.files?.[0];
+                          if (file) handleUploadMap(floor.id, file);
+                          event.target.value = '';
+                        }}
+                      />
                     </label>
-                    <Link to={`/admin/map-editor?floor=${floor.id}`} className="btn btn--secondary btn--sm">Edit Rooms</Link>
-                    <button className="btn btn--ghost btn--sm btn--icon" onClick={() => setDelFloor(floor)} style={{ color: 'var(--red)' }}><TrashIcon /></button>
+
+                    <button
+                      type="button"
+                      className="btn btn--secondary btn--sm"
+                      onClick={() => setEditFloor(floor)}
+                    >
+                      Edit Floor
+                    </button>
+
+                    <Link
+                      to={`/admin/map-editor?floor=${floor.id}`}
+                      className="btn btn--secondary btn--sm"
+                    >
+                      Edit Rooms
+                    </Link>
+
+                    <button
+                      type="button"
+                      className="btn btn--ghost btn--sm btn--icon"
+                      onClick={() => setDelFloor(floor)}
+                      style={{ color: 'var(--red)' }}
+                      title="Delete floor"
+                    >
+                      <TrashIcon />
+                    </button>
                   </div>
                 </div>
               ))}
@@ -289,56 +623,323 @@ export function AdminFloors() {
         </div>
       )}
 
-      {/* Create floor modal */}
-      <CreateFloorModal
+      <FloorFormModal
         open={showCreate}
         onClose={() => setShowCreate(false)}
         buildings={buildings}
-        onCreated={() => { setShowCreate(false); refetch(); }}
+        onSaved={() => {
+          setShowCreate(false);
+          refetch();
+        }}
+        title="Add New Floor"
+      />
+
+      <FloorFormModal
+        open={!!editFloor}
+        onClose={() => setEditFloor(null)}
+        buildings={buildings}
+        existingFloor={editFloor}
+        onSaved={() => {
+          setEditFloor(null);
+          refetch();
+        }}
+        title="Edit Floor"
       />
 
       <ConfirmDialog
-        open={!!delFloor} onClose={() => setDelFloor(null)}
-        onConfirm={handleDelete} loading={delLoading} danger
+        open={!!delFloor}
+        onClose={() => setDelFloor(null)}
+        onConfirm={handleDelete}
+        loading={delLoading}
+        danger
         title="Delete Floor"
-        message={`Delete floor "${delFloor?.floor_label}"? All rooms on this floor will also be deleted.`}
+        message={`Delete floor "${delFloor?.floor_label}"? All rooms on this floor may also be deleted or become unavailable depending on backend constraints.`}
       />
     </div>
   );
 }
 
-function CreateFloorModal({ open, onClose, buildings, onCreated }) {
-  const [form, setForm] = useState({ building_id: '', floor_number: '', floor_label: '', name: '' });
-  const [loading, setLoading] = useState(false);
-  const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }));
+function FloorFormModal({
+  open,
+  onClose,
+  buildings,
+  existingFloor,
+  onSaved,
+  title
+}) {
+  const isEdit = Boolean(existingFloor?.id);
 
-  const handleCreate = async () => {
+  const [form, setForm] = useState({
+    building_id: '',
+    floor_number: '',
+    floor_label: '',
+    name: '',
+    map_image_url: '',
+    map_width: '',
+    map_height: '',
+    display_order: '',
+    is_active: true
+  });
+
+  const [loading, setLoading] = useState(false);
+  const [errors, setErrors] = useState({});
+
+  React.useEffect(() => {
+    if (!open) return;
+
+    if (existingFloor) {
+      setForm({
+        building_id: existingFloor.building_id || '',
+        floor_number:
+          existingFloor.floor_number !== undefined &&
+          existingFloor.floor_number !== null
+            ? String(existingFloor.floor_number)
+            : '',
+        floor_label: existingFloor.floor_label || '',
+        name: existingFloor.name || '',
+        map_image_url: existingFloor.map_image_url || '',
+        map_width:
+          existingFloor.map_width !== undefined &&
+          existingFloor.map_width !== null
+            ? String(existingFloor.map_width)
+            : '',
+        map_height:
+          existingFloor.map_height !== undefined &&
+          existingFloor.map_height !== null
+            ? String(existingFloor.map_height)
+            : '',
+        display_order:
+          existingFloor.display_order !== undefined &&
+          existingFloor.display_order !== null
+            ? String(existingFloor.display_order)
+            : '',
+        is_active: existingFloor.is_active !== false
+      });
+    } else {
+      setForm({
+        building_id: buildings[0]?.id || '',
+        floor_number: '',
+        floor_label: '',
+        name: '',
+        map_image_url: '',
+        map_width: '',
+        map_height: '',
+        display_order: '',
+        is_active: true
+      });
+    }
+
+    setErrors({});
+  }, [open, existingFloor, buildings]);
+
+  const set = (key) => (event) => {
+    const value =
+      event.target.type === 'checkbox'
+        ? event.target.checked
+        : event.target.value;
+
+    setForm((current) => ({
+      ...current,
+      [key]: value
+    }));
+  };
+
+  const validate = () => {
+    const nextErrors = {};
+
+    if (!form.building_id) {
+      nextErrors.building_id = 'Building is required';
+    }
+
+    if (form.floor_number === '') {
+      nextErrors.floor_number = 'Floor number is required';
+    }
+
+    if (!form.floor_label.trim()) {
+      nextErrors.floor_label = 'Floor label is required';
+    }
+
+    if (
+      form.map_width !== '' &&
+      (!Number.isFinite(Number(form.map_width)) || Number(form.map_width) <= 0)
+    ) {
+      nextErrors.map_width = 'Map width must be a positive number';
+    }
+
+    if (
+      form.map_height !== '' &&
+      (!Number.isFinite(Number(form.map_height)) ||
+        Number(form.map_height) <= 0)
+    ) {
+      nextErrors.map_height = 'Map height must be a positive number';
+    }
+
+    setErrors(nextErrors);
+
+    return Object.keys(nextErrors).length === 0;
+  };
+
+  const buildPayload = () => {
+    return {
+      building_id: form.building_id,
+      floor_number: Number(form.floor_number),
+      floor_label: form.floor_label.trim(),
+      name: form.name.trim() || null,
+      map_image_url: form.map_image_url.trim() || null,
+      map_width: form.map_width ? Number(form.map_width) : null,
+      map_height: form.map_height ? Number(form.map_height) : null,
+      display_order:
+        form.display_order !== ''
+          ? Number(form.display_order)
+          : Number(form.floor_number),
+      is_active: form.is_active
+    };
+  };
+
+  const handleSave = async () => {
+    if (!validate()) return;
+
     setLoading(true);
+
     try {
-      await floorAPI.create({ ...form, floor_number: parseInt(form.floor_number) });
-      toast.success('Floor created');
-      onCreated();
-    } catch (err) { toast.error(getErrorMessage(err)); }
-    finally { setLoading(false); }
+      const payload = buildPayload();
+
+      if (isEdit) {
+        await floorAPI.update(existingFloor.id, payload);
+        toast.success('Floor updated');
+      } else {
+        await floorAPI.create(payload);
+        toast.success('Floor created');
+      }
+
+      onSaved();
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="Add New Floor"
-      footer={<><Button variant="secondary" onClick={onClose}>Cancel</Button><Button variant="primary" loading={loading} onClick={handleCreate}>Create</Button></>}
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={title}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+
+          <Button variant="primary" loading={loading} onClick={handleSave}>
+            {isEdit ? 'Save Changes' : 'Create Floor'}
+          </Button>
+        </>
+      }
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <Select label="Building" required value={form.building_id} onChange={set('building_id')}
-          options={buildings.map(b => ({ value: b.id, label: `Block ${b.code} — ${b.name}` }))}
-          placeholder="Select building" />
+        <Select
+          label="Building"
+          required
+          value={form.building_id}
+          onChange={set('building_id')}
+          disabled={isEdit}
+          options={buildings.map((building) => ({
+            value: building.id,
+            label: `Block ${building.code} — ${building.name}`
+          }))}
+          placeholder="Select building"
+        />
+
+        {errors.building_id && (
+          <span className="form-error">{errors.building_id}</span>
+        )}
+
         <div className="form-row">
-          <Input label="Floor Number" type="number" required value={form.floor_number} onChange={set('floor_number')} placeholder="7" />
-          <Input label="Floor Label"  required value={form.floor_label} onChange={set('floor_label')} placeholder="F7" />
+          <Input
+            label="Floor Number"
+            type="number"
+            required
+            value={form.floor_number}
+            onChange={set('floor_number')}
+            placeholder="-2, -1, 0, 1, 2..."
+            error={errors.floor_number}
+          />
+
+          <Input
+            label="Floor Label"
+            required
+            value={form.floor_label}
+            onChange={set('floor_label')}
+            placeholder="B2, B1, G, 1, 2..."
+            error={errors.floor_label}
+          />
         </div>
-        <Input label="Floor Name" value={form.name} onChange={set('name')} placeholder="Engineering Floor 7" />
+
+        <Input
+          label="Floor Name"
+          value={form.name}
+          onChange={set('name')}
+          placeholder="Second Floor — الطابق الثاني"
+        />
+
+        <Input
+          label="Map Image URL"
+          value={form.map_image_url}
+          onChange={set('map_image_url')}
+          placeholder="/maps/2.png or /uploads/maps/file.png"
+        />
+
+        <div className="form-row">
+          <Input
+            label="Map Width"
+            type="number"
+            value={form.map_width}
+            onChange={set('map_width')}
+            placeholder="1533"
+            error={errors.map_width}
+          />
+
+          <Input
+            label="Map Height"
+            type="number"
+            value={form.map_height}
+            onChange={set('map_height')}
+            placeholder="1026"
+            error={errors.map_height}
+          />
+        </div>
+
+        <Input
+          label="Display Order"
+          type="number"
+          value={form.display_order}
+          onChange={set('display_order')}
+          placeholder="0"
+        />
+
+        <label
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            fontSize: 13,
+            color: 'var(--text)'
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={form.is_active}
+            onChange={set('is_active')}
+          />
+          Active floor
+        </label>
       </div>
     </Modal>
   );
 }
+
+
 
 // ─── Admin Schedule ───────────────────────────────────────────
 export function AdminSchedule() {

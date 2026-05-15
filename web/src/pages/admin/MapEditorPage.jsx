@@ -1,16 +1,37 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { floorAPI } from '../../api/floorAPI';
-import { mapEditorAPI, roomAPI } from '../../api/index';
+import { floorAPI, mapEditorAPI, roomAPI } from '../../api/index';
 import { Button, Input, Select, Modal, ConfirmDialog, Spinner } from '../../components/ui/index';
 import { getErrorMessage, roomTypeLabel } from '../../utils/helpers';
 import toast from 'react-hot-toast';
 import './MapEditor.css';
 
 const ROOM_TYPES = [
-  'classroom','lecture_hall','lab','office','corridor',
-  'restroom','elevator','stairs','storage','atrium','meeting_room','other',
+  'classroom',
+  'lecture_hall',
+  'lab',
+  'office',
+  'corridor',
+  'restroom',
+  'bathroom',
+  'elevator',
+  'stairs',
+  'storage',
+  'atrium',
+  'meeting_room',
+  'library',
+  'cafeteria',
+  'amphitheater',
+  'professor_lounge',
+  'emergency_exit',
+  'bookstore',
+  'engineering_drawing_room',
+  'engineering_drawing_studio',
+  'other',
 ];
+
+const FLOOR_ORDER = ['B2', 'B1', 'G', '1', '2', '3', '4'];
+const MAIN_BUILDING_CODE = 'ENG';
 
 const TYPE_COLORS = {
   classroom:    '#e8e3fa',
@@ -37,9 +58,10 @@ export default function MapEditorPage() {
   const initialFloorId  = searchParams.get('floor');
 
   // Floor / building state
-  const [buildings,      setBuildings]      = useState([]);
-  const [floors,         setFloors]         = useState([]);
-  const [selectedFloor,  setSelectedFloor]  = useState(initialFloorId || '');
+const [buildings,         setBuildings]         = useState([]);
+const [floors,            setFloors]            = useState([]);
+const [selectedBuilding,  setSelectedBuilding]  = useState('');
+const [selectedFloor,     setSelectedFloor]     = useState(initialFloorId || '');
   const [floorData,      setFloorData]      = useState(null);
   const [loading,        setLoading]        = useState(false);
 
@@ -69,46 +91,148 @@ export default function MapEditorPage() {
   const [transform, setTransform] = useState({ x: 0, y: 0, scale: 1 });
   const panDrag     = useRef({ active: false, sx: 0, sy: 0, tx: 0, ty: 0 });
 
-  // Load buildings
-  useEffect(() => {
-    floorAPI.getBuildings().then(({ data }) => {
-      setBuildings(data.data.buildings);
-    });
-  }, []);
+function sortFloors(list) {
+  return [...list].sort((a, b) => {
+    const ai = FLOOR_ORDER.indexOf(String(a.floor_label));
+    const bi = FLOOR_ORDER.indexOf(String(b.floor_label));
 
-  // Load floors when building changes
-  const loadFloors = async (buildingId) => {
-    const { data } = await floorAPI.getAll({ building_id: buildingId });
-    setFloors(data.data.floors);
-  };
+    if (ai !== -1 && bi !== -1) return ai - bi;
+    if (ai !== -1) return -1;
+    if (bi !== -1) return 1;
 
-  // Load floor editor data
-  const loadFloor = useCallback(async (floorId) => {
-    if (!floorId) return;
-    setSelectedFloor(floorId);
-    setLoading(true);
-    try {
-      const { data } = await mapEditorAPI.getFloor(floorId);
-      setFloorData(data.data.floor);
-      setRooms(data.data.rooms.map(r => ({
-        ...r,
-        coord_x:      parseFloat(r.coord_x) || 10,
-        coord_y:      parseFloat(r.coord_y) || 10,
-        coord_width:  parseFloat(r.coord_width) || 8,
-        coord_height: parseFloat(r.coord_height) || 6,
-      })));
-      setAdjacency(data.data.adjacency || []);
+    return Number(a.display_order ?? a.floor_number ?? 0) -
+           Number(b.display_order ?? b.floor_number ?? 0);
+  });
+}
+
+const loadFloors = async (buildingId) => {
+  if (!buildingId) {
+    setFloors([]);
+    return [];
+  }
+
+  const { data } = await floorAPI.getAll({
+    active_only: 'false',
+    building_id: buildingId
+  });
+
+  const rawFloors = data.data?.floors || [];
+
+  // This extra filter protects you if backend ignores building_id.
+  const filteredFloors = rawFloors.filter((floor) => {
+    return !buildingId || floor.building_id === buildingId;
+  });
+
+  const sortedFloors = sortFloors(filteredFloors);
+
+  setFloors(sortedFloors);
+
+  return sortedFloors;
+};
+
+const loadFloor = useCallback(async (floorId) => {
+  if (!floorId) return;
+
+  setSelectedFloor(floorId);
+  setLoading(true);
+
+  try {
+    const { data } = await mapEditorAPI.getFloor(floorId);
+    const floor = data.data.floor;
+
+    setFloorData(floor);
+
+    if (floor?.building_id) {
+      setSelectedBuilding(floor.building_id);
+    }
+
+    setRooms(
+      (data.data.rooms || []).map((room) => ({
+        ...room,
+        coord_x: parseFloat(room.coord_x) || 10,
+        coord_y: parseFloat(room.coord_y) || 10,
+        coord_width: parseFloat(room.coord_width) || 8,
+        coord_height: parseFloat(room.coord_height) || 6,
+      }))
+    );
+
+    setAdjacency(data.data.adjacency || []);
+    setSelectedRoomId(null);
+    setConnecting(null);
+
+    setTimeout(() => {
       fitCanvas();
+    }, 80);
+  } catch (err) {
+    toast.error(getErrorMessage(err));
+  } finally {
+    setLoading(false);
+  }
+}, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+useEffect(() => {
+  async function initEditor() {
+    try {
+      const { data } = await floorAPI.getBuildings();
+
+      const allBuildings = data.data?.buildings || [];
+
+      // Keep Engineering Building first, and hide other blocks if ENG exists.
+      const engBuildings = allBuildings.filter(
+        (building) => building.code === MAIN_BUILDING_CODE
+      );
+
+      const visibleBuildings =
+        engBuildings.length > 0 ? engBuildings : allBuildings;
+
+      setBuildings(visibleBuildings);
+
+      const defaultBuilding = visibleBuildings[0];
+
+      if (!defaultBuilding) return;
+
+      setSelectedBuilding(defaultBuilding.id);
+
+      const loadedFloors = await loadFloors(defaultBuilding.id);
+
+      if (initialFloorId) {
+        await loadFloor(initialFloorId);
+        return;
+      }
+
+      const defaultFloor =
+        loadedFloors.find((floor) => floor.floor_label === 'G') ||
+        loadedFloors[0];
+
+      if (defaultFloor) {
+        await loadFloor(defaultFloor.id);
+      }
     } catch (err) {
       toast.error(getErrorMessage(err));
-    } finally {
-      setLoading(false);
     }
-  }, []); // eslint-disable-line
+  }
 
-  useEffect(() => {
-    if (initialFloorId) loadFloor(initialFloorId);
-  }, [initialFloorId, loadFloor]);
+  initEditor();
+}, [initialFloorId, loadFloor]); // eslint-disable-line react-hooks/exhaustive-deps
+
+async function handleBuildingChange(buildingId) {
+  setSelectedBuilding(buildingId);
+  setSelectedFloor('');
+  setFloorData(null);
+  setRooms([]);
+  setAdjacency([]);
+  setSelectedRoomId(null);
+
+  const loadedFloors = await loadFloors(buildingId);
+
+  const defaultFloor =
+    loadedFloors.find((floor) => floor.floor_label === 'G') ||
+    loadedFloors[0];
+
+  if (defaultFloor) {
+    await loadFloor(defaultFloor.id);
+  }
+}
 
   const fitCanvas = () => {
     if (!canvasRef.current) return;
@@ -365,14 +489,34 @@ export default function MapEditorPage() {
       {/* Top toolbar */}
       <div className="mec-toolbar">
         <div className="mec-toolbar__left">
-          <select className="form-input mec-select" value="" onChange={e => loadFloors(e.target.value)}>
-            <option value="">Select building…</option>
-            {buildings.map(b => <option key={b.id} value={b.id}>Block {b.code} — {b.name}</option>)}
-          </select>
-          <select className="form-input mec-select" value={selectedFloor} onChange={e => loadFloor(e.target.value)}>
-            <option value="">Select floor…</option>
-            {floors.map(f => <option key={f.id} value={f.id}>{f.floor_label} — {f.name}</option>)}
-          </select>
+<select
+  className="form-input mec-select"
+  value={selectedBuilding}
+  onChange={(e) => handleBuildingChange(e.target.value)}
+>
+  <option value="">Select building…</option>
+
+  {buildings.map((building) => (
+    <option key={building.id} value={building.id}>
+      Block {building.code} — {building.name}
+    </option>
+  ))}
+</select>
+
+<select
+  className="form-input mec-select"
+  value={selectedFloor}
+  onChange={(e) => loadFloor(e.target.value)}
+  disabled={!selectedBuilding}
+>
+  <option value="">Select floor…</option>
+
+  {floors.map((floor) => (
+    <option key={floor.id} value={floor.id}>
+      {floor.floor_label} — {floor.name}
+    </option>
+  ))}
+</select>
         </div>
 
         <div className="mec-toolbar__modes">

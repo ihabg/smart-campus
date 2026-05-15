@@ -18,6 +18,8 @@ import {
   AdminDashboard, AdminUsers, AdminFloors,
   AdminSchedule, AdminNotifications,
 } from './pages/admin/AdminPages';
+import AdminRoomsPage from './pages/admin/AdminRoomsPage';
+import MapEditorPage from './pages/admin/MapEditorPage';
 import ProfessorDashboard from './pages/ProfessorDashboard';
 import './styles/variables.css';
 import './styles/global.css';
@@ -90,14 +92,16 @@ export default function App() {
           </Route>
 
           {/* Admin only */}
-          <Route element={<RequireAuth><RequireAdmin><AppShell /></RequireAdmin></RequireAuth>}>
-            <Route path="/admin"               element={<AdminDashboard />} />
-            <Route path="/admin/users"         element={<AdminUsers />} />
-            <Route path="/admin/floors"        element={<AdminFloors />} />
-            <Route path="/admin/schedule"      element={<AdminSchedule />} />
-            <Route path="/admin/notifications" element={<AdminNotifications />} />
-            <Route path="/admin/announcements" element={<AnnouncementsPage />} />
-          </Route>
+<Route element={<RequireAuth><RequireAdmin><AppShell /></RequireAdmin></RequireAuth>}>
+  <Route path="/admin"               element={<AdminDashboard />} />
+  <Route path="/admin/users"         element={<AdminUsers />} />
+  <Route path="/admin/floors"        element={<AdminFloors />} />
+  <Route path="/admin/rooms"         element={<AdminRoomsPage />} />
+  <Route path="/admin/map-editor"    element={<MapEditorPage />} />
+  <Route path="/admin/schedule"      element={<AdminSchedule />} />
+  <Route path="/admin/notifications" element={<AdminNotifications />} />
+  <Route path="/admin/announcements" element={<AnnouncementsPage />} />
+</Route>
 
           <Route path="*" element={
             <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100vh', flexDirection:'column', gap:16 }}>

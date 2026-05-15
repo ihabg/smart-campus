@@ -1,6 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
-import { floorAPI }        from '../api/floorAPI';
-import { roomAPI, scheduleAPI, searchAPI, notificationAPI } from '../api/index';
+import {
+  floorAPI,
+  roomAPI,
+  scheduleAPI,
+  searchAPI,
+  notificationAPI,
+  courseAPI,
+  instructorAPI
+} from '../api/index';
 import toast from 'react-hot-toast';
 
 // ─── useAsync — generic data-fetching hook ────────────────────
@@ -165,7 +172,90 @@ export function useAllSections(params = {}) {
 
   return { sections, pagination, loading, refetch: fetch };
 }
+// ─── useCourses ───────────────────────────────────────────────
+export function useCourses(params = {}) {
+  const [courses, setCourses] = useState([]);
+  const [pagination, setPagination] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
+  const fetch = useCallback(async (p = params) => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const { data } = await courseAPI.getAll(p);
+
+      setCourses(data.data.courses || []);
+      setPagination(data.data.pagination || {});
+    } catch (err) {
+      const message =
+        err.response?.data?.message || 'Failed to load courses';
+
+      setError(message);
+      toast.error(message);
+    } finally {
+      setLoading(false);
+    }
+  }, [JSON.stringify(params)]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    fetch();
+  }, [fetch]);
+
+  return {
+    courses,
+    pagination,
+    loading,
+    error,
+    refetch: fetch
+  };
+}
+
+// ─── useInstructors ───────────────────────────────────────────
+export function useInstructors(params = {}) {
+  const [instructors, setInstructors] = useState([]);
+  const [pagination, setPagination] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  const fetch = useCallback(async (p = params) => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const { data } = await instructorAPI.getAll(p);
+
+      setInstructors(data.data.instructors || []);
+      setPagination(data.data.pagination || {});
+    } catch (err) {
+      const message =
+        err.response?.data?.message || 'Failed to load instructors';
+
+      setError(message);
+      toast.error(message);
+    } finally {
+      setLoading(false);
+    }
+  }, [JSON.stringify(params)]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    fetch();
+  }, [fetch]);
+
+  return {
+    instructors,
+    pagination,
+    loading,
+    error,
+    refetch: fetch
+  };
+}
+
+// ─── useCourseDepartments ─────────────────────────────────────
+export function useCourseDepartments() {
+  return useAsync(() => courseAPI.getDepartments(), []);
+}
 // ─── useSearch ────────────────────────────────────────────────
 export function useSearch() {
   const [results, setResults] = useState(null);

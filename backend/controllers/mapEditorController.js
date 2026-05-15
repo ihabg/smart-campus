@@ -7,48 +7,85 @@ async function getFloorForEditing(req, res, next) {
     const { floor_id } = req.params;
 
     const floorResult = await query(
-      `SELECT f.*, b.code AS building_code, b.name AS building_name
-       FROM floors f JOIN buildings b ON b.id = f.building_id
-       WHERE f.id = $1`,
+      `
+      SELECT
+        f.*,
+        b.code AS building_code,
+        b.name AS building_name
+      FROM floors f
+      JOIN buildings b ON b.id = f.building_id
+      WHERE f.id = $1
+      `,
       [floor_id]
     );
 
     if (!floorResult.rows.length) {
-      return res.status(404).json({ success: false, message: 'Floor not found.' });
+      return res.status(404).json({
+        success: false,
+        message: 'Floor not found.'
+      });
     }
 
     const roomsResult = await query(
-      `SELECT id, room_number, name, type, department, capacity,
-              coord_x, coord_y, coord_width, coord_height, polygon_points,
-              is_accessible, is_active, features
-       FROM rooms
-       WHERE floor_id = $1
-       ORDER BY room_number`,
+      `
+      SELECT
+        id,
+        room_number,
+        name,
+        type,
+        department,
+        capacity,
+        description,
+        coord_x,
+        coord_y,
+        coord_width,
+        coord_height,
+        polygon_points,
+        is_accessible,
+        is_active,
+        features,
+        metadata
+      FROM rooms
+      WHERE floor_id = $1
+        AND is_active = TRUE
+      ORDER BY room_number
+      `,
       [floor_id]
     );
 
     const adjacencyResult = await query(
-      `SELECT ra.room_a_id, ra.room_b_id, ra.weight, ra.is_active
-       FROM room_adjacency ra
-       JOIN rooms r ON r.id = ra.room_a_id
-       WHERE r.floor_id = $1 AND ra.is_active = TRUE`,
+      `
+      SELECT
+        ra.id,
+        ra.room_a_id,
+        ra.room_b_id,
+        ra.weight,
+        ra.is_active
+      FROM room_adjacency ra
+      JOIN rooms a ON a.id = ra.room_a_id
+      JOIN rooms b ON b.id = ra.room_b_id
+      WHERE ra.is_active = TRUE
+        AND a.floor_id = $1
+        AND b.floor_id = $1
+      ORDER BY ra.created_at
+      `,
       [floor_id]
     );
 
     res.json({
       success: true,
       data: {
-        floor:     floorResult.rows[0],
-        rooms:     roomsResult.rows,
-        adjacency: adjacencyResult.rows,
-      },
+        floor: floorResult.rows[0],
+        rooms: roomsResult.rows,
+        adjacency: adjacencyResult.rows
+      }
     });
   } catch (error) {
     next(error);
   }
 }
 
-// ─── Save entire floor layout (rooms + adjacency) ─────────────
+// ─── Save entire floor layout rooms + adjacency ──────────────
 
 async function saveFloorLayout(req, res, next) {
   try {
@@ -56,102 +93,252 @@ async function saveFloorLayout(req, res, next) {
     const { rooms, adjacency } = req.body;
 
     if (!Array.isArray(rooms)) {
-      return res.status(400).json({ success: false, message: 'rooms array required.' });
+      return res.status(400).json({
+        success: false,
+        message: 'rooms array required.'
+      });
     }
 
-    await withTransaction(async client => {
-      // Update each room's coordinates
+    await withTransaction(async (client) => {
       for (const room of rooms) {
+        const polygonPoints =
+          room.polygon_points && typeof room.polygon_points === 'object'
+            ? JSON.stringify(room.polygon_points)
+            : room.polygon_points || null;
+
         if (room.id) {
-          // Update existing room
           await client.query(
-            `UPDATE rooms SET
-               coord_x=$1, coord_y=$2, coord_width=$3, coord_height=$4,
-               polygon_points=$5, name=$6, type=$7, department=$8,
-               capacity=$9, is_accessible=$10
-             WHERE id=$11 AND floor_id=$12`,
+            `
+            UPDATE rooms
+            SET
+              room_number = COALESCE($1, room_number),
+              name = COALESCE($2, name),
+              type = COALESCE($3::room_type, type),
+              department = $4,
+              capacity = $5,
+              description = $6,
+              coord_x = $7,
+              coord_y = $8,
+              coord_width = $9,
+              coord_height = $10,
+              polygon_points = $11,
+              is_accessible = $12,
+              is_active = COALESCE($13, is_active),
+              updated_at = NOW()
+            WHERE id = $14
+              AND floor_id = $15
+            `,
             [
-              room.coord_x, room.coord_y, room.coord_width, room.coord_height,
-              room.polygon_points ? JSON.stringify(room.polygon_points) : null,
-              room.name, room.type, room.department || null,
-              room.capacity || null, room.is_accessible !== false,
-              room.id, floor_id,
+              room.room_number || null,
+              room.name || null,
+              room.type || null,
+              room.department || null,
+              room.capacity ? Number(room.capacity) : null,
+              room.description || null,
+              room.coord_x ?? null,
+              room.coord_y ?? null,
+              room.coord_width ?? null,
+              room.coord_height ?? null,
+              polygonPoints,
+              room.is_accessible !== false,
+              room.is_active,
+              room.id,
+              floor_id
             ]
           );
         } else {
-          // Insert new room from editor
           await client.query(
-            `INSERT INTO rooms
-               (floor_id, room_number, name, type, department, capacity,
-                coord_x, coord_y, coord_width, coord_height, polygon_points, is_accessible)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
-             ON CONFLICT (floor_id, room_number) DO UPDATE SET
-               name=$3, type=$4, department=$5, capacity=$6,
-               coord_x=$7, coord_y=$8, coord_width=$9, coord_height=$10,
-               polygon_points=$11, is_accessible=$12`,
+            `
+            INSERT INTO rooms (
+              floor_id,
+              room_number,
+              name,
+              type,
+              department,
+              capacity,
+              description,
+              coord_x,
+              coord_y,
+              coord_width,
+              coord_height,
+              polygon_points,
+              is_accessible,
+              is_active
+            )
+            VALUES (
+              $1,
+              $2,
+              $3,
+              $4::room_type,
+              $5,
+              $6,
+              $7,
+              $8,
+              $9,
+              $10,
+              $11,
+              $12,
+              $13,
+              TRUE
+            )
+            ON CONFLICT (floor_id, room_number)
+            DO UPDATE SET
+              name = EXCLUDED.name,
+              type = EXCLUDED.type,
+              department = EXCLUDED.department,
+              capacity = EXCLUDED.capacity,
+              description = EXCLUDED.description,
+              coord_x = EXCLUDED.coord_x,
+              coord_y = EXCLUDED.coord_y,
+              coord_width = EXCLUDED.coord_width,
+              coord_height = EXCLUDED.coord_height,
+              polygon_points = EXCLUDED.polygon_points,
+              is_accessible = EXCLUDED.is_accessible,
+              is_active = TRUE,
+              updated_at = NOW()
+            `,
             [
-              floor_id, room.room_number, room.name, room.type,
-              room.department || null, room.capacity || null,
-              room.coord_x, room.coord_y, room.coord_width, room.coord_height,
-              room.polygon_points ? JSON.stringify(room.polygon_points) : null,
-              room.is_accessible !== false,
+              floor_id,
+              room.room_number,
+              room.name,
+              room.type || 'classroom',
+              room.department || null,
+              room.capacity ? Number(room.capacity) : null,
+              room.description || null,
+              room.coord_x ?? null,
+              room.coord_y ?? null,
+              room.coord_width ?? null,
+              room.coord_height ?? null,
+              polygonPoints,
+              room.is_accessible !== false
             ]
           );
         }
       }
 
-      // Replace adjacency for this floor
       if (Array.isArray(adjacency)) {
-        // Remove old adjacency for this floor's rooms
         await client.query(
-          `DELETE FROM room_adjacency
-           WHERE room_a_id IN (SELECT id FROM rooms WHERE floor_id=$1)`,
+          `
+          DELETE FROM room_adjacency
+          WHERE room_a_id IN (
+            SELECT id FROM rooms WHERE floor_id = $1
+          )
+          OR room_b_id IN (
+            SELECT id FROM rooms WHERE floor_id = $1
+          )
+          `,
           [floor_id]
         );
-        // Insert new adjacency
+
         for (const edge of adjacency) {
-          // Both directions
+          if (!edge.room_a_id || !edge.room_b_id) continue;
+          if (edge.room_a_id === edge.room_b_id) continue;
+
           await client.query(
-            `INSERT INTO room_adjacency (room_a_id, room_b_id, weight)
-             VALUES ($1,$2,$3), ($2,$1,$3)
-             ON CONFLICT DO NOTHING`,
-            [edge.room_a_id, edge.room_b_id, edge.weight || 1.0]
+            `
+            INSERT INTO room_adjacency (
+              room_a_id,
+              room_b_id,
+              weight,
+              is_active
+            )
+            VALUES ($1, $2, $3, TRUE)
+            ON CONFLICT (
+              LEAST(room_a_id, room_b_id),
+              GREATEST(room_a_id, room_b_id)
+            )
+            DO UPDATE SET
+              weight = EXCLUDED.weight,
+              is_active = TRUE,
+              updated_at = NOW()
+            `,
+            [
+              edge.room_a_id,
+              edge.room_b_id,
+              Number(edge.weight) || 1.0
+            ]
           );
         }
       }
     });
 
-    res.json({ success: true, message: `Floor layout saved. ${rooms.length} room(s) updated.` });
+    res.json({
+      success: true,
+      message: `Floor layout saved. ${rooms.length} room(s) updated.`
+    });
   } catch (error) {
     next(error);
   }
 }
 
-// ─── Quick save single room position (drag-and-drop) ─────────
+// ─── Quick save single room position ─────────────────────────
 
 async function saveRoomPosition(req, res, next) {
   try {
     const { room_id } = req.params;
-    const { coord_x, coord_y, coord_width, coord_height, polygon_points } = req.body;
+    const {
+      coord_x,
+      coord_y,
+      coord_width,
+      coord_height,
+      polygon_points
+    } = req.body;
+
+    const polygonPoints =
+      polygon_points && typeof polygon_points === 'object'
+        ? JSON.stringify(polygon_points)
+        : polygon_points || null;
 
     const result = await query(
-      `UPDATE rooms
-       SET coord_x=$1, coord_y=$2, coord_width=$3, coord_height=$4, polygon_points=$5
-       WHERE id=$6
-       RETURNING id, room_number, coord_x, coord_y, coord_width, coord_height`,
-      [coord_x, coord_y, coord_width, coord_height,
-       polygon_points ? JSON.stringify(polygon_points) : null,
-       room_id]
+      `
+      UPDATE rooms
+      SET
+        coord_x = $1,
+        coord_y = $2,
+        coord_width = $3,
+        coord_height = $4,
+        polygon_points = $5,
+        updated_at = NOW()
+      WHERE id = $6
+      RETURNING
+        id,
+        room_number,
+        coord_x,
+        coord_y,
+        coord_width,
+        coord_height,
+        polygon_points
+      `,
+      [
+        coord_x,
+        coord_y,
+        coord_width,
+        coord_height,
+        polygonPoints,
+        room_id
+      ]
     );
 
     if (!result.rows.length) {
-      return res.status(404).json({ success: false, message: 'Room not found.' });
+      return res.status(404).json({
+        success: false,
+        message: 'Room not found.'
+      });
     }
 
-    res.json({ success: true, data: { room: result.rows[0] } });
+    res.json({
+      success: true,
+      data: {
+        room: result.rows[0]
+      }
+    });
   } catch (error) {
     next(error);
   }
 }
 
-module.exports = { getFloorForEditing, saveFloorLayout, saveRoomPosition };
+module.exports = {
+  getFloorForEditing,
+  saveFloorLayout,
+  saveRoomPosition
+};

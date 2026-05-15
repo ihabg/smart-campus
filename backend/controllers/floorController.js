@@ -102,32 +102,64 @@ async function createFloor(req, res, next) {
 async function updateFloor(req, res, next) {
   try {
     const { id } = req.params;
-    const { floor_label, name, display_order, is_active } = req.body;
 
-    const fields  = [];
-    const values  = [];
-    let   idx     = 1;
+    const allowed = [
+      'floor_number',
+      'floor_label',
+      'name',
+      'map_image_url',
+      'map_width',
+      'map_height',
+      'svg_data',
+      'display_order',
+      'is_active'
+    ];
 
-    if (floor_label   !== undefined) { fields.push(`floor_label=$${idx++}`);   values.push(floor_label); }
-    if (name          !== undefined) { fields.push(`name=$${idx++}`);           values.push(name); }
-    if (display_order !== undefined) { fields.push(`display_order=$${idx++}`);  values.push(display_order); }
-    if (is_active     !== undefined) { fields.push(`is_active=$${idx++}`);      values.push(is_active); }
+    const fields = [];
+    const values = [];
+    let idx = 1;
 
-    if (!fields.length) {
-      return res.status(400).json({ success: false, message: 'No fields to update.' });
+    for (const key of allowed) {
+      if (req.body[key] !== undefined) {
+        fields.push(`${key} = $${idx++}`);
+        values.push(req.body[key]);
+      }
     }
 
+    if (!fields.length) {
+      return res.status(400).json({
+        success: false,
+        message: 'No fields to update.'
+      });
+    }
+
+    fields.push(`updated_at = NOW()`);
+
     values.push(id);
+
     const result = await query(
-      `UPDATE floors SET ${fields.join(',')} WHERE id = $${idx} RETURNING *`,
+      `
+      UPDATE floors
+      SET ${fields.join(', ')}
+      WHERE id = $${idx}
+      RETURNING *
+      `,
       values
     );
 
     if (!result.rows.length) {
-      return res.status(404).json({ success: false, message: 'Floor not found.' });
+      return res.status(404).json({
+        success: false,
+        message: 'Floor not found.'
+      });
     }
 
-    res.json({ success: true, data: { floor: result.rows[0] } });
+    res.json({
+      success: true,
+      data: {
+        floor: result.rows[0]
+      }
+    });
   } catch (error) {
     next(error);
   }

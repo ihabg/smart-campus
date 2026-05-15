@@ -178,38 +178,143 @@ async function deleteUser(req, res, next) {
 }
 
 // ─── Admin: get dashboard stats ───────────────────────────────
-
 async function getDashboardStats(req, res, next) {
   try {
-    const [usersRes, roomsRes, sectionsRes, notifRes, buildingsRes] = await Promise.all([
-      query(`SELECT
-               COUNT(*) AS total,
-               COUNT(*) FILTER (WHERE role='student')    AS students,
-               COUNT(*) FILTER (WHERE role='admin')      AS admins,
-               COUNT(*) FILTER (WHERE status='active')   AS active,
-               COUNT(*) FILTER (WHERE status='suspended') AS suspended
-             FROM users`),
-      query(`SELECT
-               COUNT(*) AS total,
-               COUNT(*) FILTER (WHERE type='classroom')    AS classrooms,
-               COUNT(*) FILTER (WHERE type='lab')          AS labs,
-               COUNT(*) FILTER (WHERE type='lecture_hall') AS lecture_halls,
-               COUNT(*) FILTER (WHERE type='office')       AS offices
-             FROM rooms WHERE is_active=TRUE`),
-      query(`SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE is_active=TRUE) AS active FROM sections`),
-      query(`SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE is_published=TRUE) AS published FROM notifications`),
-      query(`SELECT COUNT(*) AS total FROM buildings WHERE is_active=TRUE`),
+    const [
+      usersRes,
+      roomsRes,
+      roomTypesRes,
+      sectionsRes,
+      notifRes,
+      buildingsRes
+    ] = await Promise.all([
+      query(`
+        SELECT
+          COUNT(*)::int AS total,
+          COUNT(*) FILTER (WHERE role = 'student')::int AS students,
+          COUNT(*) FILTER (WHERE role = 'admin')::int AS admins,
+          COUNT(*) FILTER (WHERE role = 'super_admin')::int AS super_admins,
+          COUNT(*) FILTER (WHERE role = 'professor')::int AS professors,
+          COUNT(*) FILTER (WHERE status = 'active')::int AS active,
+          COUNT(*) FILTER (WHERE status = 'suspended')::int AS suspended
+        FROM users
+      `),
+
+      query(`
+        SELECT
+          COUNT(*)::int AS total,
+          COUNT(*) FILTER (WHERE type = 'classroom')::int AS classrooms,
+          COUNT(*) FILTER (WHERE type = 'lecture_hall')::int AS lecture_halls,
+          COUNT(*) FILTER (WHERE type = 'lab')::int AS labs,
+          COUNT(*) FILTER (WHERE type = 'office')::int AS offices,
+          COUNT(*) FILTER (WHERE type = 'restroom')::int AS restrooms,
+          COUNT(*) FILTER (WHERE type = 'bathroom')::int AS bathrooms,
+          COUNT(*) FILTER (WHERE type = 'stairs')::int AS stairs,
+          COUNT(*) FILTER (WHERE type = 'elevator')::int AS elevators,
+          COUNT(*) FILTER (WHERE type = 'storage')::int AS storage,
+          COUNT(*) FILTER (WHERE type = 'meeting_room')::int AS meeting_rooms,
+          COUNT(*) FILTER (WHERE type = 'professor_lounge')::int AS professor_lounges,
+          COUNT(*) FILTER (WHERE type = 'amphitheater')::int AS amphitheaters,
+          COUNT(*) FILTER (WHERE type = 'engineering_drawing_room')::int AS engineering_drawing_rooms,
+          COUNT(*) FILTER (WHERE type = 'engineering_drawing_studio')::int AS engineering_drawing_studios,
+          COUNT(*) FILTER (WHERE type = 'other')::int AS other
+        FROM rooms
+        WHERE is_active = TRUE
+      `),
+
+      query(`
+        SELECT
+          type::text AS type,
+          COUNT(*)::int AS count
+        FROM rooms
+        WHERE is_active = TRUE
+        GROUP BY type
+        ORDER BY type::text
+      `),
+
+      query(`
+        SELECT
+          COUNT(*)::int AS total,
+          COUNT(*) FILTER (WHERE is_active = TRUE)::int AS active,
+          COUNT(*) FILTER (
+            WHERE is_active = TRUE
+              AND semester = 'spring'
+              AND academic_year = '2025/2026'
+          )::int AS spring_active
+        FROM sections
+      `),
+
+      query(`
+        SELECT
+          COUNT(*)::int AS total,
+          COUNT(*) FILTER (WHERE is_published = TRUE)::int AS published
+        FROM notifications
+      `),
+
+      query(`
+        SELECT
+          COUNT(*)::int AS total
+        FROM buildings
+        WHERE is_active = TRUE
+      `)
     ]);
+
+    const users = usersRes.rows[0];
+    const rooms = roomsRes.rows[0];
+    const sections = sectionsRes.rows[0];
+    const notifications = notifRes.rows[0];
+    const buildings = buildingsRes.rows[0];
 
     res.json({
       success: true,
       data: {
-        users:     usersRes.rows[0],
-        rooms:     roomsRes.rows[0],
-        sections:  sectionsRes.rows[0],
-        notifications: notifRes.rows[0],
-        buildings: buildingsRes.rows[0],
-      },
+        users: {
+          total: users.total || 0,
+          students: users.students || 0,
+          admins: users.admins || 0,
+          super_admins: users.super_admins || 0,
+          professors: users.professors || 0,
+          active: users.active || 0,
+          suspended: users.suspended || 0
+        },
+
+        rooms: {
+          total: rooms.total || 0,
+          classrooms: rooms.classrooms || 0,
+          lecture_halls: rooms.lecture_halls || 0,
+          labs: rooms.labs || 0,
+          offices: rooms.offices || 0,
+          restrooms: rooms.restrooms || 0,
+          bathrooms: rooms.bathrooms || 0,
+          stairs: rooms.stairs || 0,
+          elevators: rooms.elevators || 0,
+          storage: rooms.storage || 0,
+          meeting_rooms: rooms.meeting_rooms || 0,
+          professor_lounges: rooms.professor_lounges || 0,
+          amphitheaters: rooms.amphitheaters || 0,
+          engineering_drawing_rooms: rooms.engineering_drawing_rooms || 0,
+          engineering_drawing_studios: rooms.engineering_drawing_studios || 0,
+          other: rooms.other || 0,
+
+          // This is the important one for the dashboard list.
+          by_type: roomTypesRes.rows
+        },
+
+        sections: {
+          total: sections.total || 0,
+          active: sections.active || 0,
+          spring_active: sections.spring_active || 0
+        },
+
+        notifications: {
+          total: notifications.total || 0,
+          published: notifications.published || 0
+        },
+
+        buildings: {
+          total: buildings.total || 0
+        }
+      }
     });
   } catch (error) {
     next(error);

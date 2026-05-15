@@ -279,39 +279,58 @@ async function setAdjacency(req, res, next) {
     const {
       room_a_id,
       room_b_id,
-      distance_meters = 1.0,
-      direction_note = null,
-      is_accessible = true,
-      is_active = true,
+      weight = 1.0,
+      is_active = true
     } = req.body;
 
-    await withTransaction(async client => {
-      await client.query(
-        `INSERT INTO room_adjacency
-           (room_a_id, room_b_id, distance_meters, direction_note, is_accessible, is_active)
-         VALUES ($1,$2,$3,$4,$5,$6)
-         ON CONFLICT (room_a_id, room_b_id) DO UPDATE SET
-           distance_meters = EXCLUDED.distance_meters,
-           direction_note = EXCLUDED.direction_note,
-           is_accessible = EXCLUDED.is_accessible,
-           is_active = EXCLUDED.is_active`,
-        [room_a_id, room_b_id, distance_meters, direction_note, is_accessible, is_active]
-      );
+    if (!room_a_id || !room_b_id) {
+      return res.status(400).json({
+        success: false,
+        message: 'room_a_id and room_b_id are required.'
+      });
+    }
 
-      await client.query(
-        `INSERT INTO room_adjacency
-           (room_a_id, room_b_id, distance_meters, direction_note, is_accessible, is_active)
-         VALUES ($1,$2,$3,$4,$5,$6)
-         ON CONFLICT (room_a_id, room_b_id) DO UPDATE SET
-           distance_meters = EXCLUDED.distance_meters,
-           direction_note = EXCLUDED.direction_note,
-           is_accessible = EXCLUDED.is_accessible,
-           is_active = EXCLUDED.is_active`,
-        [room_b_id, room_a_id, distance_meters, direction_note, is_accessible, is_active]
-      );
+    if (room_a_id === room_b_id) {
+      return res.status(400).json({
+        success: false,
+        message: 'A room cannot be connected to itself.'
+      });
+    }
+
+    const result = await query(
+      `
+      INSERT INTO room_adjacency (
+        room_a_id,
+        room_b_id,
+        weight,
+        is_active
+      )
+      VALUES ($1, $2, $3, $4)
+      ON CONFLICT (
+        LEAST(room_a_id, room_b_id),
+        GREATEST(room_a_id, room_b_id)
+      )
+      DO UPDATE SET
+        weight = EXCLUDED.weight,
+        is_active = EXCLUDED.is_active,
+        updated_at = NOW()
+      RETURNING *
+      `,
+      [
+        room_a_id,
+        room_b_id,
+        Number(weight) || 1.0,
+        is_active
+      ]
+    );
+
+    res.json({
+      success: true,
+      message: 'Adjacency updated.',
+      data: {
+        adjacency: result.rows[0]
+      }
     });
-
-    res.json({ success: true, message: 'Adjacency updated.' });
   } catch (error) {
     next(error);
   }

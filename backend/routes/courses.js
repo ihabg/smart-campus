@@ -1,15 +1,37 @@
 // routes/courses.js
 const express = require('express');
-const cRouter = express.Router();
-const cCtrl   = require('../controllers/courseController');
+const router = express.Router();
+
+const ctrl = require('../controllers/courseController');
+
 const { protect, restrictTo } = require('../middleware/auth');
 const { validateUUID, validatePagination } = require('../middleware/validate');
 
-cRouter.get ('/',              validatePagination, cCtrl.getAllCourses);
-cRouter.get ('/departments',   cCtrl.getDepartments);
-cRouter.get ('/:id',           validateUUID('id'), cCtrl.getCourseById);
-cRouter.post('/',              protect, restrictTo('admin','super_admin'), cCtrl.createCourse);
-cRouter.patch('/:id',          protect, restrictTo('admin','super_admin'), validateUUID('id'), cCtrl.updateCourse);
-cRouter.delete('/:id',         protect, restrictTo('admin','super_admin'), validateUUID('id'), cCtrl.deleteCourse);
+router.get('/', validatePagination, ctrl.getAllCourses);
+router.get('/departments', ctrl.getDepartments);
+router.get('/:id', validateUUID('id'), ctrl.getCourseById);
 
-module.exports = cRouter;
+router.post(
+  '/',
+  protect,
+  restrictTo('admin', 'super_admin'),
+  ctrl.createCourse
+);
+
+router.patch(
+  '/:id',
+  protect,
+  restrictTo('admin', 'super_admin'),
+  validateUUID('id'),
+  ctrl.updateCourse
+);
+
+router.delete(
+  '/:id',
+  protect,
+  restrictTo('admin', 'super_admin'),
+  validateUUID('id'),
+  ctrl.deleteCourse
+);
+
+module.exports = router;
