@@ -1,10 +1,10 @@
 import 'react-native-gesture-handler';
 import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
-import { SafeAreaProvider }    from 'react-native-safe-area-context';
-import Toast                   from 'react-native-toast-message';
-import { AuthProvider }        from './src/context/AuthContext';
-import RootNavigator           from './src/navigation/index';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import Toast from 'react-native-toast-message';
+import { AuthProvider } from './src/context/AuthContext';
+import RootNavigator from './src/navigation';
 
 export default function App() {
   return (

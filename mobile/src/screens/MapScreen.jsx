@@ -1,368 +1,1157 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+
 import {
-  View, Text, TouchableOpacity, StyleSheet, ScrollView,
-  ActivityIndicator, Alert, TextInput, Dimensions, PanResponder,
+  ActivityIndicator,
+  Alert,
+  Image,
+  Modal,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
+
+import Svg, {
+  Polygon,
+  Rect,
+  Text as SvgText,
+} from 'react-native-svg';
+
 import { SafeAreaView } from 'react-native-safe-area-context';
-import Svg, { Rect, G, Text as SvgText, Path, Circle, Line, Defs, Pattern } from 'react-native-svg';
-import { floorAPI, searchAPI } from '../api/index';
-import { dijkstra } from '../utils/dijkstra';
-import { COLORS, SPACING, RADIUS } from '../theme';
 
-const { width: SW, height: SH } = Dimensions.get('window');
-const SVG_W = 1200;
-const SVG_H = 560;
+import { WEB_FLOORS } from '../data/floorMaps';
+import { floorAPI, getAssetUrl, roomAPI } from '../api';
+import {
+  Card,
+  EmptyState,
+  LoadingState,
+  ScreenHeader,
+} from '../components/ui';
 
-const ROOM_COLORS = {
-  lab:          { fill: '#d1eddf', stroke: '#22a060', text: '#145c36' },
-  lecture_hall: { fill: '#dbeafe', stroke: '#1d4ed8', text: '#1e3a8a' },
-  classroom:    { fill: '#e8e3fa', stroke: '#7c3aed', text: '#4c1d95' },
-  office:       { fill: '#fef3c7', stroke: '#b45309', text: '#78350f' },
-  stairs:       { fill: '#cdd5e5', stroke: '#8899bb', text: '#555' },
-  corridor:     { fill: '#dde4f0', stroke: '#b0bcd0', text: '#6b7a99' },
-  default:      { fill: '#f1f0ee', stroke: '#b0bcd0', text: '#555' },
+import { COLORS, RADIUS, SPACING } from '../theme';
+import {
+  getErrorMessage,
+  normalizeRoomNumber,
+  roomTypeLabel,
+  unwrapApi,
+} from '../utils/helpers';
+
+const LOCAL_MAP_IMAGES = {
+  B2: require('../../assets/maps/B2.png'),
+  B1: require('../../assets/maps/B1.png'),
+  G: require('../../assets/maps/G.png'),
+  1: require('../../assets/maps/1.png'),
+  2: require('../../assets/maps/2.png'),
+  3: require('../../assets/maps/3.png'),
+  4: require('../../assets/maps/4.png'),
 };
 
-export default function MapScreen() {
-  const [buildings,     setBuildings]     = useState([]);
-  const [floors,        setFloors]        = useState([]);
-  const [activeBuilding,setActiveBuilding]= useState(null);
-  const [activeFloor,   setActiveFloor]   = useState(null);
-  const [rooms,         setRooms]         = useState([]);
-  const [graph,         setGraph]         = useState({ graph: {}, nodes: {} });
-  const [loadingFloor,  setLoadingFloor]  = useState(false);
-  const [selectedRoom,  setSelectedRoom]  = useState(null);
-  const [activeFilter,  setActiveFilter]  = useState('all');
-  const [searchQuery,   setSearchQuery]   = useState('');
-  const [activePath,    setActivePath]    = useState([]);
-  const [fromRoom,      setFromRoom]      = useState('');
-  const [toRoom,        setToRoom]        = useState('');
-  const [showPanel,     setShowPanel]     = useState(false);
-  const [showPathModal, setShowPathModal] = useState(false);
+const FLOOR_ORDER = ['B2', 'B1', 'G', '1', '2', '3', '4'];
 
-  // Pan & zoom state
-  const initScale = (SW - 32) / SVG_W;
-  const [scale,  setScale]  = useState(initScale);
-  const [offset, setOffset] = useState({ x: 0, y: 16 });
-  const lastOffset = useRef({ x: 0, y: 16 });
-  const lastScale  = useRef(initScale);
+const ROOM_FILTERS = [
+  { value: 'all', label: 'All' },
+  { value: 'lecture_hall', label: 'Lectures' },
+  { value: 'lab', label: 'Labs' },
+  { value: 'office', label: 'Offices' },
+  { value: 'restroom', label: 'Restrooms' },
+  { value: 'stairs', label: 'Stairs' },
+  { value: 'elevator', label: 'Elevators' },
+];
 
-  const pan = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder:  (_, gs) => Math.abs(gs.dx) > 3 || Math.abs(gs.dy) > 3,
-      onPanResponderGrant: () => { lastOffset.current = { ...offset }; },
-      onPanResponderMove: (_, gs) => {
-        setOffset({ x: lastOffset.current.x + gs.dx, y: lastOffset.current.y + gs.dy });
-      },
-      onPanResponderRelease: (_, gs) => {
-        lastOffset.current = { x: lastOffset.current.x + gs.dx, y: lastOffset.current.y + gs.dy };
-      },
-    })
-  ).current;
+const MAP_DISPLAY_WIDTH = 1050;
 
-  const zoomIn  = () => { const s = Math.min(5, lastScale.current * 1.3); lastScale.current = s; setScale(s); };
-  const zoomOut = () => { const s = Math.max(0.2, lastScale.current / 1.3); lastScale.current = s; setScale(s); };
-  const resetView = () => { const s = (SW - 32) / SVG_W; lastScale.current = s; setScale(s); setOffset({ x: 0, y: 16 }); lastOffset.current = { x: 0, y: 16 }; };
+function getLocalFloorOptions() {
+  return FLOOR_ORDER
+    .filter((label) => WEB_FLOORS[String(label)])
+    .map((label, index) => ({
+      id: String(label),
+      floor_label: String(label),
+      name: WEB_FLOORS[String(label)]?.title || String(label),
+      display_order: index + 1,
+      isLocal: true,
+    }));
+}
 
-  useEffect(() => {
-    floorAPI.getBuildings()
-      .then(({ data }) => {
-        const blds = data.data.buildings;
-        setBuildings(blds);
-        if (blds.length) loadFloors(blds[0].id);
-      })
-      .catch(() => Alert.alert('Error', 'Failed to load buildings'));
-  }, []); // eslint-disable-line
+function sortFloors(list) {
+  return [...list].sort((a, b) => {
+    const ai = FLOOR_ORDER.indexOf(String(a.floor_label));
+    const bi = FLOOR_ORDER.indexOf(String(b.floor_label));
 
-  const loadFloors = async (buildingId) => {
-    setActiveBuilding(buildingId);
+    if (ai !== -1 && bi !== -1) return ai - bi;
+    if (ai !== -1) return -1;
+    if (bi !== -1) return 1;
+
+    return Number(a.display_order ?? a.floor_number ?? 0) -
+      Number(b.display_order ?? b.floor_number ?? 0);
+  });
+}
+
+function getRoomNumber(item) {
+  return (
+    item?.roomNumber ||
+    item?.room_number ||
+    item?.roomNo ||
+    item?.number ||
+    item?.id ||
+    ''
+  );
+}
+
+function getItemType(item) {
+  return item?.type || item?.room_type || 'other';
+}
+
+function getItemName(item) {
+  return item?.name || item?.room_name || getRoomNumber(item) || 'Location';
+}
+
+function getSearchText(item) {
+  return [
+    getRoomNumber(item),
+    getItemName(item),
+    getItemType(item),
+    item?.department,
+    item?.lecturerName,
+    item?.lecturerEmail,
+    item?.search_keywords,
+    item?.currentCourse,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+}
+
+function filterMatchesType(item, filter) {
+  if (filter === 'all') return true;
+
+  const type = getItemType(item);
+
+  if (filter === 'lecture_hall') {
+    return type === 'lecture_hall' || type === 'classroom';
+  }
+
+  if (filter === 'restroom') {
+    return type === 'restroom' || type === 'bathroom';
+  }
+
+  return type === filter;
+}
+
+function findFloorLabelByRoomNumber(roomNumber) {
+  if (!roomNumber) return '';
+
+  const wanted = normalizeRoomNumber(roomNumber);
+
+  for (const label of Object.keys(WEB_FLOORS)) {
+    const floor = WEB_FLOORS[label];
+
+    const found = (floor.blocks || []).some((block) => {
+      return normalizeRoomNumber(getRoomNumber(block)) === wanted;
+    });
+
+    if (found) return label;
+  }
+
+  return '';
+}
+
+export default function MapScreen({ route }) {
+  const [floors, setFloors] = useState([]);
+  const [activeFloorId, setActiveFloorId] = useState('');
+  const [rooms, setRooms] = useState([]);
+
+  const [query, setQuery] = useState('');
+  const [filter, setFilter] = useState('all');
+  const [selectedRoom, setSelectedRoom] = useState(null);
+
+  const [loading, setLoading] = useState(true);
+  const [roomsLoading, setRoomsLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const floorScrollRef = useRef(null);
+
+  const activeFloor = useMemo(() => {
+    return floors.find((floor) => floor.id === activeFloorId) || floors[0] || null;
+  }, [floors, activeFloorId]);
+
+  const activeFloorLabel = String(
+    activeFloor?.floor_label ||
+    activeFloor?.label ||
+    'G'
+  );
+
+  const activeWebFloor = WEB_FLOORS[activeFloorLabel] || WEB_FLOORS.G;
+
+  const sourceMapWidth = Number(
+    activeWebFloor?.width ||
+    activeFloor?.map_width ||
+    1600
+  );
+
+  const sourceMapHeight = Number(
+    activeWebFloor?.height ||
+    activeFloor?.map_height ||
+    1000
+  );
+
+  const mapDisplayHeight = Math.max(
+    360,
+    Math.round((MAP_DISPLAY_WIDTH * sourceMapHeight) / sourceMapWidth)
+  );
+
+  const mapImageSource =
+    activeWebFloor?.image ||
+    LOCAL_MAP_IMAGES[activeFloorLabel] ||
+    (
+      activeFloor?.map_image_url
+        ? { uri: getAssetUrl(activeFloor.map_image_url) }
+        : null
+    );
+
+  const roomsByNumber = useMemo(() => {
+    const map = new Map();
+
+    rooms.forEach((room) => {
+      const number = normalizeRoomNumber(room.room_number);
+
+      if (number) {
+        map.set(number, room);
+      }
+    });
+
+    return map;
+  }, [rooms]);
+
+  const mapBlocks = useMemo(() => {
+    const blocks = activeWebFloor?.blocks || [];
+
+    return blocks.map((block, index) => {
+      const number = getRoomNumber(block);
+      const dbRoom = roomsByNumber.get(normalizeRoomNumber(number));
+
+      return {
+        ...(dbRoom || {}),
+        ...block,
+
+        id: block.id || dbRoom?.id || `${activeFloorLabel}-${index}`,
+        _key: block.id || number || `${activeFloorLabel}-${index}`,
+
+        roomNumber: number || dbRoom?.room_number || block.id,
+        room_number: number || dbRoom?.room_number || block.id,
+
+        name: block.name || dbRoom?.name || number || block.id,
+        type: block.type || dbRoom?.type || 'other',
+        department: block.department || dbRoom?.department || '—',
+        capacity: block.capacity ?? dbRoom?.capacity ?? '—',
+
+        is_accessible:
+          block.is_accessible ??
+          block.isAccessible ??
+          dbRoom?.is_accessible ??
+          true,
+
+        source: 'web-block',
+      };
+    });
+  }, [activeWebFloor, roomsByNumber, activeFloorLabel]);
+
+  const displayLocations = useMemo(() => {
+    if (mapBlocks.length > 0) return mapBlocks;
+
+    return rooms.map((room) => ({
+      ...room,
+      roomNumber: room.room_number,
+      source: 'database-room',
+      _key: room.id,
+    }));
+  }, [mapBlocks, rooms]);
+
+  const filteredLocations = useMemo(() => {
+    const q = query.trim().toLowerCase();
+
+    return displayLocations.filter((item) => {
+      const typeOk = filterMatchesType(item, filter);
+      const textOk = !q || getSearchText(item).includes(q);
+
+      return typeOk && textOk;
+    });
+  }, [displayLocations, filter, query]);
+
+  const loadRooms = useCallback(async (floorId) => {
+    if (!floorId) return;
+
+    setRoomsLoading(true);
+
     try {
-      const { data } = await floorAPI.getAll({ building_id: buildingId });
-      const bFloors  = data.data.floors;
-      setFloors(bFloors);
-      if (bFloors.length) loadFloorData(bFloors[0].id);
-    } catch { Alert.alert('Error', 'Failed to load floors'); }
-  };
+      const response = await roomAPI.getByFloor(floorId, {
+        active_only: 'true',
+        limit: 700,
+      });
 
-  const loadFloorData = async (floorId) => {
-    setActiveFloor(floorId);
-    setLoadingFloor(true);
-    setActivePath([]);
-    setSelectedRoom(null);
-    try {
-      const [floorRes, graphRes] = await Promise.all([
-        floorAPI.getById(floorId),
-        searchAPI.getGraph({ floor_id: floorId }),
-      ]);
-      setRooms(floorRes.data.data.rooms || []);
-      setGraph(graphRes.data.data);
-      resetView();
-    } catch { Alert.alert('Error', 'Failed to load floor map'); }
-    finally { setLoadingFloor(false); }
-  };
-
-  const handleRoomPress = useCallback((room) => {
-    setSelectedRoom(room);
-    setShowPanel(true);
+      const payload = unwrapApi(response);
+      setRooms(payload.rooms || []);
+    } catch (error) {
+      console.log('loadRooms error:', error?.message || error);
+    } finally {
+      setRoomsLoading(false);
+    }
   }, []);
 
-  const handleFindPath = () => {
-    if (!fromRoom || !toRoom) { Alert.alert('Error', 'Select both rooms'); return; }
-    const path = dijkstra(graph.graph, fromRoom, toRoom);
-    if (!path) { Alert.alert('No Path', 'No path found between these rooms'); return; }
-    setActivePath(path);
-    setShowPathModal(false);
-  };
+  const loadFloors = useCallback(async () => {
+    try {
+      const response = await floorAPI.getAll({ active_only: 'true' });
+      const payload = unwrapApi(response);
 
-  // Build path D
-  const pathD = activePath.length >= 2
-    ? activePath.map((id, i) => {
-        const n = graph.nodes[id];
-        if (!n?.x || !n?.y) return '';
-        const px = (parseFloat(n.x) / 100) * SVG_W;
-        const py = (parseFloat(n.y) / 100) * SVG_H;
-        return `${i === 0 ? 'M' : 'L'} ${px} ${py}`;
-      }).join(' ')
-    : '';
+      const apiFloors = (payload.floors || [])
+        .filter((floor) => WEB_FLOORS[String(floor.floor_label)])
+        .map((floor) => ({
+          ...floor,
+          floor_label: String(floor.floor_label),
+        }));
 
-  const FILTERS = ['all', 'classroom', 'lab', 'office'];
+      const localFloors = getLocalFloorOptions();
+
+      const list = sortFloors(apiFloors.length > 0 ? apiFloors : localFloors);
+
+      setFloors(list);
+
+      const targetFloorId = route?.params?.floorId;
+      const targetFloorLabel =
+        route?.params?.floorLabel ||
+        findFloorLabelByRoomNumber(route?.params?.roomNumber);
+
+      const defaultFloor =
+        list.find((floor) => String(floor.id) === String(targetFloorId)) ||
+        list.find((floor) => String(floor.floor_label) === String(targetFloorLabel)) ||
+        list.find((floor) => floor.floor_label === 'G') ||
+        list[0];
+
+      if (defaultFloor) {
+        setActiveFloorId(defaultFloor.id);
+      }
+    } catch (error) {
+      const localFloors = getLocalFloorOptions();
+      setFloors(localFloors);
+
+      const targetFloorLabel =
+        route?.params?.floorLabel ||
+        findFloorLabelByRoomNumber(route?.params?.roomNumber);
+
+      const defaultFloor =
+        localFloors.find((floor) => floor.floor_label === targetFloorLabel) ||
+        localFloors.find((floor) => floor.floor_label === 'G') ||
+        localFloors[0];
+
+      if (defaultFloor) {
+        setActiveFloorId(defaultFloor.id);
+      }
+
+      Alert.alert(
+        'Map warning',
+        getErrorMessage(
+          error,
+          'Backend floors could not be loaded. Showing local map data.'
+        )
+      );
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [
+    route?.params?.floorId,
+    route?.params?.floorLabel,
+    route?.params?.roomNumber,
+  ]);
+
+  useEffect(() => {
+    loadFloors();
+  }, [loadFloors]);
+
+  useEffect(() => {
+    if (!activeFloor) return;
+
+    if (!activeFloor.isLocal && activeFloor.id !== activeFloor.floor_label) {
+      loadRooms(activeFloor.id);
+    } else {
+      setRooms([]);
+    }
+  }, [activeFloor, loadRooms]);
+
+  useEffect(() => {
+    const target = route?.params?.roomNumber;
+
+    if (!target || filteredLocations.length === 0) return;
+
+    const normalized = normalizeRoomNumber(target);
+
+    const found = filteredLocations.find((item) => {
+      return (
+        normalizeRoomNumber(getRoomNumber(item)) === normalized ||
+        String(item.id) === String(route?.params?.roomId || '')
+      );
+    });
+
+    if (found) {
+      setSelectedRoom(found);
+      setQuery(getRoomNumber(found));
+    }
+  }, [
+    route?.params?.roomNumber,
+    route?.params?.roomId,
+    filteredLocations,
+  ]);
+
+  if (loading) {
+    return <LoadingState />;
+  }
 
   return (
-    <SafeAreaView style={s.safe} edges={['top']}>
-      {/* Header */}
-      <View style={s.header}>
-        <Text style={s.headerTitle}>Campus Map</Text>
-        <TouchableOpacity style={s.navBtn} onPress={() => setShowPathModal(true)}>
-          <Text style={s.navBtnText}>↗ Navigate</Text>
-        </TouchableOpacity>
-      </View>
+    <SafeAreaView style={styles.safe} edges={['top']}>
+      <ScreenHeader
+        title="Campus Map"
+        subtitle="Engineering Building indoor navigation"
+      />
 
-      {/* Building tabs */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.tabBar} contentContainerStyle={s.tabContent}>
-        {buildings.map(b => (
-          <TouchableOpacity
-            key={b.id}
-            style={[s.tab, activeBuilding === b.id && s.tabActive]}
-            onPress={() => loadFloors(b.id)}
+      <ScrollView
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => {
+              setRefreshing(true);
+              loadFloors();
+            }}
+          />
+        }
+      >
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.floorRow}
+          ref={floorScrollRef}
+        >
+          {floors.map((floor) => {
+            const active = floor.id === activeFloorId;
+
+            return (
+              <TouchableOpacity
+                key={floor.id}
+                style={[
+                  styles.floorChip,
+                  active && styles.floorChipActive,
+                ]}
+                onPress={() => {
+                  setActiveFloorId(floor.id);
+                  setSelectedRoom(null);
+                  setQuery('');
+                }}
+              >
+                <Text
+                  style={[
+                    styles.floorChipText,
+                    active && styles.floorChipTextActive,
+                  ]}
+                >
+                  {floor.floor_label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+
+        <Card style={styles.searchCard}>
+          <TextInput
+            style={styles.searchInput}
+            value={query}
+            onChangeText={setQuery}
+            placeholder="Search room, office, restroom..."
+            placeholderTextColor={COLORS.faint}
+          />
+
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.filterRow}
           >
-            <Text style={[s.tabText, activeBuilding === b.id && s.tabTextActive]}>Block {b.code}</Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
-
-      {/* Floor tabs */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.floorBar} contentContainerStyle={s.tabContent}>
-        {floors.map(f => (
-          <TouchableOpacity
-            key={f.id}
-            style={[s.floorTab, activeFloor === f.id && s.floorTabActive]}
-            onPress={() => loadFloorData(f.id)}
-          >
-            <Text style={[s.floorTabText, activeFloor === f.id && s.floorTabTextActive]}>{f.floor_label}</Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
-
-      {/* Filter bar */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.filterBar} contentContainerStyle={s.tabContent}>
-        {FILTERS.map(f => (
-          <TouchableOpacity key={f} style={[s.filterBtn, activeFilter === f && s.filterBtnActive]} onPress={() => setActiveFilter(f)}>
-            <Text style={[s.filterBtnText, activeFilter === f && s.filterBtnTextActive]}>
-              {f === 'all' ? 'All' : f.charAt(0).toUpperCase() + f.slice(1) + 's'}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
-
-      {/* Path info */}
-      {activePath.length > 0 && (
-        <View style={s.pathInfo}>
-          <Text style={s.pathInfoText} numberOfLines={1}>
-            {activePath.length - 1} steps: {activePath.map(id => graph.nodes[id]?.number || '?').join(' → ')}
-          </Text>
-          <TouchableOpacity onPress={() => setActivePath([])}>
-            <Text style={{ color: COLORS.muted, fontWeight: '600', fontSize: 12 }}>✕</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {/* SVG Map */}
-      <View style={s.mapArea} {...pan.panHandlers}>
-        {loadingFloor ? (
-          <View style={s.mapCenter}><ActivityIndicator color={COLORS.najahBlue} size="large" /></View>
-        ) : (
-          <Svg
-            width={SW}
-            height={SH * 0.55}
-            viewBox={`${-offset.x / scale} ${-offset.y / scale} ${SVG_W / scale} ${SVG_H / scale}`}
-          >
-            <Rect width={SVG_W} height={SVG_H} fill="#eef1f8" />
-
-            {/* Rooms */}
-            {rooms.map(room => {
-              if (!room.coord_x || !room.coord_y) return null;
-              const x = (parseFloat(room.coord_x)      / 100) * SVG_W;
-              const y = (parseFloat(room.coord_y)       / 100) * SVG_H;
-              const w = (parseFloat(room.coord_width  || 8) / 100) * SVG_W;
-              const h = (parseFloat(room.coord_height || 6) / 100) * SVG_H;
-              const c    = ROOM_COLORS[room.type] || ROOM_COLORS.default;
-              const dim  = activeFilter !== 'all' && room.type !== activeFilter;
-              const sel  = selectedRoom?.id === room.id;
-              const onPth= activePath.includes(room.id);
+            {ROOM_FILTERS.map((item) => {
+              const active = filter === item.value;
 
               return (
-                <G key={room.id} opacity={dim ? 0.2 : 1} onPress={() => handleRoomPress(room)}>
-                  <Rect
-                    x={x} y={y} width={w} height={h} rx={2}
-                    fill={sel ? c.stroke : onPth ? '#fef08a' : c.fill}
-                    stroke={sel ? '#fff' : c.stroke}
-                    strokeWidth={sel ? 3 : 1.5}
-                  />
-                  <SvgText x={x + w/2} y={y + h/2 + 4} textAnchor="middle"
-                    fontSize={Math.min(w/6, 13)} fill={sel ? '#fff' : c.text} fontWeight="500">
-                    {room.room_number}
-                  </SvgText>
-                </G>
+                <TouchableOpacity
+                  key={item.value}
+                  style={[
+                    styles.filterChip,
+                    active && styles.filterChipActive,
+                  ]}
+                  onPress={() => setFilter(item.value)}
+                >
+                  <Text
+                    style={[
+                      styles.filterText,
+                      active && styles.filterTextActive,
+                    ]}
+                  >
+                    {item.label}
+                  </Text>
+                </TouchableOpacity>
               );
             })}
+          </ScrollView>
+        </Card>
 
-            {/* Path line */}
-            {pathD && (
-              <G>
-                <Path d={pathD} fill="none" stroke="#f59e0b" strokeWidth={4} strokeLinecap="round" strokeDasharray="8,5" />
-                {[activePath[0], activePath[activePath.length - 1]].map((id, i) => {
-                  const n = graph.nodes[id];
-                  if (!n?.x || !n?.y) return null;
-                  const px = (parseFloat(n.x) / 100) * SVG_W;
-                  const py = (parseFloat(n.y) / 100) * SVG_H;
-                  return (
-                    <G key={id}>
-                      <Circle cx={px} cy={py} r={12} fill={i === 0 ? '#22c55e' : '#ef4444'} stroke="#fff" strokeWidth={2} />
-                      <SvgText x={px} y={py + 4} textAnchor="middle" fontSize={10} fill="#fff" fontWeight="700">{i===0?'S':'E'}</SvgText>
-                    </G>
-                  );
-                })}
-              </G>
-            )}
-          </Svg>
+        {mapImageSource ? (
+          <Card style={styles.mapCard}>
+            <Text style={styles.mapTitle}>
+              {activeWebFloor?.title ||
+                `${activeFloorLabel} — ${activeFloor?.name || 'Campus Map'}`}
+            </Text>
+
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator
+              contentContainerStyle={styles.mapHorizontalContent}
+            >
+              <View
+                style={{
+                  width: MAP_DISPLAY_WIDTH,
+                  height: mapDisplayHeight,
+                  position: 'relative',
+                }}
+              >
+                <Image
+                  source={mapImageSource}
+                  style={{
+                    width: MAP_DISPLAY_WIDTH,
+                    height: mapDisplayHeight,
+                  }}
+                  resizeMode="contain"
+                />
+
+                <Svg
+                  width={MAP_DISPLAY_WIDTH}
+                  height={mapDisplayHeight}
+                  viewBox={`0 0 ${sourceMapWidth} ${sourceMapHeight}`}
+                  preserveAspectRatio="xMidYMid meet"
+                  style={StyleSheet.absoluteFill}
+                >
+                  {filteredLocations.map((item) => {
+                    const selected =
+                      normalizeRoomNumber(getRoomNumber(selectedRoom)) ===
+                      normalizeRoomNumber(getRoomNumber(item));
+
+                    if (item.source === 'web-block') {
+                      return (
+                        <WebBlockShape
+                          key={item._key}
+                          block={item}
+                          selected={selected}
+                          onPress={() => setSelectedRoom(item)}
+                        />
+                      );
+                    }
+
+                    return (
+                      <DatabaseRoomShape
+                        key={item._key}
+                        room={item}
+                        selected={selected}
+                        onPress={() => setSelectedRoom(item)}
+                      />
+                    );
+                  })}
+                </Svg>
+              </View>
+            </ScrollView>
+          </Card>
+        ) : (
+          <Card>
+            <EmptyState
+              icon="🗺️"
+              title="No map image"
+              subtitle="This floor has no map image yet."
+            />
+          </Card>
         )}
 
-        {/* Zoom controls */}
-        <View style={s.zoomControls}>
-          <TouchableOpacity style={s.zoomBtn} onPress={zoomIn}><Text style={s.zoomText}>+</Text></TouchableOpacity>
-          <TouchableOpacity style={s.zoomBtn} onPress={zoomOut}><Text style={s.zoomText}>−</Text></TouchableOpacity>
-          <TouchableOpacity style={s.zoomBtn} onPress={resetView}><Text style={s.zoomText}>⊙</Text></TouchableOpacity>
+        <View style={styles.resultsHeader}>
+          <Text style={styles.resultsTitle}>Locations</Text>
+          <Text style={styles.resultsCount}>
+            {filteredLocations.length} found
+          </Text>
         </View>
-      </View>
 
-      {/* Room detail panel */}
-      {showPanel && selectedRoom && (
-        <View style={s.panel}>
-          <View style={s.panelHandle} />
-          <View style={s.panelHeader}>
-            <View>
-              <Text style={s.panelNum}>Room {selectedRoom.room_number}</Text>
-              <Text style={s.panelName}>{selectedRoom.name}</Text>
-              <View style={s.panelBadge}>
-                <Text style={s.panelBadgeText}>{selectedRoom.type?.replace('_',' ')}</Text>
-              </View>
-            </View>
-            <TouchableOpacity onPress={() => setShowPanel(false)} style={s.panelClose}>
-              <Text style={{ color: COLORS.muted, fontSize: 16 }}>✕</Text>
-            </TouchableOpacity>
-          </View>
-          <View style={s.panelActions}>
-            <TouchableOpacity style={s.panelBtn} onPress={() => { setToRoom(selectedRoom.id); setShowPathModal(true); setShowPanel(false); }}>
-              <Text style={s.panelBtnText}>Navigate here →</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
+        {roomsLoading ? (
+          <ActivityIndicator
+            color={COLORS.najahBlue}
+            style={{ padding: SPACING.lg }}
+          />
+        ) : filteredLocations.length === 0 ? (
+          <Card>
+            <EmptyState
+              icon="🔎"
+              title="No locations found"
+              subtitle="Try another floor or filter."
+            />
+          </Card>
+        ) : (
+          filteredLocations.slice(0, 120).map((item) => (
+            <TouchableOpacity
+              key={item._key || item.id}
+              onPress={() => setSelectedRoom(item)}
+              activeOpacity={0.82}
+            >
+              <Card style={styles.roomRow}>
+                <View style={styles.roomNumberBox}>
+                  <Text style={styles.roomNumber}>
+                    {getRoomNumber(item)}
+                  </Text>
+                </View>
 
-      {/* Path modal */}
-      {showPathModal && (
-        <View style={s.modalOverlay}>
-          <View style={s.modal}>
-            <Text style={s.modalTitle}>Find Path</Text>
-            <Text style={s.modalLabel}>From</Text>
-            <ScrollView horizontal style={s.roomPicker} showsHorizontalScrollIndicator={false}>
-              {Object.values(graph.nodes).map(n => (
-                <TouchableOpacity key={n.id} style={[s.roomPickBtn, fromRoom === n.id && s.roomPickBtnActive]} onPress={() => setFromRoom(n.id)}>
-                  <Text style={[s.roomPickText, fromRoom === n.id && s.roomPickTextActive]}>{n.number}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-            <Text style={s.modalLabel}>To</Text>
-            <ScrollView horizontal style={s.roomPicker} showsHorizontalScrollIndicator={false}>
-              {Object.values(graph.nodes).map(n => (
-                <TouchableOpacity key={n.id} style={[s.roomPickBtn, toRoom === n.id && s.roomPickBtnActive]} onPress={() => setToRoom(n.id)}>
-                  <Text style={[s.roomPickText, toRoom === n.id && s.roomPickTextActive]}>{n.number}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-            <View style={{ flexDirection: 'row', gap: 8, marginTop: SPACING.md }}>
-              <TouchableOpacity style={[s.modalBtn, { flex: 1 }]} onPress={handleFindPath}><Text style={s.modalBtnText}>Find Path</Text></TouchableOpacity>
-              <TouchableOpacity style={[s.modalBtn, s.modalBtnCancel, { flex: 1 }]} onPress={() => setShowPathModal(false)}><Text style={s.modalBtnCancelText}>Cancel</Text></TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      )}
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.roomName} numberOfLines={1}>
+                    {getItemName(item)}
+                  </Text>
+
+                  <Text style={styles.roomMeta} numberOfLines={2}>
+                    {roomTypeLabel(getItemType(item))} ·{' '}
+                    {item.department || '—'}
+                  </Text>
+                </View>
+
+                <Text style={styles.arrow}>›</Text>
+              </Card>
+            </TouchableOpacity>
+          ))
+        )}
+      </ScrollView>
+
+      <RoomModal
+        room={selectedRoom}
+        onClose={() => setSelectedRoom(null)}
+        floor={activeFloor}
+        activeWebFloor={activeWebFloor}
+      />
     </SafeAreaView>
   );
 }
 
-const s = StyleSheet.create({
-  safe:            { flex: 1, backgroundColor: COLORS.bg },
-  header:          { backgroundColor: COLORS.najahBlue, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: SPACING.lg, paddingVertical: 12, borderBottomWidth: 2, borderBottomColor: COLORS.gold },
-  headerTitle:     { color: '#fff', fontSize: 17, fontWeight: '700' },
-  navBtn:          { backgroundColor: COLORS.gold, paddingHorizontal: 12, paddingVertical: 5, borderRadius: RADIUS.sm },
-  navBtnText:      { color: COLORS.najahBlue, fontSize: 12, fontWeight: '700' },
-  tabBar:          { backgroundColor: COLORS.panel, borderBottomWidth: 1, borderColor: COLORS.border, maxHeight: 44 },
-  tabContent:      { paddingHorizontal: SPACING.md, paddingVertical: 6, gap: 6 },
-  tab:             { paddingHorizontal: 14, paddingVertical: 5, borderRadius: RADIUS.full, borderWidth: 1, borderColor: COLORS.border },
-  tabActive:       { backgroundColor: COLORS.najahBlue, borderColor: COLORS.najahBlue },
-  tabText:         { fontSize: 12, fontWeight: '500', color: COLORS.muted, fontFamily: 'Courier New' },
-  tabTextActive:   { color: '#fff' },
-  floorBar:        { backgroundColor: COLORS.surface, borderBottomWidth: 1, borderColor: COLORS.border, maxHeight: 38 },
-  floorTab:        { paddingHorizontal: 12, paddingVertical: 4, borderRadius: RADIUS.sm, borderWidth: 1, borderColor: COLORS.border },
-  floorTabActive:  { backgroundColor: '#0a5cb8', borderColor: '#0a5cb8' },
-  floorTabText:    { fontSize: 12, color: COLORS.muted, fontFamily: 'Courier New' },
-  floorTabTextActive: { color: '#fff', fontWeight: '600' },
-  filterBar:       { maxHeight: 38, borderBottomWidth: 1, borderColor: COLORS.border },
-  filterBtn:       { paddingHorizontal: 12, paddingVertical: 4, borderRadius: RADIUS.sm, borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.panel },
-  filterBtnActive: { backgroundColor: COLORS.najahBlue, borderColor: COLORS.najahBlue },
-  filterBtnText:   { fontSize: 11, color: COLORS.muted, fontWeight: '500' },
-  filterBtnTextActive: { color: '#fff' },
-  pathInfo:        { backgroundColor: '#fffbf0', borderBottomWidth: 1, borderColor: '#f0e4b8', paddingHorizontal: SPACING.lg, paddingVertical: 6, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  pathInfoText:    { fontSize: 11, color: COLORS.green, fontFamily: 'Courier New', flex: 1, marginRight: 8 },
-  mapArea:         { flex: 1, position: 'relative', overflow: 'hidden' },
-  mapCenter:       { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  zoomControls:    { position: 'absolute', bottom: 12, right: 12, gap: 4 },
-  zoomBtn:         { width: 32, height: 32, backgroundColor: COLORS.panel, borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.sm, alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
-  zoomText:        { fontSize: 18, color: COLORS.text, lineHeight: 22 },
-  panel:           { backgroundColor: COLORS.panel, borderTopLeftRadius: 16, borderTopRightRadius: 16, borderTopWidth: 1, borderColor: COLORS.border, paddingTop: SPACING.sm },
-  panelHandle:     { width: 36, height: 4, backgroundColor: COLORS.border, borderRadius: RADIUS.full, alignSelf: 'center', marginBottom: SPACING.sm },
-  panelHeader:     { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: SPACING.lg, paddingBottom: SPACING.md, borderBottomWidth: 1, borderColor: COLORS.border },
-  panelNum:        { fontFamily: 'Courier New', fontSize: 20, fontWeight: '700', color: COLORS.najahBlue },
-  panelName:       { fontSize: 14, fontWeight: '500', color: COLORS.text },
-  panelBadge:      { alignSelf: 'flex-start', marginTop: 4, backgroundColor: COLORS.bg, paddingHorizontal: 8, paddingVertical: 2, borderRadius: RADIUS.full },
-  panelBadgeText:  { fontSize: 11, color: COLORS.muted },
-  panelClose:      { alignSelf: 'flex-start' },
-  panelActions:    { padding: SPACING.lg },
-  panelBtn:        { backgroundColor: COLORS.najahBlue, borderRadius: RADIUS.md, padding: 10, alignItems: 'center' },
-  panelBtnText:    { color: '#fff', fontWeight: '700' },
-  modalOverlay:    { position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
-  modal:           { backgroundColor: COLORS.panel, borderTopLeftRadius: 16, borderTopRightRadius: 16, padding: SPACING.xl, paddingBottom: 32 },
-  modalTitle:      { fontSize: 16, fontWeight: '700', color: COLORS.text, marginBottom: SPACING.lg },
-  modalLabel:      { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', color: COLORS.muted, letterSpacing: 0.8, marginBottom: 6 },
-  roomPicker:      { marginBottom: SPACING.md, maxHeight: 44 },
-  roomPickBtn:     { paddingHorizontal: 12, paddingVertical: 6, borderRadius: RADIUS.sm, borderWidth: 1, borderColor: COLORS.border, marginRight: 6, backgroundColor: COLORS.bg },
-  roomPickBtnActive: { backgroundColor: COLORS.najahBlue, borderColor: COLORS.najahBlue },
-  roomPickText:    { fontFamily: 'Courier New', fontSize: 13, color: COLORS.muted },
-  roomPickTextActive: { color: '#fff' },
-  modalBtn:        { backgroundColor: COLORS.najahBlue, borderRadius: RADIUS.md, padding: 11, alignItems: 'center' },
-  modalBtnText:    { color: '#fff', fontWeight: '700', fontSize: 14 },
-  modalBtnCancel:  { backgroundColor: COLORS.bg, borderWidth: 1, borderColor: COLORS.border },
-  modalBtnCancelText: { color: COLORS.muted, fontSize: 14 },
+function WebBlockShape({ block, selected, onPress }) {
+  const fill = selected
+    ? 'rgba(11, 99, 255, 0.30)'
+    : 'rgba(11, 99, 255, 0.05)';
+
+  const stroke = selected
+    ? '#0b63ff'
+    : 'rgba(11, 99, 255, 0.55)';
+
+  const strokeWidth = selected ? 5 : 2;
+
+  const number = getRoomNumber(block);
+
+  const labelX = Number(
+    block.labelX ??
+    block.coord_x + block.coord_width / 2 ??
+    block.x + block.width / 2 ??
+    0
+  );
+
+  const labelY = Number(
+    block.labelY ??
+    block.coord_y + block.coord_height / 2 ??
+    block.y + block.height / 2 ??
+    0
+  );
+
+  if (block.shape === 'polygon' && block.points) {
+    return (
+      <React.Fragment>
+        <Polygon
+          points={block.points}
+          fill={fill}
+          stroke={stroke}
+          strokeWidth={strokeWidth}
+          onPress={onPress}
+        />
+
+        {number ? (
+          <SvgText
+            x={labelX}
+            y={labelY}
+            fontSize="24"
+            fontWeight="900"
+            fill="#061b44"
+            textAnchor="middle"
+            onPress={onPress}
+          >
+            {number}
+          </SvgText>
+        ) : null}
+      </React.Fragment>
+    );
+  }
+
+  const x = Number(block.x ?? block.coord_x ?? 0);
+  const y = Number(block.y ?? block.coord_y ?? 0);
+  const width = Number(block.width ?? block.coord_width ?? 60);
+  const height = Number(block.height ?? block.coord_height ?? 45);
+
+  return (
+    <React.Fragment>
+      <Rect
+        x={x}
+        y={y}
+        width={width}
+        height={height}
+        rx={6}
+        fill={fill}
+        stroke={stroke}
+        strokeWidth={strokeWidth}
+        onPress={onPress}
+      />
+
+      {number ? (
+        <SvgText
+          x={labelX || x + width / 2}
+          y={labelY || y + height / 2}
+          fontSize="24"
+          fontWeight="900"
+          fill="#061b44"
+          textAnchor="middle"
+          onPress={onPress}
+        >
+          {number}
+        </SvgText>
+      ) : null}
+    </React.Fragment>
+  );
+}
+
+function DatabaseRoomShape({ room, selected, onPress }) {
+  const fill = selected
+    ? 'rgba(11, 99, 255, 0.30)'
+    : 'rgba(11, 99, 255, 0.04)';
+
+  const stroke = selected
+    ? '#0b63ff'
+    : 'rgba(11, 99, 255, 0.55)';
+
+  const strokeWidth = selected ? 5 : 2;
+
+  const polygon = getPolygonPoints(room);
+
+  const x = Number(room.coord_x || 0);
+  const y = Number(room.coord_y || 0);
+  const width = Number(room.coord_width || 60);
+  const height = Number(room.coord_height || 45);
+
+  const labelX = x + width / 2;
+  const labelY = y + height / 2;
+
+  if (polygon) {
+    return (
+      <React.Fragment>
+        <Polygon
+          points={polygon}
+          fill={fill}
+          stroke={stroke}
+          strokeWidth={strokeWidth}
+          onPress={onPress}
+        />
+
+        <SvgText
+          x={labelX}
+          y={labelY}
+          fontSize="24"
+          fill="#061b44"
+          fontWeight="900"
+          textAnchor="middle"
+          onPress={onPress}
+        >
+          {getRoomNumber(room)}
+        </SvgText>
+      </React.Fragment>
+    );
+  }
+
+  if (room.coord_x === null || room.coord_x === undefined) {
+    return null;
+  }
+
+  return (
+    <React.Fragment>
+      <Rect
+        x={x}
+        y={y}
+        width={width}
+        height={height}
+        rx={6}
+        fill={fill}
+        stroke={stroke}
+        strokeWidth={strokeWidth}
+        onPress={onPress}
+      />
+
+      <SvgText
+        x={labelX}
+        y={labelY}
+        fontSize="24"
+        fill="#061b44"
+        fontWeight="900"
+        textAnchor="middle"
+        onPress={onPress}
+      >
+        {getRoomNumber(room)}
+      </SvgText>
+    </React.Fragment>
+  );
+}
+
+function getPolygonPoints(room) {
+  const value = room.polygon_points;
+
+  if (!value) return '';
+
+  if (typeof value === 'string') {
+    if (value.trim().startsWith('[')) {
+      try {
+        const parsed = JSON.parse(value);
+        return parsed.map((p) => `${p.x},${p.y}`).join(' ');
+      } catch {
+        return value;
+      }
+    }
+
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((p) => `${p.x},${p.y}`).join(' ');
+  }
+
+  return '';
+}
+
+function RoomModal({ room, floor, activeWebFloor, onClose }) {
+  if (!room) return null;
+
+  const roomNumber = getRoomNumber(room);
+
+  return (
+    <Modal
+      transparent
+      animationType="slide"
+      visible={Boolean(room)}
+      onRequestClose={onClose}
+    >
+      <View style={styles.modalBackdrop}>
+        <View style={styles.modalCard}>
+          <View style={styles.modalHeader}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.modalNumber}>
+                {roomNumber}
+              </Text>
+
+              <Text style={styles.modalName}>
+                {getItemName(room)}
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              onPress={onClose}
+              style={styles.closeButton}
+            >
+              <Text style={styles.closeText}>×</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.modalGrid}>
+            <Info label="Type" value={roomTypeLabel(getItemType(room))} />
+
+            <Info
+              label="Floor"
+              value={
+                activeWebFloor?.label ||
+                floor?.floor_label ||
+                '—'
+              }
+            />
+
+            <Info
+              label="Department"
+              value={room.department || '—'}
+            />
+
+            <Info
+              label="Capacity"
+              value={room.capacity || '—'}
+            />
+
+            <Info
+              label="Accessible"
+              value={room.is_accessible === false ? 'No' : 'Yes'}
+            />
+
+            {room.lecturerName && room.lecturerName !== '—' ? (
+              <Info label="Lecturer" value={room.lecturerName} />
+            ) : null}
+
+            {room.lecturerEmail && room.lecturerEmail !== '—' ? (
+              <Info label="Email" value={room.lecturerEmail} />
+            ) : null}
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function Info({ label, value }) {
+  return (
+    <View style={styles.infoBox}>
+      <Text style={styles.infoLabel}>
+        {label}
+      </Text>
+
+      <Text style={styles.infoValue}>
+        {String(value ?? '—')}
+      </Text>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  safe: {
+    flex: 1,
+    backgroundColor: COLORS.bg,
+  },
+
+  content: {
+    padding: SPACING.lg,
+    gap: SPACING.md,
+  },
+
+  floorRow: {
+    gap: 8,
+    paddingVertical: 2,
+  },
+
+  floorChip: {
+    minWidth: 54,
+    height: 42,
+    borderRadius: RADIUS.full,
+    backgroundColor: COLORS.panel,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  floorChipActive: {
+    backgroundColor: COLORS.najahBlue,
+    borderColor: COLORS.najahBlue,
+  },
+
+  floorChipText: {
+    color: COLORS.text,
+    fontWeight: '900',
+  },
+
+  floorChipTextActive: {
+    color: '#fff',
+  },
+
+  searchCard: {
+    padding: SPACING.md,
+  },
+
+  searchInput: {
+    height: 44,
+    backgroundColor: COLORS.bg,
+    borderRadius: RADIUS.full,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    paddingHorizontal: SPACING.lg,
+    color: COLORS.text,
+  },
+
+  filterRow: {
+    gap: 8,
+    paddingTop: SPACING.md,
+  },
+
+  filterChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: RADIUS.full,
+    backgroundColor: COLORS.bg,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+
+  filterChipActive: {
+    backgroundColor: COLORS.najahBlue,
+    borderColor: COLORS.najahBlue,
+  },
+
+  filterText: {
+    color: COLORS.muted,
+    fontWeight: '900',
+    fontSize: 12,
+  },
+
+  filterTextActive: {
+    color: '#fff',
+  },
+
+  mapCard: {
+    padding: SPACING.md,
+  },
+
+  mapTitle: {
+    color: COLORS.text,
+    fontWeight: '900',
+    marginBottom: SPACING.sm,
+  },
+
+  mapHorizontalContent: {
+    paddingBottom: SPACING.sm,
+  },
+
+  resultsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+
+  resultsTitle: {
+    color: COLORS.text,
+    fontWeight: '900',
+    fontSize: 17,
+  },
+
+  resultsCount: {
+    color: COLORS.muted,
+    fontWeight: '800',
+  },
+
+  roomRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.md,
+    marginBottom: SPACING.sm,
+  },
+
+  roomNumberBox: {
+    width: 72,
+    height: 48,
+    backgroundColor: COLORS.najahLight,
+    borderRadius: RADIUS.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  roomNumber: {
+    color: COLORS.najahBlue,
+    fontWeight: '900',
+    fontSize: 12,
+    textAlign: 'center',
+  },
+
+  roomName: {
+    color: COLORS.text,
+    fontWeight: '900',
+  },
+
+  roomMeta: {
+    color: COLORS.muted,
+    fontSize: 12,
+    marginTop: 3,
+  },
+
+  arrow: {
+    color: COLORS.faint,
+    fontSize: 28,
+  },
+
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(7,20,45,0.45)',
+    justifyContent: 'flex-end',
+  },
+
+  modalCard: {
+    backgroundColor: COLORS.panel,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    padding: SPACING.lg,
+    maxHeight: '78%',
+  },
+
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: SPACING.md,
+    marginBottom: SPACING.lg,
+  },
+
+  modalNumber: {
+    color: COLORS.najahBlue,
+    fontWeight: '900',
+    fontSize: 30,
+  },
+
+  modalName: {
+    color: COLORS.text,
+    fontWeight: '800',
+    marginTop: 3,
+  },
+
+  closeButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: COLORS.bg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  closeText: {
+    color: COLORS.text,
+    fontSize: 28,
+    lineHeight: 30,
+  },
+
+  modalGrid: {
+    gap: SPACING.sm,
+  },
+
+  infoBox: {
+    backgroundColor: COLORS.bg,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: RADIUS.md,
+    padding: SPACING.md,
+  },
+
+  infoLabel: {
+    color: COLORS.muted,
+    fontSize: 11,
+    fontWeight: '900',
+    marginBottom: 4,
+    textTransform: 'uppercase',
+  },
+
+  infoValue: {
+    color: COLORS.text,
+    fontWeight: '800',
+  },
 });

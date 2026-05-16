@@ -1,234 +1,189 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, FlatList,
-  StyleSheet, ActivityIndicator, KeyboardAvoidingView,
-  Platform, SafeAreaView,
+  ActivityIndicator,
+  FlatList,
+  KeyboardAvoidingView,
+  Platform,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
-import { SafeAreaView as SafeArea } from 'react-native-safe-area-context';
-import api from '../api/index';
-import { COLORS, SPACING, RADIUS } from '../theme';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { chatAPI } from '../api';
+import { ScreenHeader } from '../components/ui';
+import { COLORS, RADIUS, SPACING } from '../theme';
+import { getErrorMessage, unwrapApi } from '../utils/helpers';
 
-const QUICK_QUESTIONS = [
-  '📍 Where is room 161?',
-  '📅 My classes today',
-  '🔍 Find computer labs',
-  '❓ What can you do?',
+const QUICK = [
+  'Where is room 2050?',
+  'What classes do I have today?',
+  'Find the nearest restroom',
+  'Where is Dr. office?',
 ];
 
-export default function ChatScreen() {
+export default function ChatScreen({ navigation }) {
+  const listRef = useRef(null);
+  const [input, setInput] = useState('');
+  const [loading, setLoading] = useState(false);
   const [messages, setMessages] = useState([
     {
-      id:   '0',
+      id: 'welcome',
       role: 'bot',
-      text: "Hi! 👋 I'm your Smart Campus Assistant.\n\nAsk me about:\n• 📍 Room locations\n• 📅 Your schedule\n• 👨‍🏫 Instructors\n• 🔍 Facilities",
-      timestamp: new Date(),
-    }
+      text: 'Hi, I am your Smart Campus Assistant. Ask me about rooms, schedule, restrooms, offices, and directions.',
+    },
   ]);
-  const [input,   setInput]   = useState('');
-  const [loading, setLoading] = useState(false);
-  const [showQuick, setShowQuick] = useState(true);
-  const listRef = useRef(null);
 
-  const scrollToBottom = () => {
-    setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
-  };
-
-  useEffect(() => { scrollToBottom(); }, [messages]);
-
-  const sendMessage = useCallback(async (text) => {
-    const msg = text || input.trim();
-    if (!msg || loading) return;
+  const send = useCallback(async (preset) => {
+    const text = (preset || input).trim();
+    if (!text || loading) return;
 
     setInput('');
-    setShowQuick(false);
-
-    const userMsg = {
-      id:        String(Date.now()),
-      role:      'user',
-      text:      msg,
-      timestamp: new Date(),
-    };
-    setMessages(prev => [...prev, userMsg]);
+    setMessages((current) => [
+      ...current,
+      { id: `${Date.now()}-u`, role: 'user', text },
+    ]);
     setLoading(true);
 
     try {
-      const { data } = await api.post('/chat', { message: msg });
-      const reply    = data.data;
+      const response = await chatAPI.send(text);
+      const payload = unwrapApi(response);
+      const reply = payload.message || payload.reply || 'I received your message.';
 
-      setMessages(prev => [...prev, {
-        id:        String(Date.now() + 1),
-        role:      'bot',
-        text:      reply.message,
-        action:    reply.action,
-        timestamp: new Date(),
-      }]);
-    } catch (err) {
-      setMessages(prev => [...prev, {
-        id:        String(Date.now() + 1),
-        role:      'bot',
-        text:      'Sorry, I could not process that. Make sure you are connected.',
-        isError:   true,
-        timestamp: new Date(),
-      }]);
+      setMessages((current) => [
+        ...current,
+        {
+          id: `${Date.now()}-b`,
+          role: 'bot',
+          text: reply,
+          action: payload.action,
+        },
+      ]);
+    } catch (error) {
+      setMessages((current) => [
+        ...current,
+        {
+          id: `${Date.now()}-e`,
+          role: 'bot',
+          text: getErrorMessage(error, 'Sorry, I could not connect to the assistant right now.'),
+          error: true,
+        },
+      ]);
     } finally {
       setLoading(false);
+      setTimeout(() => listRef.current?.scrollToEnd?.({ animated: true }), 80);
     }
   }, [input, loading]);
 
-  const renderMessage = ({ item }) => {
-    const isBot  = item.role === 'bot';
-    const time   = item.timestamp.toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit' });
+  function handleAction(action) {
+    if (!action) return;
 
-    return (
-      <View style={[s.msgRow, isBot ? s.msgRowBot : s.msgRowUser]}>
-        {isBot && (
-          <View style={s.avatar}>
-            <Text style={{ fontSize: 14 }}>🎓</Text>
-          </View>
-        )}
-        <View style={[s.bubble, isBot ? s.bubbleBot : s.bubbleUser, item.isError && s.bubbleError]}>
-          <Text style={[s.bubbleText, !isBot && { color: '#fff' }]}>{item.text}</Text>
-          {item.action?.type === 'show_room' && (
-            <TouchableOpacity style={s.actionBtn}>
-              <Text style={s.actionBtnText}>🗺️ Show on Map</Text>
-            </TouchableOpacity>
-          )}
-          {item.action?.type === 'show_schedule' && (
-            <TouchableOpacity style={s.actionBtn}>
-              <Text style={s.actionBtnText}>📅 View Schedule</Text>
-            </TouchableOpacity>
-          )}
-          <Text style={[s.timeText, !isBot && { color: 'rgba(255,255,255,0.6)' }]}>{time}</Text>
-        </View>
-      </View>
-    );
-  };
+    if (action.type === 'show_room') {
+      navigation.navigate('MainTabs', {
+        screen: 'MapTab',
+        params: { roomNumber: action.roomNumber || action.room_number },
+      });
+    }
 
-  const renderTyping = () => (
-    <View style={[s.msgRow, s.msgRowBot]}>
-      <View style={s.avatar}><Text style={{ fontSize: 14 }}>🎓</Text></View>
-      <View style={[s.bubble, s.bubbleBot, { paddingHorizontal: 16, paddingVertical: 14 }]}>
-        <View style={s.typingDots}>
-          <View style={[s.dot, { opacity: 0.4 }]} />
-          <View style={[s.dot, { opacity: 0.7 }]} />
-          <View style={s.dot} />
-        </View>
-      </View>
-    </View>
-  );
+    if (action.type === 'show_schedule') {
+      navigation.navigate('MainTabs', { screen: 'ScheduleTab' });
+    }
+  }
 
   return (
-    <SafeArea style={s.safe} edges={['top']}>
-      {/* Header */}
-      <View style={s.header}>
-        <View style={s.headerAvatar}><Text style={{ fontSize: 20 }}>🎓</Text></View>
-        <View>
-          <Text style={s.headerTitle}>Campus Assistant</Text>
-          <Text style={s.headerStatus}>🟢 Online</Text>
-        </View>
-      </View>
-
+    <SafeAreaView style={styles.safe} edges={['top']}>
+      <ScreenHeader title="Campus Assistant" subtitle="Online · AI feature" />
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
       >
-        {/* Messages */}
         <FlatList
           ref={listRef}
           data={messages}
-          keyExtractor={i => i.id}
-          renderItem={renderMessage}
-          contentContainerStyle={s.messagesList}
-          onContentSizeChange={scrollToBottom}
-          ListFooterComponent={loading ? renderTyping : null}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.list}
+          onContentSizeChange={() => listRef.current?.scrollToEnd?.({ animated: true })}
+          renderItem={({ item }) => {
+            const bot = item.role === 'bot';
+            return (
+              <View style={[styles.messageRow, bot ? styles.botRow : styles.userRow]}>
+                <View style={[styles.bubble, bot ? styles.botBubble : styles.userBubble, item.error && styles.errorBubble]}>
+                  <Text style={[styles.messageText, !bot && { color: '#fff' }]}>{item.text}</Text>
+                  {item.action ? (
+                    <TouchableOpacity style={styles.actionButton} onPress={() => handleAction(item.action)}>
+                      <Text style={styles.actionText}>Open result</Text>
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
+              </View>
+            );
+          }}
+          ListFooterComponent={loading ? (
+            <View style={[styles.messageRow, styles.botRow]}>
+              <View style={[styles.bubble, styles.botBubble]}>
+                <ActivityIndicator color={COLORS.najahBlue} />
+              </View>
+            </View>
+          ) : null}
         />
 
-        {/* Quick questions */}
-        {showQuick && (
-          <View style={s.quickWrap}>
-            <Text style={s.quickLabel}>Quick questions:</Text>
-            <View style={s.quickBtns}>
-              {QUICK_QUESTIONS.map(q => (
-                <TouchableOpacity
-                  key={q}
-                  style={s.quickBtn}
-                  onPress={() => sendMessage(q.replace(/^[^\s]+\s/, ''))}
-                >
-                  <Text style={s.quickBtnText}>{q}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-        )}
+        <View style={styles.quickWrap}>
+          <FlatList
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            data={QUICK}
+            keyExtractor={(item) => item}
+            contentContainerStyle={{ gap: 8 }}
+            renderItem={({ item }) => (
+              <TouchableOpacity style={styles.quickButton} onPress={() => send(item)}>
+                <Text style={styles.quickText}>{item}</Text>
+              </TouchableOpacity>
+            )}
+          />
+        </View>
 
-        {/* Input */}
-        <View style={s.inputWrap}>
+        <View style={styles.inputWrap}>
           <TextInput
-            style={s.input}
+            style={styles.input}
             value={input}
             onChangeText={setInput}
             placeholder="Ask about rooms, schedule..."
-            placeholderTextColor={COLORS.muted}
+            placeholderTextColor={COLORS.faint}
             multiline
             maxLength={500}
-            returnKeyType="send"
-            onSubmitEditing={() => sendMessage()}
           />
           <TouchableOpacity
-            style={[s.sendBtn, (!input.trim() || loading) && s.sendBtnDisabled]}
-            onPress={() => sendMessage()}
+            style={[styles.sendButton, (!input.trim() || loading) && { opacity: 0.5 }]}
+            onPress={() => send()}
             disabled={!input.trim() || loading}
           >
-            {loading
-              ? <ActivityIndicator color="#fff" size="small" />
-              : <Text style={s.sendBtnText}>➤</Text>
-            }
+            <Text style={styles.sendText}>➤</Text>
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
-    </SafeArea>
+    </SafeAreaView>
   );
 }
 
-const s = StyleSheet.create({
-  safe:         { flex: 1, backgroundColor: COLORS.bg },
-  header:       { backgroundColor: COLORS.najahBlue, flexDirection: 'row', alignItems: 'center', gap: SPACING.md, padding: SPACING.lg, borderBottomWidth: 2, borderBottomColor: COLORS.gold },
-  headerAvatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center' },
-  headerTitle:  { color: '#fff', fontSize: 15, fontWeight: '700' },
-  headerStatus: { color: 'rgba(255,255,255,0.7)', fontSize: 11, marginTop: 1 },
-
-  messagesList: { padding: SPACING.md, gap: SPACING.sm, paddingBottom: SPACING.lg },
-
-  msgRow:    { flexDirection: 'row', alignItems: 'flex-end', gap: 8, marginBottom: 8 },
-  msgRowBot: { justifyContent: 'flex-start' },
-  msgRowUser:{ flexDirection: 'row-reverse' },
-
-  avatar: { width: 30, height: 30, borderRadius: 15, backgroundColor: COLORS.najahLight, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
-
-  bubble:      { maxWidth: '78%', padding: SPACING.md, borderRadius: 16 },
-  bubbleBot:   { backgroundColor: COLORS.panel, borderWidth: 1, borderColor: COLORS.border, borderBottomLeftRadius: 4 },
-  bubbleUser:  { backgroundColor: COLORS.najahBlue, borderBottomRightRadius: 4 },
-  bubbleError: { backgroundColor: '#fff5f5', borderColor: '#fed7d7' },
-
-  bubbleText: { fontSize: 13, lineHeight: 20, color: COLORS.text },
-  timeText:   { fontSize: 10, color: COLORS.muted, marginTop: 4, textAlign: 'right' },
-
-  actionBtn:     { marginTop: 8, backgroundColor: COLORS.najahBlue, padding: 8, borderRadius: 8, alignItems: 'center' },
-  actionBtnText: { color: '#fff', fontSize: 12, fontWeight: '700' },
-
-  typingDots: { flexDirection: 'row', gap: 4, alignItems: 'center' },
-  dot:        { width: 7, height: 7, borderRadius: 4, backgroundColor: COLORS.muted },
-
-  quickWrap: { padding: SPACING.md, borderTopWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.panel },
-  quickLabel:{ fontSize: 11, color: COLORS.muted, fontWeight: '600', marginBottom: 8 },
-  quickBtns: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  quickBtn:  { paddingHorizontal: 12, paddingVertical: 6, backgroundColor: COLORS.najahLight, borderRadius: 20, borderWidth: 1, borderColor: '#c3d4ee' },
-  quickBtnText: { fontSize: 11, color: COLORS.najahBlue, fontWeight: '500' },
-
-  inputWrap: { flexDirection: 'row', alignItems: 'flex-end', gap: 8, padding: SPACING.md, borderTopWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.panel },
-  input:     { flex: 1, backgroundColor: COLORS.bg, borderWidth: 1, borderColor: COLORS.border, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 9, fontSize: 13, color: COLORS.text, maxHeight: 80 },
-  sendBtn:         { width: 38, height: 38, borderRadius: 19, backgroundColor: COLORS.najahBlue, alignItems: 'center', justifyContent: 'center' },
-  sendBtnDisabled: { opacity: 0.4 },
-  sendBtnText:     { color: '#fff', fontSize: 16 },
+const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: COLORS.bg },
+  list: { padding: SPACING.lg, gap: SPACING.sm },
+  messageRow: { flexDirection: 'row', marginBottom: 8 },
+  botRow: { justifyContent: 'flex-start' },
+  userRow: { justifyContent: 'flex-end' },
+  bubble: { maxWidth: '82%', borderRadius: 18, padding: SPACING.md },
+  botBubble: { backgroundColor: COLORS.panel, borderWidth: 1, borderColor: COLORS.border, borderBottomLeftRadius: 5 },
+  userBubble: { backgroundColor: COLORS.najahBlue, borderBottomRightRadius: 5 },
+  errorBubble: { backgroundColor: COLORS.redBg, borderColor: '#f2b8b8' },
+  messageText: { color: COLORS.text, lineHeight: 20 },
+  actionButton: { marginTop: 10, backgroundColor: COLORS.najahBlue, borderRadius: RADIUS.md, padding: 9, alignItems: 'center' },
+  actionText: { color: '#fff', fontWeight: '900' },
+  quickWrap: { backgroundColor: COLORS.panel, borderTopWidth: 1, borderTopColor: COLORS.border, paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm },
+  quickButton: { backgroundColor: COLORS.najahLight, borderRadius: RADIUS.full, paddingHorizontal: 12, paddingVertical: 8 },
+  quickText: { color: COLORS.najahBlue, fontSize: 12, fontWeight: '800' },
+  inputWrap: { flexDirection: 'row', alignItems: 'flex-end', gap: 8, padding: SPACING.md, backgroundColor: COLORS.panel, borderTopWidth: 1, borderTopColor: COLORS.border },
+  input: { flex: 1, maxHeight: 90, minHeight: 44, backgroundColor: COLORS.bg, borderWidth: 1, borderColor: COLORS.border, borderRadius: 22, paddingHorizontal: SPACING.md, paddingVertical: 10, color: COLORS.text },
+  sendButton: { width: 44, height: 44, borderRadius: 22, backgroundColor: COLORS.najahBlue, alignItems: 'center', justifyContent: 'center' },
+  sendText: { color: '#fff', fontSize: 18, fontWeight: '900' },
 });

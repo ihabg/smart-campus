@@ -1,57 +1,118 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { authAPI, saveTokens, clearTokens } from '../api/index';
+import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { authAPI, clearTokens, getToken, saveTokens } from '../api';
+import { unwrapApi } from '../utils/helpers';
 
 const AuthContext = createContext(null);
 
+function extractAuthPayload(response) {
+  const payload = unwrapApi(response);
+
+  return {
+    user: payload.user,
+    accessToken:
+      payload.accessToken || payload.access_token || payload.token,
+    refreshToken: payload.refreshToken || payload.refresh_token,
+  };
+}
+
 export function AuthProvider({ children }) {
-  const [user,        setUser]    = useState(null);
-  const [loading,     setLoading] = useState(true);
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [initialized, setInitialized] = useState(false);
 
   useEffect(() => {
-    authAPI.getMe()
-      .then(({ data }) => setUser(data.data.user))
-      .catch(() => {})
-      .finally(() => setLoading(false));
+    let mounted = true;
+
+    async function bootstrap() {
+      try {
+        const token = await getToken();
+
+        if (!token) {
+          return;
+        }
+
+        const response = await authAPI.getMe();
+        const payload = unwrapApi(response);
+
+        if (mounted) {
+          setUser(payload.user || payload);
+        }
+      } catch {
+        await clearTokens();
+      } finally {
+        if (mounted) {
+          setLoading(false);
+          setInitialized(true);
+        }
+      }
+    }
+
+    bootstrap();
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
-  const login = async (email, password) => {
-    const { data } = await authAPI.login({ email, password });
-    const { user: u, accessToken, refreshToken } = data.data;
-    await saveTokens(accessToken, refreshToken);
-    setUser(u);
-    return u;
-  };
+  async function login(email, password) {
+    const response = await authAPI.login({ email, password });
+    const payload = extractAuthPayload(response);
 
-  const register = async (form) => {
-    const { data } = await authAPI.register(form);
-    const { user: u, accessToken, refreshToken } = data.data;
-    await saveTokens(accessToken, refreshToken);
-    setUser(u);
-    return u;
-  };
+    await saveTokens(payload.accessToken, payload.refreshToken);
+    setUser(payload.user);
 
-  const logout = async () => {
-    try { await authAPI.logout(); } catch {}
+    return payload.user;
+  }
+
+  async function register(form) {
+    const response = await authAPI.register(form);
+    const payload = extractAuthPayload(response);
+
+    await saveTokens(payload.accessToken, payload.refreshToken);
+    setUser(payload.user);
+
+    return payload.user;
+  }
+
+  async function logout() {
+    try {
+      await authAPI.logout();
+    } catch {}
+
     await clearTokens();
     setUser(null);
-  };
+  }
 
-  const updateUser = updates => setUser(u => u ? { ...u, ...updates } : u);
+  function updateUser(updates) {
+    setUser((current) => (current ? { ...current, ...updates } : current));
+  }
 
-  return (
-    <AuthContext.Provider value={{
-      user, loading,
-      login, register, logout, updateUser,
-      isAuthenticated: !!user,
-      isAdmin: user?.role === 'admin' || user?.role === 'super_admin',
-    }}>
-      {children}
-    </AuthContext.Provider>
-  );
+  const value = useMemo(() => {
+    const role = user?.role;
+
+    return {
+      user,
+      loading,
+      initialized,
+      login,
+      register,
+      logout,
+      updateUser,
+      isAuthenticated: Boolean(user),
+      isAdmin: role === 'admin' || role === 'super_admin',
+      isStudent: !role || role === 'student',
+    };
+  }, [user, loading, initialized]);
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth() {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error('useAuth must be used inside AuthProvider');
-  return ctx;
+  const context = useContext(AuthContext);
+
+  if (!context) {
+    throw new Error('useAuth must be used inside AuthProvider');
+  }
+
+  return context;
 }
