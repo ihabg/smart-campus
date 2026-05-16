@@ -5,6 +5,10 @@
   overflow-x: hidden;
 }
 
+/* =========================================================
+   Floor selector
+   ========================================================= */
+
 .map-floor-bar {
   display: flex;
   align-items: center;
@@ -22,12 +26,14 @@
   display: flex;
   align-items: center;
   gap: 12px;
+  min-width: 0;
 }
 
 .map-floor-label {
   font-size: 14px;
   font-weight: 800;
   color: #10254d;
+  white-space: nowrap;
 }
 
 .map-floor-tabs {
@@ -46,12 +52,13 @@
   color: #24324b;
   font-weight: 800;
   cursor: pointer;
-  transition: all 0.18s ease;
+  transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
 }
 
 .map-floor-btn:hover {
   background: #edf3ff;
   border-color: #9bb7ff;
+  transform: translateY(-1px);
 }
 
 .map-floor-btn.active {
@@ -66,9 +73,13 @@
   font-weight: 800;
   color: #51627e;
   text-align: right;
+  white-space: nowrap;
 }
 
-/* Layout */
+/* =========================================================
+   Page layout
+   ========================================================= */
+
 .map-layout {
   display: grid;
   grid-template-columns: 360px minmax(0, 1fr);
@@ -82,6 +93,7 @@
   top: 14px;
   max-height: calc(100vh - 120px);
   overflow-y: auto;
+  overflow-x: hidden;
   padding-right: 4px;
   display: flex;
   flex-direction: column;
@@ -92,11 +104,21 @@
   width: 7px;
 }
 
+.map-tools-panel::-webkit-scrollbar-track {
+  background: transparent;
+}
+
 .map-tools-panel::-webkit-scrollbar-thumb {
   background: #c9d5e8;
   border-radius: 999px;
 }
 
+.map-tools-panel::-webkit-scrollbar-thumb:hover {
+  background: #9fb0cc;
+}
+
+/* Old fallback panel styles.
+   SmartFinderPanel has its own CSS, but these keep the page safe. */
 .map-tools-card {
   background: #ffffff;
   border: 1px solid #d9e1ef;
@@ -128,6 +150,11 @@
   outline: none;
 }
 
+.map-need-select:focus {
+  border-color: #0b63ff;
+  box-shadow: 0 0 0 4px rgba(11, 99, 255, 0.12);
+}
+
 .map-tools-note {
   margin-top: 12px;
   font-size: 13px;
@@ -140,52 +167,251 @@
   color: #24324b;
 }
 
-/* Map */
+/* =========================================================
+   Room search card
+   ========================================================= */
+
+.room-search-card {
+  background: #ffffff;
+  border: 1px solid #d9e1ef;
+  border-radius: 22px;
+  padding: 16px;
+  box-shadow: 0 12px 28px rgba(16, 24, 40, 0.07);
+}
+
+.room-search-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.room-search-head > span {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 42px;
+  border-radius: 15px;
+  background: linear-gradient(135deg, #0b63ff, #0b2a6f);
+  box-shadow: 0 10px 20px rgba(11, 99, 255, 0.22);
+}
+
+.room-search-head h3 {
+  margin: 0 0 4px;
+  color: #10254d;
+  font-size: 17px;
+  font-weight: 950;
+}
+
+.room-search-head p {
+  margin: 0;
+  color: #6a7a96;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.room-search-form {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+
+.room-search-form input {
+  min-width: 0;
+  height: 44px;
+  border: 1px solid #d5dfef;
+  border-radius: 14px;
+  background: #f8fbff;
+  padding: 0 13px;
+  color: #17233c;
+  font-weight: 800;
+  outline: none;
+}
+
+.room-search-form input::placeholder {
+  color: #8a98ae;
+  font-weight: 700;
+}
+
+.room-search-form input:focus {
+  border-color: #0b63ff;
+  box-shadow: 0 0 0 4px rgba(11, 99, 255, 0.12);
+  background: #ffffff;
+}
+
+.room-search-form button {
+  height: 44px;
+  border: 0;
+  border-radius: 14px;
+  padding: 0 16px;
+  background: #0b2a6f;
+  color: #ffffff;
+  font-weight: 900;
+  cursor: pointer;
+  transition: background 0.18s ease, transform 0.18s ease;
+}
+
+.room-search-form button:hover {
+  background: #08235e;
+  transform: translateY(-1px);
+}
+
+.room-search-error {
+  margin: 10px 0 0;
+  color: #dc2626;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.room-search-selected {
+  margin: 10px 0 0;
+  color: #51627e;
+  font-size: 13px;
+}
+
+.room-search-selected strong {
+  color: #0b2a6f;
+}
+
+/* =========================================================
+   Map canvas + stable zoom
+   Works with:
+   <div className="map-canvas-wrap">
+     <div className="map-zoom-floating">...</div>
+     <div className="map-zoom-sizer" style={{ width, aspectRatio }}>
+       <img className="map-floor-image" />
+       <svg className="map-svg-overlay">...</svg>
+     </div>
+   </div>
+   ========================================================= */
+
 .map-canvas-card {
+  position: relative;
+  min-width: 0;
   background: #ffffff;
   border: 1px solid #d9e1ef;
   border-radius: 20px;
   padding: 14px;
   box-shadow: 0 10px 26px rgba(16, 24, 40, 0.06);
-  min-width: 0;
+  overflow: hidden;
+}
+
+.map-zoom-toolbar {
+  display: none !important;
 }
 
 .map-canvas-wrap {
-  position: relative;
-  width: 100%;
+  position: relative !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  overflow: auto !important;
+  display: block !important;
   border-radius: 16px;
-  overflow: hidden;
   background: linear-gradient(180deg, #f8fafc, #eef3fb);
   border: 1px solid #e4eaf4;
+  scroll-behavior: auto;
 }
 
-.map-floor-image {
-  display: block;
-  width: 100%;
-  height: auto;
+.map-zoom-sizer {
+  position: relative !important;
+  min-width: 100% !important;
+  margin: 0 auto !important;
+  flex: none !important;
+  background: #ffffff;
+}
+
+.map-zoom-sizer .map-floor-image {
+  position: absolute !important;
+  inset: 0 !important;
+  display: block !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  object-fit: fill !important;
   user-select: none;
   pointer-events: none;
 }
 
-.map-svg-overlay {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
+.map-zoom-sizer .map-svg-overlay {
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  pointer-events: none;
 }
 
-/* Blocks */
+.map-zoom-sizer .map-svg-overlay .map-block-zone,
+.map-zoom-sizer .map-svg-overlay rect,
+.map-zoom-sizer .map-svg-overlay polygon,
+.map-zoom-sizer .map-svg-overlay polyline,
+.map-zoom-sizer .map-svg-overlay foreignObject {
+  pointer-events: auto;
+}
+
+.map-zoom-floating {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 60;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid rgba(203, 216, 238, 0.95);
+  box-shadow: 0 12px 28px rgba(16, 24, 40, 0.14);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.map-zoom-floating span {
+  padding: 0 8px;
+  color: #0b2a6f;
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.map-zoom-floating button {
+  height: 32px;
+  min-width: 34px;
+  border: 1px solid #cbd8ee;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #0b2a6f;
+  font-weight: 950;
+  cursor: pointer;
+  transition: background 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+}
+
+.map-zoom-floating button:hover:not(:disabled) {
+  background: #eef5ff;
+  border-color: #8db0f5;
+  transform: translateY(-1px);
+}
+
+.map-zoom-floating button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* =========================================================
+   Interactive SVG blocks
+   ========================================================= */
+
 .map-block-zone {
   fill: rgba(0, 0, 0, 0.001);
   stroke: transparent;
   stroke-width: 0;
   cursor: pointer;
   vector-effect: non-scaling-stroke;
-  transition:
-    fill 0.18s ease,
-    stroke 0.18s ease,
-    filter 0.18s ease,
-    opacity 0.18s ease;
+  transition: fill 0.18s ease, stroke 0.18s ease, filter 0.18s ease, opacity 0.18s ease;
 }
 
 .map-block-zone:hover {
@@ -211,87 +437,83 @@
 
 .map-block-zone.dimmed {
   opacity: 0.08;
-  pointer-events: none;
+  pointer-events: none !important;
 }
 
-.lab-zone.need-match {
-  fill: rgba(34, 197, 94, 0.28);
-  stroke: #16a34a;
-}
+.lab-zone.need-match { fill: rgba(34, 197, 94, 0.28); stroke: #16a34a; }
+.lecture-zone.need-match { fill: rgba(245, 158, 11, 0.28); stroke: #f59e0b; }
+.studio-zone.need-match { fill: rgba(14, 165, 233, 0.28); stroke: #0ea5e9; }
+.office-zone.need-match { fill: rgba(20, 184, 166, 0.28); stroke: #14b8a6; }
+.meeting-zone.need-match { fill: rgba(168, 85, 247, 0.28); stroke: #a855f7; }
+.lounge-zone.need-match { fill: rgba(249, 115, 22, 0.28); stroke: #f97316; }
+.storage-zone.need-match { fill: rgba(100, 116, 139, 0.28); stroke: #64748b; }
+.bookstore-zone.need-match { fill: rgba(234, 179, 8, 0.32); stroke: #eab308; }
+.amphitheater-zone.need-match { fill: rgba(251, 191, 36, 0.32); stroke: #f59e0b; }
+.entrance-zone.need-match { fill: rgba(34, 197, 94, 0.30); stroke: #22c55e; }
+.restroom-zone.need-match { fill: rgba(59, 130, 246, 0.30); stroke: #2563eb; }
+.accessible-zone.need-match { fill: rgba(139, 92, 246, 0.32); stroke: #7c3aed; }
+.elevator-zone.need-match { fill: rgba(124, 58, 237, 0.32); stroke: #6d28d9; }
+.stairs-normal-zone.need-match { fill: rgba(6, 182, 212, 0.30); stroke: #0891b2; }
+.stairs-zone.need-match { fill: rgba(239, 68, 68, 0.32); stroke: #dc2626; }
 
-.lecture-zone.need-match {
-  fill: rgba(245, 158, 11, 0.28);
-  stroke: #f59e0b;
-}
-
-.studio-zone.need-match {
-  fill: rgba(14, 165, 233, 0.28);
-  stroke: #0ea5e9;
-}
-
-.office-zone.need-match {
-  fill: rgba(20, 184, 166, 0.28);
-  stroke: #14b8a6;
-}
-
-.meeting-zone.need-match {
-  fill: rgba(168, 85, 247, 0.28);
-  stroke: #a855f7;
-}
-
-.lounge-zone.need-match {
-  fill: rgba(249, 115, 22, 0.28);
-  stroke: #f97316;
-}
-
-.storage-zone.need-match {
-  fill: rgba(100, 116, 139, 0.28);
-  stroke: #64748b;
-}
-
-.bookstore-zone.need-match {
-  fill: rgba(234, 179, 8, 0.32);
-  stroke: #eab308;
-}
-
-.amphitheater-zone.need-match {
-  fill: rgba(251, 191, 36, 0.32);
-  stroke: #f59e0b;
-}
-
-.entrance-zone.need-match {
-  fill: rgba(34, 197, 94, 0.30);
-  stroke: #22c55e;
-}
-
-.restroom-zone.need-match {
-  fill: rgba(59, 130, 246, 0.30);
-  stroke: #2563eb;
-}
-
-.accessible-zone.need-match {
-  fill: rgba(139, 92, 246, 0.32);
-  stroke: #7c3aed;
-}
-
-.elevator-zone.need-match {
-  fill: rgba(124, 58, 237, 0.32);
-  stroke: #6d28d9;
-}
-
-.stairs-normal-zone.need-match {
-  fill: rgba(6, 182, 212, 0.30);
-  stroke: #0891b2;
-}
-
-.stairs-zone.need-match {
-  fill: rgba(239, 68, 68, 0.32);
-  stroke: #dc2626;
-}
 .lab-zone:hover,
 .lab-zone.selected {
   fill: rgba(0, 112, 255, 0.14);
   stroke: #0b63ff;
+}
+
+.lecture-zone:hover,
+.lecture-zone.selected {
+  fill: rgba(245, 158, 11, 0.18);
+  stroke: #f59e0b;
+}
+
+.studio-zone:hover,
+.studio-zone.selected {
+  fill: rgba(14, 165, 233, 0.18);
+  stroke: #0ea5e9;
+}
+
+.office-zone:hover,
+.office-zone.selected {
+  fill: rgba(20, 184, 166, 0.18);
+  stroke: #14b8a6;
+}
+
+.meeting-zone:hover,
+.meeting-zone.selected {
+  fill: rgba(168, 85, 247, 0.18);
+  stroke: #a855f7;
+}
+
+.lounge-zone:hover,
+.lounge-zone.selected {
+  fill: rgba(249, 115, 22, 0.18);
+  stroke: #f97316;
+}
+
+.storage-zone:hover,
+.storage-zone.selected {
+  fill: rgba(100, 116, 139, 0.18);
+  stroke: #64748b;
+}
+
+.bookstore-zone:hover,
+.bookstore-zone.selected {
+  fill: rgba(234, 179, 8, 0.22);
+  stroke: #eab308;
+}
+
+.amphitheater-zone:hover,
+.amphitheater-zone.selected {
+  fill: rgba(251, 191, 36, 0.24);
+  stroke: #f59e0b;
+}
+
+.entrance-zone:hover,
+.entrance-zone.selected {
+  fill: rgba(34, 197, 94, 0.22);
+  stroke: #22c55e;
 }
 
 .restroom-zone:hover,
@@ -308,8 +530,16 @@
 
 .elevator-zone:hover,
 .elevator-zone.selected {
-  fill: rgba(139, 92, 246, 0.2);
+  fill: rgba(139, 92, 246, 0.20);
   stroke: #8b5cf6;
+}
+
+.stairs-normal-zone:hover,
+.stairs-normal-zone.selected {
+  fill: rgba(59, 130, 246, 0.18);
+  stroke: #3b82f6;
+  stroke-width: 4;
+  filter: drop-shadow(0 6px 14px rgba(59, 130, 246, 0.25));
 }
 
 .stairs-zone:hover,
@@ -322,7 +552,7 @@
 
 /* Hover chip */
 .map-hover-chip-wrap {
-  pointer-events: none;
+  pointer-events: none !important;
 }
 
 .map-hover-chip {
@@ -340,7 +570,34 @@
   box-shadow: 0 8px 18px rgba(11, 42, 111, 0.22);
 }
 
-/* Legend */
+/* Route line */
+.navigation-route {
+  fill: none;
+  stroke: #0b63ff;
+  stroke-width: 7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 18 12;
+  vector-effect: non-scaling-stroke;
+  filter: drop-shadow(0 8px 14px rgba(11, 99, 255, 0.38));
+  animation: routeDashMove 1.1s linear infinite;
+  pointer-events: none !important;
+}
+
+.navigation-route-segment {
+  fill: none;
+  stroke: #0b63ff;
+  stroke-width: 7;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+  filter: drop-shadow(0 8px 14px rgba(11, 99, 255, 0.38));
+  pointer-events: none !important;
+}
+
+/* =========================================================
+   Legend
+   ========================================================= */
+
 .map-legend {
   display: flex;
   flex-wrap: wrap;
@@ -364,27 +621,52 @@
   display: inline-block;
 }
 
-.legend-lab {
-  background: #0b63ff;
+.legend-lab { background: #0b63ff; }
+.legend-restroom { background: #1d84fd; }
+.legend-accessible { background: #7e57c2; }
+.legend-elevator { background: #8b5cf6; }
+.legend-stairs { background: #ef4444; }
+
+/* =========================================================
+   Room modal
+   ========================================================= */
+
+.room-modal-backdrop {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 2147483000 !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(7, 20, 45, 0.52);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  pointer-events: auto;
 }
 
-.legend-restroom {
-  background: #1d84fd;
+.room-modal-card {
+  position: relative !important;
+  z-index: 2147483001 !important;
+  width: min(520px, 94vw);
+  max-height: min(88vh, 760px);
+  overflow-y: auto;
+  background: #ffffff;
+  border-radius: 24px;
+  box-shadow: 0 30px 90px rgba(7, 20, 45, 0.42);
+  border: 1px solid rgba(255, 255, 255, 0.75);
+  pointer-events: auto;
 }
 
-.legend-accessible {
-  background: #7e57c2;
+.room-modal-card::-webkit-scrollbar {
+  width: 7px;
 }
 
-.legend-elevator {
-  background: #8b5cf6;
+.room-modal-card::-webkit-scrollbar-thumb {
+  background: #c9d5e8;
+  border-radius: 999px;
 }
 
-.legend-stairs {
-  background: #ef4444;
-}
-
-/* Popup */
 .room-popup-card {
   background: #ffffff;
   border-radius: 24px;
@@ -394,22 +676,7 @@
   margin-bottom: 40px;
   flex-shrink: 0;
 }
-.map-tools-panel::-webkit-scrollbar {
-  width: 8px;
-}
 
-.map-tools-panel::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.map-tools-panel::-webkit-scrollbar-thumb {
-  background: #c4d0e3;
-  border-radius: 999px;
-}
-
-.map-tools-panel::-webkit-scrollbar-thumb:hover {
-  background: #9fb0cc;
-}
 .room-popup-header {
   position: relative;
   min-height: 104px;
@@ -418,7 +685,9 @@
   padding: 22px 62px 20px 22px;
   display: flex;
   align-items: flex-start;
+  border-radius: 24px 24px 0 0;
 }
+
 .room-popup-header > div {
   width: 100%;
   min-width: 0;
@@ -461,8 +730,6 @@
   place-items: center;
   transition: background 0.18s ease, transform 0.18s ease;
 }
-
-
 
 .room-popup-close:hover {
   background: rgba(255, 255, 255, 0.32);
@@ -583,145 +850,28 @@
   font-size: 15px;
   padding: 14px;
   cursor: pointer;
-  transition: background 0.18s ease;
+  transition: background 0.18s ease, transform 0.18s ease;
 }
 
 .room-popup-action:hover {
   background: #e3ebf7;
+  transform: translateY(-1px);
 }
 
-/* Responsive */
-@media (max-width: 1200px) {
-.map-layout {
-  display: grid;
-  grid-template-columns: 360px minmax(0, 1fr);
-  gap: 16px;
-  align-items: start;
-
-  height: calc(100vh - 190px);
-  min-height: 0;
-  overflow: hidden;
+.route-action {
+  background: linear-gradient(135deg, #0b63ff, #0b2a6f) !important;
+  color: #ffffff !important;
+  box-shadow: 0 10px 22px rgba(11, 99, 255, 0.22);
 }
 
-.map-tools-panel {
-  height: calc(100vh - 190px);
-  min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding-right: 6px;
-  padding-bottom: 40px;
-
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
+.route-action:hover {
+  background: linear-gradient(135deg, #0757df, #08235e) !important;
 }
 
-  .map-canvas-card {
-    order: 1;
-  }
-}
+/* =========================================================
+   Route controls/result
+   ========================================================= */
 
-@media (max-width: 768px) {
-  .map-page {
-    padding: 10px;
-  }
-
-  .map-floor-bar {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
-  .map-floor-title {
-    text-align: left;
-  }
-
-  .room-popup-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .room-popup-header h2 {
-    font-size: 28px;
-  }
-}
-
-.lecture-zone:hover,
-.lecture-zone.selected {
-  fill: rgba(245, 158, 11, 0.18);
-  stroke: #f59e0b;
-}
-
-.studio-zone:hover,
-.studio-zone.selected {
-  fill: rgba(14, 165, 233, 0.18);
-  stroke: #0ea5e9;
-}
-
-.office-zone:hover,
-.office-zone.selected {
-  fill: rgba(20, 184, 166, 0.18);
-  stroke: #14b8a6;
-}
-
-.meeting-zone:hover,
-.meeting-zone.selected {
-  fill: rgba(168, 85, 247, 0.18);
-  stroke: #a855f7;
-}
-
-.lounge-zone:hover,
-.lounge-zone.selected {
-  fill: rgba(249, 115, 22, 0.18);
-  stroke: #f97316;
-}
-
-.storage-zone:hover,
-.storage-zone.selected {
-  fill: rgba(100, 116, 139, 0.18);
-  stroke: #64748b;
-}
-
-.bookstore-zone:hover,
-.bookstore-zone.selected {
-  fill: rgba(234, 179, 8, 0.22);
-  stroke: #eab308;
-}
-
-.amphitheater-zone:hover,
-.amphitheater-zone.selected {
-  fill: rgba(251, 191, 36, 0.24);
-  stroke: #f59e0b;
-}
-
-.entrance-zone:hover,
-.entrance-zone.selected {
-  fill: rgba(34, 197, 94, 0.22);
-  stroke: #22c55e;
-}
-.stairs-normal-zone:hover,
-.stairs-normal-zone.selected {
-  fill: rgba(59, 130, 246, 0.18);
-  stroke: #3b82f6;
-  stroke-width: 4;
-  filter: drop-shadow(0 6px 14px rgba(59, 130, 246, 0.25));
-}
-
-@keyframes mapSoftPulse {
-  0% {
-    stroke-opacity: 0.8;
-    filter: drop-shadow(0 6px 12px rgba(15, 23, 42, 0.14));
-  }
-
-  50% {
-    stroke-opacity: 1;
-    filter: drop-shadow(0 10px 20px rgba(15, 23, 42, 0.24));
-  }
-
-  100% {
-    stroke-opacity: 0.8;
-    filter: drop-shadow(0 6px 12px rgba(15, 23, 42, 0.14));
-  }
-}
-/* Navigation controls */
 .route-control-box {
   margin-top: 16px;
   padding-top: 14px;
@@ -753,7 +903,6 @@
   accent-color: #0b63ff;
 }
 
-/* Route result */
 .route-result-card {
   background: #ffffff;
   border: 1px solid #d9e1ef;
@@ -817,28 +966,25 @@
   font-weight: 650;
 }
 
-/* Main route line on SVG */
-.navigation-route {
-  fill: none;
-  stroke: #0b63ff;
-  stroke-width: 7;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-dasharray: 18 12;
-  vector-effect: non-scaling-stroke;
-  filter: drop-shadow(0 8px 14px rgba(11, 99, 255, 0.38));
-  animation: routeDashMove 1.1s linear infinite;
-  pointer-events: none;
-}
+/* =========================================================
+   Animations
+   ========================================================= */
 
-.navigation-route-segment {
-  fill: none;
-  stroke: #0b63ff;
-  stroke-width: 7;
-  stroke-linecap: round;
-  vector-effect: non-scaling-stroke;
-  filter: drop-shadow(0 8px 14px rgba(11, 99, 255, 0.38));
-  pointer-events: none;
+@keyframes mapSoftPulse {
+  0% {
+    stroke-opacity: 0.8;
+    filter: drop-shadow(0 6px 12px rgba(15, 23, 42, 0.14));
+  }
+
+  50% {
+    stroke-opacity: 1;
+    filter: drop-shadow(0 10px 20px rgba(15, 23, 42, 0.24));
+  }
+
+  100% {
+    stroke-opacity: 0.8;
+    filter: drop-shadow(0 6px 12px rgba(15, 23, 42, 0.14));
+  }
 }
 
 @keyframes routeDashMove {
@@ -851,180 +997,38 @@
   }
 }
 
-.route-action {
-  background: linear-gradient(135deg, #0b63ff, #0b2a6f) !important;
-  color: #ffffff !important;
-  box-shadow: 0 10px 22px rgba(11, 99, 255, 0.22);
-}
+/* =========================================================
+   Responsive
+   No fixed 760/820/1050px image widths here.
+   The zoom sizer from JSX controls the map size.
+   ========================================================= */
 
-.route-action:hover {
-  background: linear-gradient(135deg, #0757df, #08235e) !important;
-}
-
-@media (max-width: 768px) {
-  .map-page {
-    width: 100%;
-    max-width: 100vw;
-    padding: 8px;
-    overflow-x: hidden;
-  }
-
-  .map-floor-bar {
-    width: 100%;
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    gap: 8px;
-    padding: 10px;
-  }
-
-  .map-floor-left {
-    width: 100%;
-    display: flex;
-    align-items: flex-start;
-    gap: 8px;
-  }
-
-  .map-floor-tabs {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-  }
-
-  .map-floor-btn {
-    min-width: 40px;
-    height: 36px;
-    padding: 0 10px;
-    font-size: 12px;
-  }
-
-  .map-floor-title {
-    font-size: 13px;
-    line-height: 1.4;
-  }
-
+@media (max-width: 1200px) {
   .map-layout {
-    width: 100%;
-    max-width: 100%;
+    grid-template-columns: 340px minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 992px) {
+  .map-layout {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 14px;
+    min-height: 0;
   }
 
   .map-tools-panel {
-    width: 100%;
-    max-width: 100%;
-    min-width: 0;
-    order: 1;
-  }
-
-  .map-tools-card,
-  .route-result-card,
-  .room-popup-card {
-    width: 100%;
-    max-width: 100%;
-  }
-
-  .map-tools-card {
-    padding: 14px;
-  }
-
-  .map-tools-card h3 {
-    font-size: 18px;
-  }
-
-  .map-need-select {
-    width: 100%;
-    max-width: 100%;
+    position: relative;
+    top: auto;
+    max-height: none;
+    overflow: visible;
+    padding-right: 0;
   }
 
   .map-canvas-card {
     width: 100%;
-    max-width: 100%;
-    order: 2;
-    overflow: hidden;
-    border-radius: 16px;
-  }
-
-  .map-canvas-wrap {
-    position: relative;
-    width: 100%;
-    max-width: 100%;
-    min-height: 360px;
-    overflow: auto;
-    -webkit-overflow-scrolling: touch;
-  }
-
-  /*
-    Important:
-    Do not let the map shrink too much on mobile.
-    Keep it large and scrollable, so room blocks stay usable.
-  */
-  .map-floor-image {
-    display: block;
-    width: 760px !important;
-    min-width: 760px !important;
-    max-width: none !important;
-    height: auto !important;
-  }
-
-  .map-svg-overlay {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 760px !important;
-    min-width: 760px !important;
-    max-width: none !important;
-    height: 100% !important;
-    pointer-events: none;
-  }
-
-  .map-svg-overlay .map-block-zone,
-  .map-svg-overlay rect,
-  .map-svg-overlay polygon,
-  .map-svg-overlay polyline {
-    pointer-events: auto;
-  }
-
-  .map-legend {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    font-size: 11px;
-    padding: 10px;
-  }
-
-  .legend-item {
-    white-space: nowrap;
-  }
-
-  .room-popup-card {
-    position: relative;
-    left: auto;
-    right: auto;
-    top: auto;
-    margin-top: 12px;
-  }
-
-  .room-popup-grid {
-    grid-template-columns: 1fr;
   }
 }
-
-@media (max-width: 430px) {
-  .map-floor-image,
-  .map-svg-overlay {
-    width: 820px !important;
-    min-width: 820px !important;
-  }
-
-  .map-canvas-wrap {
-    min-height: 390px;
-  }
-}
-/* =========================================================
-   FINAL MOBILE FIX — MapPage
-   ========================================================= */
 
 @media (max-width: 768px) {
   .map-page {
@@ -1035,25 +1039,19 @@
   }
 
   .map-floor-bar {
-    width: 100%;
-    display: flex;
     flex-direction: column;
     align-items: stretch;
     gap: 8px;
     padding: 10px;
-    border-radius: 14px;
   }
 
   .map-floor-left {
     width: 100%;
-    display: flex;
     align-items: flex-start;
     gap: 8px;
   }
 
   .map-floor-tabs {
-    display: flex;
-    flex-wrap: wrap;
     gap: 6px;
   }
 
@@ -1067,6 +1065,7 @@
   .map-floor-title {
     width: 100%;
     text-align: center;
+    white-space: normal;
     font-size: 13px;
     line-height: 1.4;
   }
@@ -1096,30 +1095,6 @@
     padding-bottom: 0;
   }
 
-  .map-tools-card,
-  .route-result-card,
-  .room-popup-card {
-    width: 100%;
-    max-width: 100%;
-  }
-
-  .map-tools-card {
-    padding: 14px;
-  }
-
-  .map-tools-card h3 {
-    font-size: 17px;
-  }
-
-  .map-need-select {
-    width: 100%;
-    max-width: 100%;
-  }
-
-  .route-control-box {
-    margin-top: 10px;
-  }
-
   .map-canvas-card {
     width: 100%;
     max-width: 100%;
@@ -1130,44 +1105,27 @@
   }
 
   .map-canvas-wrap {
-    position: relative;
-    width: 100%;
-    max-width: 100%;
     min-height: 430px;
     overflow: auto !important;
     -webkit-overflow-scrolling: touch;
   }
 
-  .map-floor-image {
-    display: block;
-    width: 1050px !important;
-    min-width: 1050px !important;
-    max-width: none !important;
-    height: auto !important;
+  .map-zoom-sizer {
+    min-width: 100% !important;
   }
 
-  .map-svg-overlay {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 1050px !important;
-    min-width: 1050px !important;
-    max-width: none !important;
-    height: 100% !important;
-    pointer-events: none;
+  .map-zoom-floating {
+    top: 10px;
+    right: 10px;
+    transform: scale(0.92);
+    transform-origin: top right;
   }
 
-  .map-svg-overlay .map-block-zone,
-  .map-svg-overlay rect,
-  .map-svg-overlay polygon,
-  .map-svg-overlay polyline,
-  .map-svg-overlay text {
-    pointer-events: auto;
+  .room-search-form {
+    grid-template-columns: 1fr;
   }
 
   .map-legend {
-    display: flex;
-    flex-wrap: wrap;
     gap: 8px;
     font-size: 11px;
     padding: 10px 2px 4px;
@@ -1177,13 +1135,23 @@
     white-space: nowrap;
   }
 
-  .room-popup-card {
-    position: relative !important;
-    left: auto !important;
-    right: auto !important;
-    top: auto !important;
-    margin-top: 12px;
-    margin-bottom: 0;
+  .room-modal-backdrop {
+    align-items: flex-end;
+    padding: 12px;
+  }
+
+  .room-modal-card {
+    width: 100%;
+    max-height: 86vh;
+    border-radius: 22px 22px 18px 18px;
+  }
+
+  .room-popup-header {
+    border-radius: 22px 22px 0 0;
+  }
+
+  .room-popup-header h2 {
+    font-size: 28px;
   }
 
   .room-popup-grid {

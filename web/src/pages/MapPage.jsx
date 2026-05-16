@@ -1,7 +1,10 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { G_START_NODES, findGroundFloorRoute } from '../data/groundFloorNavigation';
+import { createPortal } from 'react-dom';
+import SmartFinderPanel from '../components/map/SmartFinderPanel';
+import '../components/map/SmartFinderPanel.css';
 import { B2_START_NODES, findB2Route } from '../data/navigation/b2Navigation';
 import './MapPage.css';
 
@@ -24,7 +27,40 @@ const REQUEST_OPTIONS = [
   { value: 'emergency_stairs', label: 'Emergency Stairs' },
   { value: 'accessible', label: 'Accessible Places' },
 ];
+const QUICK_REQUEST_VALUES = [
+  'all',
+  'lecture_hall',
+  'lab',
+  'office',
+  'restroom',
+  'stairs',
+  'elevator',
+  'accessible',
+];
 
+const REQUEST_ICON_MAP = {
+  all: '✨',
+  lab: '🧪',
+  lecture_hall: '🎓',
+  engineering_drawing_studio: '✏️',
+  bookstore: '📚',
+  office: '👨‍🏫',
+  meeting_room: '🤝',
+  professor_lounge: '☕',
+  storage: '📦',
+  stairs: '🪜',
+  restroom: '🚻',
+  amphitheater: '🏛️',
+  entrance: '🚪',
+  bathroom: '♿',
+  elevator: '🛗',
+  emergency_stairs: '🚨',
+  accessible: '♿',
+};
+
+function getRequestIcon(value) {
+  return REQUEST_ICON_MAP[value] || '📍';
+}
 const FLOOR_MAPS = {
   B2: {
     label: 'B2',
@@ -834,7 +870,7 @@ B1: {
       id: 'B1-STAIRS-LEFT-INTERNAL',
       roomNumber: 'B1-STAIRS-LEFT-INTERNAL',
       name: 'درج داخلي',
-      type: 'emergency_stairs',
+      type: 'Stairs',
       department: '—',
       capacity: '—',
       status: 'Available',
@@ -854,7 +890,7 @@ B1: {
       id: 'B1-STAIRS-RIGHT-INTERNAL',
       roomNumber: 'B1-STAIRS-RIGHT-INTERNAL',
       name: 'درج داخلي',
-      type: 'emergency_stairs',
+      type: 'Stairs',
       department: '—',
       capacity: '—',
       status: 'Available',
@@ -1642,7 +1678,7 @@ G: {
       id: 'G-STAIRS-LEFT-INTERNAL',
       roomNumber: 'G-STAIRS-LEFT-INTERNAL',
       name: 'درج داخلي',
-      type: 'emergency_stairs',
+      type: 'Stairs',
       department: '—',
       capacity: '—',
       status: 'Available',
@@ -1662,7 +1698,7 @@ G: {
       id: 'G-STAIRS-RIGHT-INTERNAL',
       roomNumber: 'G-STAIRS-RIGHT-INTERNAL',
       name: 'درج داخلي',
-      type: 'emergency_stairs',
+      type: 'Stairs',
       department: '—',
       capacity: '—',
       status: 'Available',
@@ -2973,7 +3009,7 @@ G: {
       currentCourse: '—',
       lectureTime: '—',
       shape: 'polygon',
-      points: '705,580 580,580 580,750 705,750',
+      points: '705,580 580,580 580,740 705,740',
       labelX: 645,
       labelY: 639,
     },
@@ -2993,7 +3029,7 @@ G: {
       x: 705,
       y: 580,
       width: 120,
-      height: 168,
+      height: 160,
       labelX: 776,
       labelY: 650,
     },
@@ -3011,7 +3047,7 @@ G: {
       lectureTime: '—',
       shape: 'rect',
       x: 830,
-      y: 610,
+      y: 600,
       width: 125,
       height: 186,
       labelX: 897,
@@ -3031,7 +3067,7 @@ G: {
       lectureTime: '—',
       shape: 'rect',
       x: 960,
-      y: 610,
+      y: 600,
       width: 135,
       height: 186,
       labelX: 1046,
@@ -3053,7 +3089,7 @@ G: {
       x: 1100,
       y: 580,
       width: 120,
-      height: 170,
+      height: 160,
       labelX: 1168,
       labelY: 650,
     },
@@ -3070,7 +3106,7 @@ G: {
       currentCourse: '—',
       lectureTime: '—',
       shape: 'polygon',
-      points: '1230,580 1355,580 1355,750 1230,750',
+      points: '1230,580 1355,580 1355,740 1230,740',
       labelX: 1294,
       labelY: 640,
     },
@@ -3087,7 +3123,7 @@ G: {
       currentCourse: '—',
       lectureTime: '—',
       shape: 'polygon',
-      points: '1430,575 1360,575 1360,690 1430,690',
+      points: '1430,575 1360,575 1360,685 1430,685',
       labelX: 1410,
       labelY: 614,
     },
@@ -3104,7 +3140,7 @@ G: {
       currentCourse: '—',
       lectureTime: '—',
       shape: 'polygon',
-      points: '1430,695 1360,695 1360,790 1430,790',
+      points: '1430,685 1360,685 1360,780 1430,780',
       labelX: 1410,
       labelY: 730,
     },
@@ -3122,7 +3158,7 @@ G: {
       lectureTime: '—',
       shape: 'rect',
       x: 1360,
-      y: 800,
+      y: 780,
       width: 65,
       height: 105,
       labelX: 1410,
@@ -3146,7 +3182,7 @@ G: {
       lectureTime: '—',
       shape: 'rect',
       x: 1430,
-      y: 815,
+      y: 800,
       width: 56,
       height: 90,
       labelX: 1475,
@@ -3166,7 +3202,7 @@ G: {
       lectureTime: '—',
       shape: 'rect',
       x: 1495,
-      y: 815,
+      y: 800,
       width: 60,
       height: 90,
       labelX: 1535,
@@ -3186,7 +3222,7 @@ G: {
       lectureTime: '—',
       shape: 'rect',
       x: 1560,
-      y: 815,
+      y: 800,
       width: 58,
       height: 90,
       labelX: 1610,
@@ -3206,7 +3242,7 @@ G: {
       lectureTime: '—',
       shape: 'rect',
       x: 1625,
-      y: 815,
+      y: 800,
       width: 56,
       height: 90,
       labelX: 1669,
@@ -3226,7 +3262,7 @@ G: {
       lectureTime: '—',
       shape: 'rect',
       x: 1685,
-      y: 815,
+      y: 800,
       width: 56,
       height: 90,
       labelX: 1725,
@@ -3246,7 +3282,7 @@ G: {
       lectureTime: '—',
       shape: 'rect',
       x: 1745,
-      y: 815,
+      y: 800,
       width: 56,
       height: 90,
       labelX: 1785,
@@ -3266,7 +3302,7 @@ G: {
       lectureTime: '—',
       shape: 'rect',
       x: 1800,
-      y: 815,
+      y: 800,
       width: 45,
       height: 90,
       labelX: 1835,
@@ -3286,7 +3322,7 @@ G: {
       lectureTime: '—',
       shape: 'rect',
       x: 1850,
-      y: 820,
+      y: 800,
       width: 65,
       height: 86,
       labelX: 1900,
@@ -3306,7 +3342,7 @@ G: {
       lectureTime: '—',
       shape: 'rect',
       x: 1850,
-      y: 740,
+      y: 725,
       width: 65,
       height: 75,
       labelX: 1900,
@@ -3326,7 +3362,7 @@ G: {
       lectureTime: '—',
       shape: 'rect',
       x: 1850,
-      y: 650,
+      y: 635,
       width: 65,
       height: 82,
       labelX: 1900,
@@ -3410,9 +3446,9 @@ G: {
       lectureTime: '—',
       shape: 'rect',
       x: 1470,
-      y: 685,
+      y: 675,
       width: 65,
-      height: 90,
+      height: 85,
       labelX: 1504,
       labelY: 710,
     },
@@ -3430,7 +3466,7 @@ G: {
       lectureTime: '—',
       shape: 'rect',
       x: 1535,
-      y: 685,
+      y: 670,
       width: 51,
       height: 70,
       labelX: 1566,
@@ -3450,7 +3486,7 @@ G: {
       lectureTime: '—',
       shape: 'rect',
       x: 1590,
-      y: 685,
+      y: 670,
       width: 55,
       height: 70,
       labelX: 1627,
@@ -3470,7 +3506,7 @@ G: {
       lectureTime: '—',
       shape: 'rect',
       x: 1650,
-      y: 685,
+      y: 670,
       width: 70,
       height: 90,
       labelX: 1700,
@@ -3490,7 +3526,7 @@ G: {
       lectureTime: '—',
       shape: 'rect',
       x: 1725,
-      y: 685,
+      y: 670,
       width: 80,
       height: 90,
       labelX: 1772,
@@ -3574,9 +3610,9 @@ G: {
       lectureTime: '—',
       shape: 'rect',
       x: 1455,
-      y: 190,
+      y: 210,
       width: 100,
-      height: 145,
+      height: 135,
       labelX: 1510,
       labelY: 240,
     },
@@ -3594,9 +3630,9 @@ G: {
       lectureTime: '—',
       shape: 'rect',
       x: 1555,
-      y: 190,
+      y: 210,
       width: 80,
-      height: 145,
+      height: 135,
       labelX: 1611,
       labelY: 240,
     },
@@ -3614,9 +3650,9 @@ G: {
       lectureTime: '—',
       shape: 'rect',
       x: 1645,
-      y: 190,
+      y: 210,
       width: 85,
-      height: 145,
+      height: 135,
       labelX: 1701,
       labelY: 240,
     },
@@ -3638,7 +3674,7 @@ G: {
       lectureTime: '—',
       shape: 'rect',
       x: 1330,
-      y: 95,
+      y: 120,
       width: 75,
       height: 75,
       labelX: 1385,
@@ -3658,7 +3694,7 @@ G: {
       lectureTime: '—',
       shape: 'rect',
       x: 1250,
-      y: 95,
+      y: 120,
       width: 75,
       height: 75,
       labelX: 1300,
@@ -3678,7 +3714,7 @@ G: {
       lectureTime: '—',
       shape: 'rect',
       x: 1165,
-      y: 95,
+      y: 120,
       width: 80,
       height: 75,
       labelX: 1220,
@@ -3698,7 +3734,7 @@ G: {
       lectureTime: '—',
       shape: 'rect',
       x: 1085,
-      y: 95,
+      y: 120,
       width: 75,
       height: 75,
       labelX: 1135,
@@ -3718,9 +3754,9 @@ G: {
       lectureTime: '—',
       shape: 'rect',
       x: 1005,
-      y: 90,
+      y: 120,
       width: 75,
-      height: 80,
+      height: 70,
       labelX: 1050,
       labelY: 139,
     },
@@ -3738,9 +3774,9 @@ G: {
       lectureTime: '—',
       shape: 'rect',
       x: 925,
-      y: 90,
+      y: 120,
       width: 75,
-      height: 80,
+      height: 70,
       labelX: 980,
       labelY: 139,
     },
@@ -3758,9 +3794,9 @@ G: {
       lectureTime: '—',
       shape: 'rect',
       x: 840,
-      y: 90,
+      y: 120,
       width: 75,
-      height: 80,
+      height: 70,
       labelX: 900,
       labelY: 139,
     },
@@ -3778,9 +3814,9 @@ G: {
       lectureTime: '—',
       shape: 'rect',
       x: 760,
-      y: 90,
+      y: 120,
       width: 75,
-      height: 80,
+      height: 70,
       labelX: 810,
       labelY: 139,
     },
@@ -3798,7 +3834,7 @@ G: {
       lectureTime: '—',
       shape: 'rect',
       x: 705,
-      y: 95,
+      y: 120,
       width: 55,
       height: 75,
       labelX: 750,
@@ -3818,7 +3854,7 @@ G: {
       lectureTime: '—',
       shape: 'rect',
       x: 642,
-      y: 95,
+      y: 120,
       width: 55,
       height: 75,
       labelX: 685,
@@ -3838,7 +3874,7 @@ G: {
       lectureTime: '—',
       shape: 'rect',
       x: 580,
-      y: 95,
+      y: 120,
       width: 60,
       height: 75,
       labelX: 620,
@@ -3858,7 +3894,7 @@ G: {
       lectureTime: '—',
       shape: 'rect',
       x: 505,
-      y: 95,
+      y: 120,
       width: 70,
       height: 80,
       labelX: 547,
@@ -3877,7 +3913,7 @@ G: {
       currentCourse: '—',
       lectureTime: '—',
       shape: 'polygon',
-      points: '700,190 555,190 555,250 700,250',
+      points: '700,210 555,210 555,270 700,270',
       labelX: 450,
       labelY: 240,
     },
@@ -3894,7 +3930,7 @@ G: {
   currentCourse: '—',
   lectureTime: '—',
   shape: 'polygon',
-  points: '1355,175 1410,175 1412,255 1320,255 1240,255 1240,190 1300,190 1355,190',
+  points: '1355,195 1410,195 1412,270 1320,270 1240,270 1240,210 1300,210 1355,210',
   labelX: 1100,
   labelY: 239,
 },
@@ -3912,7 +3948,7 @@ G: {
       lectureTime: '—',
       shape: 'rect',
       x: 745,
-      y: 215,
+      y: 235,
       width: 85,
       height: 90,
       labelX: 801,
@@ -3932,7 +3968,7 @@ G: {
       lectureTime: '—',
       shape: 'rect',
       x: 835,
-      y: 215,
+      y: 235,
       width: 85,
       height: 90,
       labelX: 884,
@@ -3952,7 +3988,7 @@ G: {
       lectureTime: '—',
       shape: 'rect',
       x: 925,
-      y: 215,
+      y: 235,
       width: 45,
       height: 90,
       labelX: 953,
@@ -3972,7 +4008,7 @@ G: {
       lectureTime: '—',
       shape: 'rect',
       x: 970,
-      y: 215,
+      y: 235,
       width: 45,
       height: 90,
       labelX: 1010,
@@ -3992,7 +4028,7 @@ G: {
       lectureTime: '—',
       shape: 'rect',
       x: 1025,
-      y: 215,
+      y: 235,
       width: 85,
       height: 90,
       labelX: 1080,
@@ -4012,7 +4048,7 @@ G: {
       lectureTime: '—',
       shape: 'rect',
       x: 1110,
-      y: 215,
+      y: 235,
       width: 80,
       height: 90,
       labelX: 1160,
@@ -4036,7 +4072,7 @@ G: {
       lectureTime: '—',
       shape: 'rect',
       x: 200,
-      y: 190,
+      y: 200,
       width: 116,
       height: 145,
       labelX: 260,
@@ -4056,7 +4092,7 @@ G: {
       lectureTime: '—',
       shape: 'rect',
       x: 325,
-      y: 190,
+      y: 200,
       width: 105,
       height: 145,
       labelX: 385,
@@ -4075,7 +4111,7 @@ G: {
   currentCourse: '—',
   lectureTime: '—',
   shape: 'polygon',
-  points: '440,190 545,190 545,265 565,265 565,290 515,290 515,335 440,335',
+  points: '440,200 545,200 545,275 565,275 565,300 515,300 515,345 440,345',
   labelX: 505,
   labelY: 250,
 },
@@ -4097,7 +4133,7 @@ G: {
       lectureTime: '—',
       shape: 'rect',
       x: 15,
-      y: 385,
+      y: 390,
       width: 65,
       height: 78,
       labelX: 69,
@@ -4157,7 +4193,7 @@ G: {
       lectureTime: '—',
       shape: 'rect',
       x: 15,
-      y: 634,
+      y: 630,
       width: 65,
       height: 63,
       labelX: 69,
@@ -4177,7 +4213,7 @@ G: {
       lectureTime: '—',
       shape: 'rect',
       x: 15,
-      y: 700,
+      y: 690,
       width: 65,
       height: 66,
       labelX: 69,
@@ -4197,9 +4233,9 @@ G: {
       lectureTime: '—',
       shape: 'rect',
       x: 15,
-      y: 770,
+      y: 760,
       width: 65,
-      height: 65,
+      height: 60,
       labelX: 69,
       labelY: 801,
     },
@@ -4216,7 +4252,7 @@ G: {
   currentCourse: '—',
   lectureTime: '—',
   shape: 'polygon',
-  points: '18,840 80,840 80,816 96,816 96,905 18,905',
+  points: '18,825 80,825 80,806 96,806 96,890 18,890',
   labelX: 69,
   labelY: 880,
 },
@@ -4234,7 +4270,7 @@ G: {
       lectureTime: '—',
       shape: 'rect',
       x: 100,
-      y: 820,
+      y: 800,
       width: 45,
       height: 87,
       labelX: 138,
@@ -4254,7 +4290,7 @@ G: {
       lectureTime: '—',
       shape: 'rect',
       x: 150,
-      y: 820,
+      y: 800,
       width: 45,
       height: 87,
       labelX: 191,
@@ -4274,7 +4310,7 @@ G: {
       lectureTime: '—',
       shape: 'rect',
       x: 199,
-      y: 820,
+      y: 800,
       width: 45,
       height: 87,
       labelX: 234,
@@ -4294,7 +4330,7 @@ G: {
       lectureTime: '—',
       shape: 'rect',
       x: 250,
-      y: 820,
+      y: 800,
       width: 60,
       height: 87,
       labelX: 297,
@@ -4314,7 +4350,7 @@ G: {
       lectureTime: '—',
       shape: 'rect',
       x: 315,
-      y: 815,
+      y: 800,
       width: 40,
       height: 90,
       labelX: 360,
@@ -4334,7 +4370,7 @@ G: {
       lectureTime: '—',
       shape: 'rect',
       x: 354,
-      y: 815,
+      y: 800,
       width: 45,
       height: 90,
       labelX: 393,
@@ -4354,7 +4390,7 @@ G: {
       lectureTime: '—',
       shape: 'rect',
       x: 400,
-      y: 815,
+      y: 800,
       width: 50,
       height: 90,
       labelX: 436,
@@ -4374,7 +4410,7 @@ G: {
       lectureTime: '—',
       shape: 'rect',
       x: 450,
-      y: 815,
+      y: 800,
       width: 53,
       height: 90,
       labelX: 499,
@@ -4394,9 +4430,9 @@ G: {
       lectureTime: '—',
       shape: 'rect',
       x: 510,
-      y: 780,
+      y: 770,
       width: 65,
-      height: 125,
+      height: 120,
       labelX: 555,
       labelY: 816,
     },
@@ -4414,7 +4450,7 @@ G: {
       lectureTime: '—',
       shape: 'rect',
       x: 510,
-      y: 714,
+      y: 705,
       width: 65,
       height: 64,
       labelX: 555,
@@ -4434,7 +4470,7 @@ G: {
       lectureTime: '—',
       shape: 'rect',
       x: 510,
-      y: 650,
+      y: 640,
       width: 65,
       height: 60,
       labelX: 560,
@@ -4474,7 +4510,7 @@ G: {
       lectureTime: '—',
       shape: 'rect',
       x: 120,
-      y: 380,
+      y: 390,
       width: 84,
       height: 58,
       labelX: 181,
@@ -4536,7 +4572,7 @@ G: {
       x: 120,
       y: 550,
       width: 84,
-      height: 126,
+      height: 120,
       labelX: 181,
       labelY: 592,
     },
@@ -4554,7 +4590,7 @@ G: {
       lectureTime: '—',
       shape: 'rect',
       x: 120,
-      y: 680,
+      y: 670,
       width: 60,
       height: 80,
       labelX: 170,
@@ -4574,7 +4610,7 @@ G: {
       lectureTime: '—',
       shape: 'rect',
       x: 185,
-      y: 680,
+      y: 670,
       width: 50,
       height: 80,
       labelX: 231,
@@ -4594,7 +4630,7 @@ G: {
       lectureTime: '—',
       shape: 'rect',
       x: 240,
-      y: 680,
+      y: 670,
       width: 50,
       height: 80,
       labelX: 283,
@@ -4614,7 +4650,7 @@ G: {
       lectureTime: '—',
       shape: 'rect',
       x: 297,
-      y: 680,
+      y: 670,
       width: 50,
       height: 80,
       labelX: 340,
@@ -4634,7 +4670,7 @@ G: {
       lectureTime: '—',
       shape: 'rect',
       x: 353,
-      y: 680,
+      y: 670,
       width: 50,
       height: 80,
       labelX: 392,
@@ -4654,7 +4690,7 @@ G: {
       lectureTime: '—',
       shape: 'rect',
       x: 407,
-      y: 680,
+      y: 670,
       width: 55,
       height: 80,
       labelX: 455,
@@ -4677,7 +4713,7 @@ G: {
       currentCourse: '—',
       lectureTime: '—',
       shape: 'polygon',
-      points: '35,230 90,210 125,290 200,290 200,333 86,333 50,255',
+      points: '45,245 90,230 125,300 200,300 200,343 86,343 50,265',
       labelX: 60,
       labelY: 235,
     },
@@ -4694,7 +4730,7 @@ G: {
       currentCourse: '—',
       lectureTime: '—',
       shape: 'polygon',
-      points: '1840,210  1895,230 1889,250 1855,330 1740,330 1740,290 1810,290',
+      points: '1840,225  1895,250 1889,260 1855,340 1740,340 1740,300 1810,300',
       labelX: 1850,
       labelY: 235,
     },
@@ -4747,7 +4783,7 @@ G: {
       gender: 'Female',
       shape: 'rect',
       x: 570,
-      y: 262,
+      y: 272,
       width: 38,
       height: 65,
       labelX: 577,
@@ -4768,9 +4804,9 @@ G: {
       gender: 'Male',
       shape: 'rect',
       x: 615,
-      y: 252,
+      y: 272,
       width: 48,
-      height: 80,
+      height: 70,
       labelX: 630,
       labelY: 284,
     },
@@ -4789,7 +4825,7 @@ G: {
       gender: 'Female',
       shape: 'rect',
       x: 1276,
-      y: 262,
+      y: 272,
       width: 47,
       height: 70,
       labelX: 1263,
@@ -4810,7 +4846,7 @@ G: {
       gender: 'Male',
       shape: 'rect',
       x: 1325,
-      y: 262,
+      y: 272,
       width: 47,
       height: 70,
       labelX: 1320,
@@ -4831,7 +4867,7 @@ G: {
       accessible: true,
       shape: 'rect',
       x: 520,
-      y: 290,
+      y: 305,
       width: 40,
       height: 40,
       labelX: 555,
@@ -4852,7 +4888,7 @@ G: {
       accessible: true,
       shape: 'rect',
       x: 1380,
-      y: 285,
+      y: 305,
       width: 45,
       height: 45,
       labelX: 1400,
@@ -4873,7 +4909,7 @@ G: {
       accessible: true,
       shape: 'rect',
       x: 745,
-      y: 385,
+      y: 390,
       width: 75,
       height: 70,
       labelX: 781,
@@ -4894,7 +4930,7 @@ G: {
       accessible: true,
       shape: 'rect',
       x: 1115,
-      y: 385,
+      y: 390,
       width: 75,
       height: 70,
       labelX: 1166,
@@ -5442,7 +5478,7 @@ G: {
   label: '4',
   title: 'Fourth Floor — الطابق الرابع',
   image: '/maps/4.png',
-  width: 1539,
+  width: 1600,
   height: 1022,
   blocks: [
 {
@@ -5458,7 +5494,7 @@ G: {
   currentCourse: '—',
   lectureTime: '—',
   shape: 'polygon',
-  points: '1030,219 1270,219 1270,355 1090,355 1090,305 1030,305',
+  points: '1030,219 1240,219 1240,355 1080,355 1080,305 1030,305',
   labelX: 1094,
   labelY: 288,
 },
@@ -5476,9 +5512,9 @@ G: {
       currentCourse: '—',
       lectureTime: '—',
       shape: 'rect',
-      x: 1275,
+      x: 1245,
       y: 220,
-      width: 120,
+      width: 110,
       height: 135,
       labelX: 1256,
       labelY: 288,
@@ -5497,9 +5533,9 @@ G: {
       currentCourse: '—',
       lectureTime: '—',
       shape: 'rect',
-      x: 1450,
+      x: 1400,
       y: 410,
-      width: 150,
+      width: 130,
       height: 140,
       labelX: 1408,
       labelY: 453,
@@ -5518,9 +5554,9 @@ G: {
       currentCourse: '—',
       lectureTime: '—',
       shape: 'rect',
-      x: 1450,
+      x: 1400,
       y: 545,
-      width: 150,
+      width: 130,
       height: 170,
       labelX: 1408,
       labelY: 586,
@@ -5539,9 +5575,9 @@ G: {
       currentCourse: '—',
       lectureTime: '—',
       shape: 'rect',
-      x: 1400,
+      x: 1350,
       y: 720,
-      width: 200,
+      width: 180,
       height: 145,
       labelX: 1377,
       labelY: 727,
@@ -5560,9 +5596,9 @@ G: {
       currentCourse: '—',
       lectureTime: '—',
       shape: 'rect',
-      x: 1275,
+      x: 1245,
       y: 719,
-      width: 119,
+      width: 109,
       height: 145,
       labelX: 1247,
       labelY: 727,
@@ -5581,9 +5617,9 @@ G: {
       currentCourse: '—',
       lectureTime: '—',
       shape: 'rect',
-      x: 1150,
+      x: 1130,
       y: 720,
-      width: 120,
+      width: 110,
       height: 145,
       labelX: 1143,
       labelY: 727,
@@ -5604,7 +5640,7 @@ G: {
       shape: 'rect',
       x: 1020,
       y: 715,
-      width: 120,
+      width: 110,
       height: 150,
       labelX: 1030,
       labelY: 727,
@@ -5625,7 +5661,7 @@ G: {
       shape: 'rect',
       x: 980,
       y: 355,
-      width: 70,
+      width: 65,
       height: 78,
       labelX: 965,
       labelY: 381,
@@ -5644,9 +5680,9 @@ G: {
       currentCourse: '—',
       lectureTime: '—',
       shape: 'rect',
-      x: 905,
+      x: 920,
       y: 355,
-      width: 70,
+      width: 65,
       height: 75,
       labelX: 906,
       labelY: 381,
@@ -5690,7 +5726,7 @@ G: {
       shape: 'rect',
       x: 1020,
       y: 582,
-      width: 70,
+      width: 60,
       height: 65,
       labelX: 1007,
       labelY: 580,
@@ -5712,7 +5748,7 @@ G: {
       shape: 'rect',
       x: 1020,
       y: 647,
-      width: 68,
+      width: 60,
       height: 64,
       labelX: 1007,
       labelY: 636,
@@ -5731,7 +5767,7 @@ G: {
   lectureTime: '—',
   accessible: true,
   shape: 'polygon',
-  points: '1445,360 1530,360 1530,410 1445,410',
+  points: '1400,360 1470,360 1470,410 1400,410',
   labelX: 1392,
   labelY: 365,
 },
@@ -5749,7 +5785,7 @@ G: {
   currentCourse: '—',
   lectureTime: '—',
   shape: 'polygon',
-  points: '1400,316 1480,318 1510,240 1570,260 1535,355 1400,355',
+  points: '1360,316 1430,318 1455,240 1500,260 1470,355 1360,355',
   labelX: 1380,
   labelY: 286,
 },
@@ -5777,7 +5813,273 @@ G: {
   ],
 },
 };
+const BASIC_FACILITY_TYPES = new Set([
+  'restroom',
+  'bathroom',
+  'accessible_restroom',
+  'disabled_restroom',
+  'stairs',
+  'emergency_stairs',
+  'emergency_exit',
+  'elevator',
+  'bookstore',
+  'professor_lounge',
+  'storage',
+]);
 
+const CLASS_SCHEDULE_TYPES = new Set([
+  'classroom',
+  'lecture_hall',
+  'lab',
+  'amphitheater',
+  'engineering_drawing_room',
+  'engineering_drawing_studio',
+]);
+
+function getBlockText(block) {
+  return [
+    block?.type,
+    block?.id,
+    block?.roomNumber,
+    block?.room_number,
+    block?.name,
+    block?.department,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+}
+
+function isSteelCenter(block) {
+  const text = getBlockText(block);
+
+  return (
+    text.includes('steel-center') ||
+    text.includes('steel center') ||
+    text.includes('steel_center') ||
+    text.includes('steel') ||
+    text.includes('مركز الحديد') ||
+    text.includes('مشغل الحديد')
+  );
+}
+function isBasicFacility(block) {
+  const type = String(block?.type || '').toLowerCase();
+
+  const text = [
+    block?.type,
+    block?.id,
+    block?.roomNumber,
+    block?.room_number,
+    block?.name,
+    block?.department,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+
+  return (
+    [
+      'restroom',
+      'bathroom',
+      'accessible_restroom',
+      'disabled_restroom',
+      'stairs',
+      'emergency_stairs',
+      'emergency_exit',
+      'elevator',
+      'bookstore',
+      'professor_lounge',
+      'storage',
+    ].includes(type) ||
+
+    text.includes('restroom') ||
+    text.includes('bathroom') ||
+    text.includes('stairs') ||
+    text.includes('stair') ||
+    text.includes('exit') ||
+    text.includes('elevator') ||
+    text.includes('bookstore') ||
+    text.includes('lounge') ||
+    text.includes('storage') ||
+    text.includes('steel-center') ||
+    text.includes('steel center') ||
+    text.includes('steel_center') ||
+
+    text.includes('دورة مياه') ||
+    text.includes('درج') ||
+    text.includes('مصعد') ||
+    text.includes('مكتبة') ||
+    text.includes('استراحة') ||
+    text.includes('مخزن') ||
+    text.includes('تخزين')
+  );
+}
+
+function isOffice(block) {
+  const type = String(block?.type || '').toLowerCase();
+  const text = getBlockText(block);
+
+  return (
+    type === 'office' ||
+    text.includes('office') ||
+    text.includes('مكتب')
+  );
+}
+
+function isMeetingRoom(block) {
+  const type = String(block?.type || '').toLowerCase();
+  const text = getBlockText(block);
+
+  return (
+    type === 'meeting_room' ||
+    text.includes('meeting') ||
+    text.includes('اجتماع') ||
+    text.includes('قاعة اجتماعات')
+  );
+}
+
+const ACADEMIC_SPACE_TYPES = new Set([
+  'classroom',
+  'lecture_hall',
+  'lab',
+  'amphitheater',
+  'ampitheater',
+  'engineering_drawing_room',
+  'engineering_drawing_studio',
+]);
+
+function isAcademicSpace(block) {
+  const type = String(block?.type || '').toLowerCase();
+  const text = getBlockText(block);
+
+  return (
+    ACADEMIC_SPACE_TYPES.has(type) ||
+    text.includes('amphitheater') ||
+    text.includes('ampitheater') ||
+    text.includes('مدرج') ||
+    text.includes('مختبر') ||
+    text.includes('lecture') ||
+    text.includes('classroom')
+  );
+}
+
+function shouldShowAvailabilityBox(block) {
+  if (!block) return false;
+
+  if (isAcademicSpace(block)) {
+    return true;
+  }
+
+  return !isBasicFacility(block) && !isOffice(block) && !isMeetingRoom(block);
+}
+
+function shouldShowNoClassBox(block) {
+  if (!block) return false;
+
+  return isAcademicSpace(block);
+}
+
+function getRoomInfoItems(block, floorTitle) {
+  const basicItems = [
+    {
+      label: 'Type',
+      value: getTypeLabel(block?.type),
+    },
+    {
+      label: 'Floor',
+      value: floorTitle || '—',
+    },
+  ];
+
+  /*
+    Restrooms, elevators, stairs, emergency stairs,
+    storage, bookstore, professor lounge, steel center
+    should only show Type + Floor.
+  */
+  if (isBasicFacility(block) && !isAcademicSpace(block)) {
+    return basicItems;
+  }
+
+  /*
+    Meeting rooms should show Type + Department + Floor.
+  */
+  if (isMeetingRoom(block)) {
+    return [
+      {
+        label: 'Type',
+        value: getTypeLabel(block?.type),
+      },
+      {
+        label: 'Department',
+        value: block?.department || 'كلية الهندسة',
+      },
+      {
+        label: 'Floor',
+        value: floorTitle || '—',
+      },
+    ];
+  }
+
+  /*
+    Offices should not show capacity/current course/lecture time.
+  */
+  if (isOffice(block)) {
+    return [
+      {
+        label: 'Type',
+        value: getTypeLabel(block?.type),
+      },
+      {
+        label: 'Floor',
+        value: floorTitle || '—',
+      },
+      {
+        label: 'Department',
+        value: 'كلية الهندسة',
+      },
+      {
+        label: 'Lecturer',
+        value: block?.lecturerName || '—',
+      },
+      {
+        label: 'Email',
+        value: block?.lecturerEmail || '—',
+      },
+    ];
+  }
+
+  /*
+    Labs, lecture halls, classrooms, amphitheaters:
+    full academic information.
+  */
+  return [
+    ...basicItems,
+    {
+      label: 'Capacity',
+      value: block?.capacity || '—',
+    },
+    {
+      label: 'Department',
+      value: block?.department || '—',
+    },
+    {
+      label: 'Lecturer',
+      value: block?.lecturerName || '—',
+    },
+    {
+      label: 'Email',
+      value: block?.lecturerEmail || '—',
+    },
+    {
+      label: 'Current Course',
+      value: block?.currentCourse || '—',
+    },
+    {
+      label: 'Lecture Time',
+      value: block?.lectureTime || '—',
+    },
+  ];
+}
 const FLOOR_ORDER = ['B2', 'B1', 'G', '1', '2', '3', '4'];
 
 function getTypeLabel(type) {
@@ -5897,6 +6199,8 @@ export default function MapPage() {
     location.state?.targetRoomNumber ||
     location.state?.roomNumber ||
     null;
+  const [roomSearch, setRoomSearch] = useState('');
+  const [roomSearchError, setRoomSearchError] = useState('');
   const [activeFloor, setActiveFloor] = useState('B2');
   const [selectedBlock, setSelectedBlock] = useState(null);
   const [hoveredBlock, setHoveredBlock] = useState(null);
@@ -5907,85 +6211,35 @@ export default function MapPage() {
   const [routeInstructions, setRouteInstructions] = useState([]);
   const [routeTarget, setRouteTarget] = useState(null);
   const [routeError, setRouteError] = useState('');
-  //=======================================
+
+
+const [mapZoom, setMapZoom] = useState(1);
+
+const MIN_MAP_ZOOM = 1;
+const MAX_MAP_ZOOM = 2.5;
+const ZOOM_STEP = 0.15;
+
+const zoomInMap = () => {
+  setMapZoom(prev =>
+    Math.min(MAX_MAP_ZOOM, Number((prev + ZOOM_STEP).toFixed(2)))
+  );
+};
+
+const zoomOutMap = () => {
+  setMapZoom(prev =>
+    Math.max(MIN_MAP_ZOOM, Number((prev - ZOOM_STEP).toFixed(2)))
+  );
+};
+
+const resetMapZoom = () => {
+  setMapZoom(1);
+};
+
 const currentFloor = FLOOR_MAPS[activeFloor];
-const [firstPoint, setFirstPoint] = useState(null);
-useEffect(() => {
-  if (!scheduleTargetRoom) return;
 
-  const found = findBlockByScheduleRoom(scheduleTargetRoom);
 
-  if (!found) {
-    console.warn('Room not found on map:', scheduleTargetRoom);
-    return;
-  }
 
-  setActiveFloor(found.floorKey);
-  setSelectedNeed('all');
-  setSelectedBlock(found.block);
-  setHoveredBlock(null);
-
-  setRoutePath([]);
-  setRouteInstructions([]);
-  setRouteTarget(null);
-  setRouteError('');
-
-  if (found.floorKey === 'G') {
-    setStartNodeId('G_NORTH_ENTRANCE_NODE');
-  }
-
-  if (found.floorKey === 'B2') {
-    setStartNodeId('B2_LEFT_STAIRS');
-  }
-
-  setTimeout(() => {
-    const mapCard = document.querySelector('.map-canvas-card');
-
-    if (mapCard) {
-      mapCard.scrollIntoView({
-        behavior: 'smooth',
-        block: 'center'
-      });
-    }
-  }, 150);
-}, [scheduleTargetRoom]);
-function handleCoordinatePick(e) {
-  const svg = e.currentTarget.ownerSVGElement;
-  const point = svg.createSVGPoint();
-
-  point.x = e.clientX;
-  point.y = e.clientY;
-
-  const svgPoint = point.matrixTransform(svg.getScreenCTM().inverse());
-
-  const x = Math.round(svgPoint.x);
-  const y = Math.round(svgPoint.y);
-
-  if (!firstPoint) {
-    setFirstPoint({ x, y });
-    console.log("First point:", { x, y });
-    return;
-  }
-
-  const block = {
-    id: "ROOM_NUMBER_HERE",
-    roomNumber: "ROOM_NUMBER_HERE",
-    name: "ROOM_NAME_HERE",
-    type: "lecture_hall",
-    shape: "rect",
-    x: Math.min(firstPoint.x, x),
-    y: Math.min(firstPoint.y, y),
-    width: Math.abs(x - firstPoint.x),
-    height: Math.abs(y - firstPoint.y),
-    labelX: Math.round((firstPoint.x + x) / 2),
-    labelY: Math.round((firstPoint.y + y) / 2),
-  };
-
-  console.log("COPY THIS BLOCK:");
-  console.log(JSON.stringify(block, null, 2));
-
-  setFirstPoint(null);
-} //=========================================
+ //=========================================
   const visibleBlocks = useMemo(() => {
     return currentFloor.blocks.filter(block => matchesNeed(block, selectedNeed));
   }, [currentFloor, selectedNeed]);
@@ -6047,112 +6301,172 @@ function handleCoordinatePick(e) {
   function closeCard() {
     setSelectedBlock(null);
   }
+  function normalizeRoomSearch(value) {
+  return String(value || '')
+    .trim()
+    .toUpperCase()
+    .replace(/^ROOM\s*/i, '')
+    .replace(/\s+/g, '');
+}
 
-return (
-    <div className="map-page">
-      <div className="map-floor-bar">
+function findBlockByRoomSearch(value) {
+  const raw = normalizeRoomSearch(value);
+
+  if (!raw) return null;
+
+  const candidates = new Set();
+
+  candidates.add(raw);
+
+  // Use your existing schedule-room normalization too
+  getPossibleMapRoomIds(raw).forEach(item => {
+    candidates.add(String(item).toUpperCase());
+  });
+
+  // Example: 0280 should also try G0280
+  if (/^\d{4}$/.test(raw)) {
+    candidates.add(`G${raw}`);
+    candidates.add(`B${raw}`);
+  }
+
+  for (const [floorKey, floor] of Object.entries(FLOOR_MAPS)) {
+    const block = floor.blocks.find(item => {
+      const values = [
+        item.id,
+        item.roomNumber,
+        item.name,
+      ]
+        .filter(Boolean)
+        .map(v => normalizeRoomSearch(v));
+
+      return values.some(v => candidates.has(v));
+    });
+
+    if (block) {
+      return {
+        floorKey,
+        block,
+      };
+    }
+  }
+
+  return null;
+}
+
+function handleRoomSearchSubmit(event) {
+  event.preventDefault();
+
+  const result = findBlockByRoomSearch(roomSearch);
+
+  if (!result) {
+    setRoomSearchError(`Room "${roomSearch}" was not found.`);
+    return;
+  }
+
+  setActiveFloor(result.floorKey);
+  setSelectedNeed('all');
+  setSelectedBlock(result.block);
+  setHoveredBlock(null);
+  setRoomSearchError('');
+  setMapZoom(1);
+  clearRoute();
+
+  if (result.floorKey === 'G') {
+    setStartNodeId('G_NORTH_ENTRANCE_NODE');
+  }
+
+  if (result.floorKey === 'B2') {
+    setStartNodeId('B2_LEFT_STAIRS');
+  }
+}
+
+return ( 
+  <div className="map-page">
+    <div className="map-floor-bar">
         <div className="map-floor-left">
-          <span className="map-floor-label">Floor:</span>
-
+              <span className="map-floor-label">Floor:</span>
           <div className="map-floor-tabs">
             {FLOOR_ORDER.map(floorKey => (
               <button
                 key={floorKey}
                 type="button"
                 className={`map-floor-btn ${activeFloor === floorKey ? 'active' : ''}`}
-onClick={() => {
-  setActiveFloor(floorKey);
-  setSelectedBlock(null);
-  setHoveredBlock(null);
-  setSelectedNeed('all');
-  clearRoute();
-
-  if (floorKey === 'G') {
-    setStartNodeId('G_NORTH_ENTRANCE_NODE');
-  }
-
-  if (floorKey === 'B2') {
-    setStartNodeId('B2_LEFT_STAIRS');
-  }
-}}
-                    >
-                {FLOOR_MAPS[floorKey].label}
+               onClick={() => {
+                  setActiveFloor(floorKey);
+                  setMapZoom(1);
+                  setSelectedBlock(null);
+                  setHoveredBlock(null);
+                  setSelectedNeed('all');
+                  clearRoute();
+                  if (floorKey === 'G') {
+                   setStartNodeId('G_NORTH_ENTRANCE_NODE');
+                  }
+                  if (floorKey === 'B2') {
+                   setStartNodeId('B2_LEFT_STAIRS');
+                  }
+               }}
+               >{FLOOR_MAPS[floorKey].label}
               </button>
             ))}
           </div>
-        </div>
-
-        <div className="map-floor-title">{currentFloor.title}</div>
+         </div>
+             <div className="map-floor-title">{currentFloor.title}</div>
       </div>
 
       <div className="map-layout">
        <div className="map-tools-panel">
-        <div className="map-tools-card">
-    <h3>What do you need?</h3>
-    <p>Choose what you want to find on this floor.</p>
+        <SmartFinderPanel
+  requestOptions={REQUEST_OPTIONS}
+  selectedNeed={selectedNeed}
+  setSelectedNeed={setSelectedNeed}
+  setSelectedBlock={setSelectedBlock}
+  clearRoute={clearRoute}
+  visibleBlocks={visibleBlocks}
+  activeFloor={activeFloor}
+  activeStartNodes={activeStartNodes}
+  startNodeId={startNodeId}
+  setStartNodeId={setStartNodeId}
+  accessibleRoute={accessibleRoute}
+  setAccessibleRoute={setAccessibleRoute}
+/>
+<div className="room-search-card">
+  <div className="room-search-head">
+    <span>🔎</span>
 
-    <select
-      className="map-need-select"
-      value={selectedNeed}
-      onChange={event => {
-        setSelectedNeed(event.target.value);
-        setSelectedBlock(null);
-        clearRoute();
-      }}
-    >
-      {REQUEST_OPTIONS.map(option => (
-        <option key={option.value} value={option.value}>
-          {option.label}
-        </option>
-      ))}
-    </select>
-
-    <div className="map-tools-note">
-      {selectedNeed === 'all'
-        ? 'Showing all interactive blocks.'
-        : `Showing ${
-            REQUEST_OPTIONS.find(option => option.value === selectedNeed)?.label
-          }.`}
+    <div>
+      <h3>Find a Room</h3>
+      <p>Type a room number, then select it on the map.</p>
     </div>
-
-    <div className="map-tools-count">
-      Found: <strong>{visibleBlocks.length}</strong>
-    </div>
-
-    {['G', 'B2'].includes(activeFloor) && (
-      <div className="route-control-box">
-        <label className="route-control-label">Start from</label>
-
-        <select
-          className="map-need-select"
-          value={startNodeId}
-          onChange={event => {
-            setStartNodeId(event.target.value);
-            clearRoute();
-          }}
-        >
-          {activeStartNodes.map(node => (
-            <option key={node.value} value={node.value}>
-              {node.label}
-            </option>
-          ))}
-        </select>
-
-        <label className="route-check-row">
-          <input
-            type="checkbox"
-            checked={accessibleRoute}
-            onChange={event => {
-              setAccessibleRoute(event.target.checked);
-              clearRoute();
-            }}
-          />
-          <span>Accessible route only</span>
-        </label>
-      </div>
-    )}
   </div>
 
+  <form className="room-search-form" onSubmit={handleRoomSearchSubmit}>
+    <input
+      type="text"
+      value={roomSearch}
+      onChange={event => {
+        setRoomSearch(event.target.value);
+        setRoomSearchError('');
+      }}
+      placeholder="Example: 2590, G0280, 4100"
+    />
+
+    <button type="submit">
+      Search
+    </button>
+  </form>
+
+  {roomSearchError && (
+    <p className="room-search-error">
+      {roomSearchError}
+    </p>
+  )}
+
+  {selectedBlock && (
+    <p className="room-search-selected">
+      Selected: <strong>{selectedBlock.roomNumber}</strong>
+    </p>
+  )}
+</div>
   {activeFloor === 'G' && (routePath.length > 0 || routeError) && (
     <div className="route-result-card">
       <div className="route-result-header">
@@ -6181,240 +6495,245 @@ onClick={() => {
     </div>
   )}
 
-  <AnimatePresence mode="wait">
+  {createPortal(
+  <AnimatePresence>
     {selectedBlock && (
       <motion.div
-        key={selectedBlock.id}
-        className="room-popup-card"
-        initial={{ opacity: 0, x: -24, scale: 0.97 }}
-        animate={{ opacity: 1, x: 0, scale: 1 }}
-        exit={{ opacity: 0, x: -18, scale: 0.97 }}
-        transition={{ duration: 0.22, ease: 'easeOut' }}
+        className="room-modal-backdrop"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.18 }}
+        onClick={closeCard}
       >
-        <div className="room-popup-header">
-          <div>
-            <h2>{selectedBlock.roomNumber}</h2>
-            <p>{selectedBlock.name}</p>
-          </div>
-
-          <button
-            type="button"
-            className="room-popup-close"
-            onClick={closeCard}
-            aria-label="Close room card"
-          >
-            ×
-          </button>
-        </div>
-
-        <div className="room-popup-status">
-          <div className="room-status-left">
-            <span className="room-status-dot" />
-
-            <div>
-              <strong>{selectedBlock.status || 'Available'}</strong>
-              <small>
-                {selectedBlock.type === 'lab'
-                  ? 'Ready for use'
-                  : 'Facility available'}
-              </small>
-            </div>
-          </div>
-
-          <span className="room-status-badge">
-            {selectedBlock.status === 'Occupied' ? 'LIVE' : 'OPEN'}
-          </span>
-        </div>
-
-        <div className="room-popup-empty">
-          <span className="room-popup-empty-icon">✨</span>
-          <h4>No classes scheduled now</h4>
-          <p>
-            {selectedBlock.type === 'lab'
-              ? 'This location is currently free'
-              : 'You can use this facility now'}
-          </p>
-        </div>
-
-        <div className="room-popup-grid">
-          <div className="room-info-box">
-            <span>Type</span>
-            <strong>{getTypeLabel(selectedBlock.type)}</strong>
-          </div>
-
-          <div className="room-info-box">
-            <span>Floor</span>
-            <strong>{currentFloor.title}</strong>
-          </div>
-
-          <div className="room-info-box">
-            <span>Capacity</span>
-            <strong>{selectedBlock.capacity || '—'}</strong>
-          </div>
-
-          <div className="room-info-box">
-            <span>Department</span>
-            <strong>{selectedBlock.department || '—'}</strong>
-          </div>
-
-          <div className="room-info-box">
-            <span>Lecturer</span>
-            <strong>{selectedBlock.lecturerName || '—'}</strong>
-          </div>
-
-          <div className="room-info-box">
-            <span>Email</span>
-            <strong>{selectedBlock.lecturerEmail || '—'}</strong>
-          </div>
-
-          <div className="room-info-box">
-            <span>Current Course</span>
-            <strong>{selectedBlock.currentCourse || '—'}</strong>
-          </div>
-
-          <div className="room-info-box">
-            <span>Lecture Time</span>
-            <strong>{selectedBlock.lectureTime || '—'}</strong>
-          </div>
-        </div>
-
-       {['G', 'B2'].includes(activeFloor) && (
-          <button
-            type="button"
-            className="room-popup-action route-action"
-            onClick={() => handleNavigateToBlock(selectedBlock)}
-          >
-            Navigate to this location
-          </button>
-        )}
-
-        <button
-          type="button"
-          className="room-popup-action"
-          onClick={closeCard}
+        <motion.div
+          key={selectedBlock.id}
+          className="room-modal-card"
+          initial={{ opacity: 0, y: 28, scale: 0.94 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: 18, scale: 0.96 }}
+          transition={{ duration: 0.22, ease: 'easeOut' }}
+          onClick={(event) => event.stopPropagation()}
         >
-          Close
-        </button>
-        </motion.div>
-        )}
-        </AnimatePresence>
-        </div>
+          <div className="room-popup-header">
+            <div>
+              <h2>{selectedBlock.roomNumber}</h2>
+              <p>{selectedBlock.name}</p>
+            </div>
 
-        <div className="map-canvas-card">
-          <div className="map-canvas-wrap">
-            <img
-              src={currentFloor.image}
-              alt={currentFloor.title}
-              className="map-floor-image"
-              draggable="false"
-            />
-
-            <svg
-              className="map-svg-overlay"
-              viewBox={`0 0 ${currentFloor.width} ${currentFloor.height}`}
-              preserveAspectRatio="xMidYMid meet"
+            <button
+              type="button"
+              className="room-popup-close"
+              onClick={closeCard}
+              aria-label="Close room card"
             >
-              {['G', 'B2'].includes(activeFloor) && routePath.length > 1 && (
-              <motion.polyline
-                 className="navigation-route"
-                 points={routePath.map(point => `${point.x},${point.y}`).join(' ')}
-                  initial={{ pathLength: 0, opacity: 0 }}
-                    animate={{ pathLength: 1, opacity: 1 }}
-                  transition={{ duration: 0.8, ease: 'easeInOut' }}
-                     />
-                       )}
-                       <rect
-                        x="0"
-                        y="0"
-                       width={currentFloor.width}
-                       height={currentFloor.height}
-                       fill="transparent"
-                       onClick={handleCoordinatePick}
-                      />
-
-                       
-
-              {currentFloor.blocks.map(block => {
-                const hiddenByFilter = !matchesNeed(block, selectedNeed);
-                const isActive =
-                  hoveredBlock?.id === block.id || selectedBlock?.id === block.id;
-
-                return (
-                  <g key={block.id}>
-                    {block.shape === 'polygon' ? (
-                      <polygon
-                        points={block.points}
-                        className={`${getBlockClass(
-                          block,
-                          selectedBlock,
-                          selectedNeed
-                        )} ${hiddenByFilter ? 'dimmed' : ''}`}
-                        onMouseEnter={() => setHoveredBlock(block)}
-                        onMouseLeave={() => setHoveredBlock(null)}
-                        onClick={() => handleSelectBlock(block)}
-                      />
-                    ) : (
-                      <rect
-                        x={block.x}
-                        y={block.y}
-                        width={block.width}
-                        height={block.height}
-                        className={`${getBlockClass(
-                          block,
-                          selectedBlock,
-                          selectedNeed
-                        )} ${hiddenByFilter ? 'dimmed' : ''}`}
-                        onMouseEnter={() => setHoveredBlock(block)}
-                        onMouseLeave={() => setHoveredBlock(null)}
-                        onClick={() => handleSelectBlock(block)}
-                      />
-                    )}
-
-                    {isActive && (
-                      <foreignObject
-                        x={block.labelX - 58}
-                        y={block.labelY - 45}
-                        width="145"
-                        height="40"
-                        className="map-hover-chip-wrap"
-                      >
-                        <div className="map-hover-chip">{block.roomNumber}</div>
-                      </foreignObject>
-                    )}
-                  </g>
-                );
-              })}
-            </svg>
+              ×
+            </button>
           </div>
 
-          <div className="map-legend">
-            <span className="legend-item">
-              <i className="legend-dot legend-lab" />
-              Lab
-            </span>
+          {shouldShowAvailabilityBox(selectedBlock) && (
+  <div className="room-popup-status">
+    <div className="room-status-left">
+      <span className="room-status-dot" />
 
-            <span className="legend-item">
-              <i className="legend-dot legend-restroom" />
-              Restroom
-            </span>
-
-            <span className="legend-item">
-              <i className="legend-dot legend-accessible" />
-              Accessible Restroom
-            </span>
-
-            <span className="legend-item">
-              <i className="legend-dot legend-elevator" />
-              Elevator
-            </span>
-
-            <span className="legend-item">
-              <i className="legend-dot legend-stairs" />
-              Emergency Stairs
-            </span>
-          </div>
-        </div>
+      <div>
+        <strong>{selectedBlock.status || 'Available'}</strong>
+        <small>Facility available</small>
       </div>
     </div>
+
+    <span className="room-status-badge">
+      {selectedBlock.status === 'Occupied' ? 'LIVE' : 'OPEN'}
+    </span>
+  </div>
+)}
+
+         {shouldShowNoClassBox(selectedBlock) && (
+  <div className="room-popup-empty">
+    <span className="room-popup-empty-icon">✨</span>
+    <h4>No classes scheduled now</h4>
+    <p>This location is currently free</p>
+  </div>
+)}
+
+          <div className="room-popup-grid">
+            {getRoomInfoItems(selectedBlock, currentFloor.title).map((item) => (
+              <div className="room-info-box" key={item.label}>
+                <span>{item.label}</span>
+                <strong>{item.value}</strong>
+              </div>
+            ))}
+          </div>
+
+          {['G', 'B2'].includes(activeFloor) && (
+            <button
+              type="button"
+              className="room-popup-action route-action"
+              onClick={() => handleNavigateToBlock(selectedBlock)}
+            >
+              Navigate to this location
+            </button>
+          )}
+
+          <button
+            type="button"
+            className="room-popup-action"
+            onClick={closeCard}
+          >
+            Close
+          </button>
+        </motion.div>
+      </motion.div>
+    )}
+  </AnimatePresence>,
+        document.body
+         )}
+        </div>
+
+       <div className="map-canvas-card">
+  <div className="map-canvas-wrap">
+    <div className="map-zoom-floating">
+      <span>{Math.round(mapZoom * 100)}%</span>
+
+      <button
+        type="button"
+        onClick={zoomOutMap}
+        disabled={mapZoom <= MIN_MAP_ZOOM}
+        title="Zoom out"
+      >
+        −
+      </button>
+
+      <button
+        type="button"
+        onClick={resetMapZoom}
+        title="Reset zoom"
+      >
+        Reset
+      </button>
+
+      <button
+        type="button"
+        onClick={zoomInMap}
+        disabled={mapZoom >= MAX_MAP_ZOOM}
+        title="Zoom in"
+      >
+        +
+      </button>
+    </div>
+
+    <div
+      className="map-zoom-sizer"
+      style={{
+        width: `${mapZoom * 100}%`,
+        aspectRatio: `${currentFloor.width} / ${currentFloor.height}`,
+      }}
+    >
+      <img
+        src={currentFloor.image}
+        alt={currentFloor.title}
+        className="map-floor-image"
+        draggable="false"
+      />
+
+      <svg
+        className="map-svg-overlay"
+        viewBox={`0 0 ${currentFloor.width} ${currentFloor.height}`}
+        preserveAspectRatio="none"
+      >
+        {['G', 'B2'].includes(activeFloor) && routePath.length > 1 && (
+          <motion.polyline
+            className="navigation-route"
+            points={routePath.map(point => `${point.x},${point.y}`).join(' ')}
+            initial={{ pathLength: 0, opacity: 0 }}
+            animate={{ pathLength: 1, opacity: 1 }}
+            transition={{ duration: 0.8, ease: 'easeInOut' }}
+          />
+        )}
+
+        {currentFloor.blocks.map(block => {
+          const hiddenByFilter = !matchesNeed(block, selectedNeed);
+          const isActive =
+            hoveredBlock?.id === block.id || selectedBlock?.id === block.id;
+
+          return (
+            <g key={block.id}>
+              {block.shape === 'polygon' ? (
+                <polygon
+                  points={block.points}
+                  className={`${getBlockClass(
+                    block,
+                    selectedBlock,
+                    selectedNeed
+                  )} ${hiddenByFilter ? 'dimmed' : ''}`}
+                  onMouseEnter={() => setHoveredBlock(block)}
+                  onMouseLeave={() => setHoveredBlock(null)}
+                  onClick={() => handleSelectBlock(block)}
+                />
+              ) : (
+                <rect
+                  x={block.x}
+                  y={block.y}
+                  width={block.width}
+                  height={block.height}
+                  className={`${getBlockClass(
+                    block,
+                    selectedBlock,
+                    selectedNeed
+                  )} ${hiddenByFilter ? 'dimmed' : ''}`}
+                  onMouseEnter={() => setHoveredBlock(block)}
+                  onMouseLeave={() => setHoveredBlock(null)}
+                  onClick={() => handleSelectBlock(block)}
+                />
+              )}
+
+              {isActive && (
+                <foreignObject
+                  x={block.labelX - 58}
+                  y={block.labelY - 45}
+                  width="145"
+                  height="40"
+                  className="map-hover-chip-wrap"
+                >
+                  <div className="map-hover-chip">{block.roomNumber}</div>
+                </foreignObject>
+              )}
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  </div>
+
+  <div className="map-legend">
+    <span className="legend-item">
+      <i className="legend-dot legend-lab" />
+      Lab
+    </span>
+
+    <span className="legend-item">
+      <i className="legend-dot legend-restroom" />
+      Restroom
+    </span>
+
+    <span className="legend-item">
+      <i className="legend-dot legend-accessible" />
+      Accessible Restroom
+    </span>
+
+    <span className="legend-item">
+      <i className="legend-dot legend-elevator" />
+      Elevator
+    </span>
+
+    <span className="legend-item">
+      <i className="legend-dot legend-stairs" />
+      Emergency Stairs
+    </span>
+  </div>
+</div>
+</div>
+      </div>
+   
   );
 }
