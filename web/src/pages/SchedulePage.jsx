@@ -1,10 +1,10 @@
 import React, { useMemo, useState } from 'react';
 import axios from 'axios';
-import { Link } from 'react-router-dom';
+
 import { useMySchedule } from '../hooks/index';
 import { Spinner } from '../components/ui/index';
 import './SchedulePage.css';
-
+import { Link } from 'react-router-dom';
 const DAYS = [
   { id: 0, en: 'Sunday', ar: 'احد' },
   { id: 1, en: 'Monday', ar: 'اثنين' },
@@ -266,30 +266,71 @@ function toMinutes(time) {
   const [hours, minutes] = cleanTime(time).split(':').map(Number);
   return hours * 60 + minutes;
 }
-function CourseBlock({ meeting }) {
-  const targetRoomNumber = normalizeScheduleRoomNumber(meeting.room_number);
+function getScheduleRoomNumber(item) {
+  const value =
+    item?.room_number ||
+    item?.roomNumber ||
+    item?.room ||
+    item?.room_code ||
+    item?.roomCode ||
+    item?.room_name ||
+    item?.roomName ||
+    '';
 
-  return (
-    <Link
-      to="/map"
-      state={{
-        roomId: meeting.room_id,
-        roomNumber: meeting.room_number,
-        targetRoomNumber,
-        fromSchedule: true
-      }}
-      className={`sc-course ${getCourseColor(meeting.course_code)}`}
-    >
+  return String(value)
+    .replace(/^Room\s*/i, '')
+    .trim();
+}
+function CourseBlock({ meeting }) {
+  const rawRoomNumber = getScheduleRoomNumber(meeting);
+  const targetRoomNumber = normalizeScheduleRoomNumber(rawRoomNumber);
+  const mapUrl = targetRoomNumber
+    ? `/map?room=${encodeURIComponent(targetRoomNumber)}`
+    : null;
+
+  const content = (
+    <>
       <strong>{meeting.course_code}</strong>
       <span>{meeting.course_name_ar || meeting.course_name}</span>
       <small>
         {cleanTime(meeting.start_time)} - {cleanTime(meeting.end_time)}
       </small>
       <em>Room {meeting.room_number || '—'}</em>
+    </>
+  );
+
+  if (!mapUrl) {
+    return (
+      <div className={`sc-course ${getCourseColor(meeting.course_code)} sc-course-disabled`}>
+        {content}
+      </div>
+    );
+  }
+
+  return (
+    <Link
+      to={mapUrl}
+      state={{
+        roomId: meeting.room_id,
+        roomNumber: rawRoomNumber,
+        targetRoomNumber,
+        fromSchedule: true
+      }}
+      className={`sc-course ${getCourseColor(meeting.course_code)} sc-course-clickable`}
+      title={`Open room ${targetRoomNumber} on map`}
+    >
+      {content}
     </Link>
   );
 }
+function getMapRoomUrl(item) {
+  const rawRoomNumber = getScheduleRoomNumber(item);
+  const targetRoomNumber = normalizeScheduleRoomNumber(rawRoomNumber);
 
+  if (!targetRoomNumber) return null;
+
+  return `/map?room=${encodeURIComponent(targetRoomNumber)}`;
+}
 function normalizeScheduleRoomNumber(roomNumber) {
   const raw = String(roomNumber || '').trim();
 
@@ -368,7 +409,15 @@ function TextSchedule({ sections, totalCredits, openOfficeHours }) {
                 {cleanTime(row.start_time)} - {cleanTime(row.end_time)}
               </td>
 
-              <td>{row.room_number || '—'}</td>
+              <td>
+  {getMapRoomUrl(row) ? (
+    <Link className="sc-room-link" to={getMapRoomUrl(row)}>
+      {row.room_number || '—'}
+    </Link>
+  ) : (
+    row.room_number || '—'
+  )}
+</td>
 
               <td>
                 {row.meeting_type === 'electronic' || row.note ? (

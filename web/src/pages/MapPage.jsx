@@ -6209,7 +6209,28 @@ export default function MapPage() {
   const [routeInstructions, setRouteInstructions] = useState([]);
   const [routeTarget, setRouteTarget] = useState(null);
   const [routeError, setRouteError] = useState('');
+useEffect(() => {
+  const params = new URLSearchParams(window.location.search);
+  const roomFromUrl = params.get('room');
 
+  if (!roomFromUrl) return;
+
+  const result = findBlockByRoomSearch(roomFromUrl);
+
+  if (!result) {
+    setRoomSearch(roomFromUrl);
+    setRoomSearchError(`Room "${roomFromUrl}" was not found on the map.`);
+    return;
+  }
+
+  setActiveFloor(result.floorKey);
+  setSelectedNeed('all');
+  setSelectedBlock(result.block);
+  setHoveredBlock(null);
+  setRoomSearch(roomFromUrl);
+  setRoomSearchError('');
+  setMapZoom(1);
+}, []);
 
 const [mapZoom, setMapZoom] = useState(1);
 
@@ -6273,15 +6294,30 @@ function findBlockByRoomSearch(value) {
 
   candidates.add(raw);
 
-  // Use your existing schedule-room normalization too
-  getPossibleMapRoomIds(raw).forEach(item => {
-    candidates.add(String(item).toUpperCase());
-  });
+  const digitsOnly = raw.replace(/\D/g, '');
 
-  // Example: 0280 should also try G0280
-  if (/^\d{4}$/.test(raw)) {
-    candidates.add(`G${raw}`);
-    candidates.add(`B${raw}`);
+  if (digitsOnly) {
+    candidates.add(digitsOnly);
+  }
+
+  // Schedule room format examples:
+  // 114030 -> 4030
+  // 111181 -> 1181
+  // 111060 -> 1060
+  if (/^\d{6}$/.test(digitsOnly)) {
+    candidates.add(digitsOnly.slice(2));
+  }
+
+  // Example: 0280 should also try G0280 / B0280
+  if (/^\d{4}$/.test(digitsOnly)) {
+    candidates.add(`G${digitsOnly}`);
+    candidates.add(`B${digitsOnly}`);
+  }
+
+  if (typeof getPossibleMapRoomIds === 'function') {
+    getPossibleMapRoomIds(raw).forEach(item => {
+      candidates.add(String(item).toUpperCase());
+    });
   }
 
   for (const [floorKey, floor] of Object.entries(FLOOR_MAPS)) {

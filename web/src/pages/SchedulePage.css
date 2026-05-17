@@ -722,3 +722,43 @@
     max-width: none !important;
   }
 }
+
+.schedule-class--clickable {
+  cursor: pointer;
+  transition:
+    transform 0.16s ease,
+    box-shadow 0.16s ease,
+    filter 0.16s ease;
+}
+
+.schedule-class--clickable:hover {
+  transform: translateY(-2px);
+  filter: brightness(1.03);
+  box-shadow: 0 10px 22px rgba(11, 42, 111, 0.16);
+}
+.sc-course-clickable {
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.sc-course-clickable:hover {
+  transform: translateY(-2px);
+  filter: brightness(1.04);
+  box-shadow: 0 10px 22px rgba(11, 42, 111, 0.18);
+}
+
+.sc-course-disabled {
+  opacity: 0.75;
+  cursor: not-allowed;
+}
+
+.sc-room-link {
+  color: #0b2a6f;
+  font-weight: 900;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.sc-room-link:hover {
+  color: #0b63ff;
+}
