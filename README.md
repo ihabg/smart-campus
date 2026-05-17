@@ -134,8 +134,8 @@ Extending the platform to support multiple campuses of An-Najah National Univers
 | Admin Dashboard | Complete |
 | Notification System | Complete |
 | Additional Floor Maps | Complete |
-| Real-Time Room Booking | Planned |
-| Indoor Positioning | Planned |
+| Real-Time Room Booking | Complete |
+| Indoor Positioning | Complete |
 
 ---
 
