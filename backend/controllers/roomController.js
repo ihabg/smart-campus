@@ -160,20 +160,22 @@ async function createRoom(req, res, next) {
       capacity,
       description,
       coord_x,
+      
       coord_y,
       coord_width,
       coord_height,
       polygon_points,
+      lecturer_number,
       features,
       is_accessible,
     } = req.body;
 
     const result = await query(
-      `INSERT INTO rooms
-         (floor_id, room_number, name, type, department, capacity, description,
-          coord_x, coord_y, coord_width, coord_height, polygon_points, features, is_accessible)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
-       RETURNING *`,
+`INSERT INTO rooms
+   (floor_id, room_number, name, type, department, capacity, description,
+    coord_x, coord_y, coord_width, coord_height, polygon_points, lecturer_number, features, is_accessible)
+ VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+ RETURNING *`,
       [
         floor_id,
         room_number,
@@ -186,9 +188,10 @@ async function createRoom(req, res, next) {
         coord_y ?? null,
         coord_width ?? null,
         coord_height ?? null,
-        polygon_points ? JSON.stringify(polygon_points) : null,
-        features ? JSON.stringify(features) : null,
-        is_accessible !== undefined ? is_accessible : true,
+polygon_points ? JSON.stringify(polygon_points) : null,
+lecturer_number ? String(lecturer_number).trim() : null,
+features ? JSON.stringify(features) : null,
+is_accessible !== undefined ? is_accessible : true,
       ]
     );
 
@@ -232,6 +235,7 @@ async function updateRoom(req, res, next) {
       'features',
       'is_accessible',
       'is_active',
+      'lecturer_number',
     ];
 
     const fields = [];

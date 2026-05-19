@@ -102,18 +102,16 @@ function toNumberOrNull(value) {
   return Number.isFinite(number) ? number : null;
 }
 
-function mergeDbRoomWithStaticGeometry(room, floorMeta, staticBlock,) {
-  
+function mergeDbRoomWithStaticGeometry(room, floorMeta, staticBlock) {
   const type = normalizeMapType(room.type);
+
   if (!staticBlock?.shape) {
     return null;
   }
 
   return {
-    coord_x: Number(room.coord_x) || 0,
-coord_y: Number(room.coord_y) || 0,
-features: parseRoomFeatures(room.features),
     ...staticBlock,
+
     dbId: room.id,
     fromDatabase: true,
 
@@ -130,10 +128,32 @@ features: parseRoomFeatures(room.features),
     accessible: room.is_accessible === true || staticBlock.accessible === true,
     is_active: room.is_active !== false,
 
-    lecturerName: room.lecturerName || staticBlock.lecturerName || '—',
-    lecturerEmail: room.lecturerEmail || staticBlock.lecturerEmail || '—',
+    lecturerNumber:
+      room.lecturer_number ||
+      room.lecturerNumber ||
+      staticBlock.lecturerNumber ||
+      '—',
+
+    lecturerName:
+      room.lecturerName ||
+      room.lecturer_name ||
+      room.name ||
+      staticBlock.lecturerName ||
+      '—',
+
+    lecturerEmail:
+      room.lecturerEmail ||
+      room.lecturer_email ||
+      room.email ||
+      staticBlock.lecturerEmail ||
+      '—',
+
     currentCourse: room.currentCourse || staticBlock.currentCourse || '—',
     lectureTime: room.lectureTime || staticBlock.lectureTime || '—',
+
+    coord_x: Number(room.coord_x) || 0,
+    coord_y: Number(room.coord_y) || 0,
+    features: parseRoomFeatures(room.features),
   };
 }
 
@@ -348,6 +368,10 @@ function getRoomInfoItems(block, floorTitle) {
       {
         label: 'Department',
         value: 'كلية الهندسة',
+      },
+      {
+        label: 'Lecturer Number',
+        value: block?.lecturerNumber || block?.lecturer_number || '—',
       },
       {
         label: 'Lecturer',
@@ -787,11 +811,15 @@ function findBlockByRoomSearch(value) {
 
   for (const [floorKey, floor] of Object.entries(mapFloors)) {
     const block = floor.blocks.find(item => {
-      const values = [
-        item.id,
-        item.roomNumber,
-        item.name,
-      ]
+const values = [
+  item.id,
+  item.roomNumber,
+  item.room_number,
+  item.lecturerNumber,
+  item.lecturer_number,
+  item.lecturerName,
+  item.name,
+]
         .filter(Boolean)
         .map(v => normalizeRoomSearch(v));
 

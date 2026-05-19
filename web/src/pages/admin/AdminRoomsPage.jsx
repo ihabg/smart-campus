@@ -134,6 +134,21 @@ export default function AdminRoomsPage() {
       ),
     },
     {
+  key: 'lecturer_number',
+  label: 'Lect the `urer #',
+  render: v => (
+    <span
+      style={{
+        fontFamily: 'monospace',
+        fontWeight: 700,
+        color: v ? 'var(--najah-blue)' : 'var(--text-faint)',
+      }}
+    >
+      {v || '—'}
+    </span>
+  ),
+},
+    {
       key: 'name',
       label: 'Name',
       render: (v, r) => (
@@ -358,6 +373,7 @@ export default function AdminRoomsPage() {
 function emptyRoomForm() {
   return {
     room_number: '',
+    lecturer_number: '',
     name: '',
     type: 'classroom',
     department: '',
@@ -388,10 +404,12 @@ function buildRoomPayload(form, floorId) {
   };
 
   const department = String(form.department || '').trim();
+  const lecturerNumber = String(form.lecturer_number || '').trim();
   const description = String(form.description || '').trim();
   const capacity = String(form.capacity ?? '').trim();
 
   if (department) payload.department = department;
+  if (lecturerNumber) payload.lecturer_number = lecturerNumber;
   if (description) payload.description = description;
 
   if (capacity !== '') {
@@ -422,6 +440,7 @@ function RoomFormModal({
     if (existingRoom) {
       setForm({
         room_number: existingRoom.room_number || '',
+        lecturer_number: existingRoom.lecturer_number || '',
         name: existingRoom.name || '',
         type: cleanRoomType(existingRoom.type || 'classroom'),
         department: existingRoom.department || '',
@@ -469,6 +488,18 @@ function RoomFormModal({
     if (!String(form.type || '').trim()) {
       nextErrors.type = 'Room type is required.';
     }
+    const lecturerNumber = String(form.lecturer_number || '').trim();
+
+if (
+  cleanRoomType(form.type) === 'office' &&
+  !/^\d{4}$/.test(lecturerNumber)
+) {
+  nextErrors.lecturer_number =
+    'Doctor offices must have a 4-digit lecturer number.';
+} else if (lecturerNumber && !/^\d{4}$/.test(lecturerNumber)) {
+  nextErrors.lecturer_number =
+    'Lecturer number must be exactly 4 digits.';
+}
 
     if (
       String(form.capacity ?? '').trim() !== '' &&
@@ -540,6 +571,14 @@ function RoomFormModal({
             error={errors.room_number}
             placeholder="e.g. B2-EXIT-3"
           />
+
+          <Input
+  label="Lecturer Number / رقم المدرس"
+  value={form.lecturer_number || ''}
+  onChange={set('lecturer_number')}
+  error={errors.lecturer_number}
+  placeholder="Example: 1394"
+/>
 
           <Select
             label="Type"

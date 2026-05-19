@@ -126,9 +126,11 @@ const validateRoom = [
     .isInt({ min: 0, max: 32767 })
     .withMessage('Capacity must be a positive integer or zero'),
 
-  body('description')
-    .optional({ nullable: true, checkFalsy: true })
-    .trim(),
+body('lecturer_number')
+  .optional({ nullable: true, checkFalsy: true })
+  .trim()
+  .matches(/^\d{4}$/)
+  .withMessage('Lecturer number must be exactly 4 digits'),
 
   body('coord_x')
     .optional({ nullable: true, checkFalsy: true })
