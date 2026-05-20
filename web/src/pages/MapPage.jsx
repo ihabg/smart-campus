@@ -590,6 +590,14 @@ useEffect(() => {
   mapPanRef.current = mapPan;
 }, [mapPan]);
 
+useEffect(() => {
+  const onKeyDown = e => {
+    if (e.key === 'Escape') resetMapView();
+  };
+  window.addEventListener('keydown', onKeyDown);
+  return () => window.removeEventListener('keydown', onKeyDown);
+}, []);
+
   const [dbRoomsByFloor, setDbRoomsByFloor] = useState({});
   const [dbRoomsLoaded, setDbRoomsLoaded] = useState(false);
   const [dbRoomsLoading, setDbRoomsLoading] = useState(false);
@@ -920,14 +928,25 @@ function handleMapWheel(event) {
 }
 
 function handleMapPointerDown(event) {
-  // Do not start pan/zoom drag when the user is pressing a room block.
-  // This lets the room click open the popup normally.
-  if (event.target?.closest?.('.map-block-zone')) {
+  const isMiddleClick = event.button === 1;
+
+  // Middle mouse always pans (Photoshop-style). Left click on a room block
+  // opens the popup instead.
+  if (!isMiddleClick && event.target?.closest?.('.map-block-zone')) {
     return;
   }
 
+  // Prevent the browser's autoscroll cursor on middle-click.
+  if (isMiddleClick) event.preventDefault();
+
   const viewport = mapViewportRef.current;
   if (!viewport) return;
+
+  activePointersRef.current.set(event.pointerId, {
+    clientX: event.clientX,
+    clientY: event.clientY,
+  });
+  viewport.setPointerCapture(event.pointerId);
 
   const pointers = [...activePointersRef.current.values()];
 
@@ -936,6 +955,7 @@ function handleMapPointerDown(event) {
       clientX: event.clientX,
       clientY: event.clientY,
       pan: mapPanRef.current,
+      isMiddle: isMiddleClick,
     };
 
     setIsMapDragging(true);
@@ -979,7 +999,7 @@ function handleMapPointerMove(event) {
     return;
   }
 
-  if (pointers.length === 1 && panStartRef.current && mapZoomRef.current > 1) {
+  if (pointers.length === 1 && panStartRef.current && (panStartRef.current.isMiddle || mapZoomRef.current > 1)) {
     const dx = event.clientX - panStartRef.current.clientX;
     const dy = event.clientY - panStartRef.current.clientY;
 

@@ -148,6 +148,16 @@ function clampNumber(value, min, max) {
   return Math.max(min, Math.min(max, number));
 }
 
+function generateDefaultPolygonPoints(centerX, centerY, vertexCount, radiusPercent = 8) {
+  return Array.from({ length: vertexCount }, (_, i) => {
+    const angle = (i / vertexCount) * 2 * Math.PI - Math.PI / 2;
+    return {
+      x: Math.round((centerX + radiusPercent * Math.cos(angle)) * 10) / 10,
+      y: Math.round((centerY + radiusPercent * Math.sin(angle)) * 10) / 10,
+    };
+  });
+}
+
 function polygonCenter(points) {
   const parsed = String(points || '')
     .trim()
@@ -258,9 +268,16 @@ export default function MapEditorPage() {
   const [delLoading, setDelLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  // Add-room wizard
+  const [addWizardStep, setAddWizardStep] = useState(1);
+  const [addWizardShape, setAddWizardShape] = useState('rect');
+  const [addWizardVertexCount, setAddWizardVertexCount] = useState(4);
+
   const canvasRef = useRef(null);
   const didInitEditorRef = useRef(false);
   const panDrag = useRef({ active: false, sx: 0, sy: 0, tx: 0, ty: 0 });
+  const vertexDrag = useRef({ active: false, dbId: null, isPolygon: false, vertexIndex: -1, startX: 0, startY: 0, origPoints: null, origX: 0, origY: 0, origWidth: 0, origHeight: 0 });
+  const centerDrag = useRef({ active: false, dbId: null, isPolygon: false, startX: 0, startY: 0, origPoints: null, origX: 0, origY: 0 });
   const designDrag = useRef({
     active: false,
     dbId: null,
@@ -323,6 +340,22 @@ export default function MapEditorPage() {
       scale: Math.max(0.05, scale),
     });
   }, [editorCanvasWidth, editorCanvasHeight]);
+
+  const zoomAtViewportCenter = useCallback((factor) => {
+    const el = canvasRef.current;
+    if (!el) return;
+    const { clientWidth: cw, clientHeight: ch } = el;
+    const mx = cw / 2;
+    const my = ch / 2;
+    setTransform(t => {
+      const nextScale = Math.max(0.05, Math.min(5, t.scale * factor));
+      return {
+        scale: nextScale,
+        x: mx - (mx - t.x) * (nextScale / t.scale),
+        y: my - (my - t.y) * (nextScale / t.scale),
+      };
+    });
+  }, []);
 
   const loadFloor = useCallback(
     async floorId => {
@@ -481,17 +514,11 @@ export default function MapEditorPage() {
     const dynamicDbBlocks = rooms
       .filter(room => !matchedRoomIds.has(room.id))
       .map(room => {
-        const x = percentToPixelsX(room.coord_x, editorCanvasWidth);
-        const y = percentToPixelsY(room.coord_y, editorCanvasHeight);
-        const width = percentToPixelsX(room.coord_width || 6, editorCanvasWidth);
-        const height = percentToPixelsY(room.coord_height || 4, editorCanvasHeight);
-
-        return {
+        const commonProps = {
           id: room.id,
           dbId: room.id,
           isStaticOnly: false,
           isDynamicDbBlock: true,
-
           room_number: room.room_number,
           roomNumber: room.room_number,
           name: room.name || '',
@@ -499,7 +526,40 @@ export default function MapEditorPage() {
           department: room.department || '',
           capacity: room.capacity ?? '',
           is_accessible: room.is_accessible === true,
+          coord_x: Number(room.coord_x) || 0,
+          coord_y: Number(room.coord_y) || 0,
+          coord_width: Number(room.coord_width) || 6,
+          coord_height: Number(room.coord_height) || 4,
+          features: parseFeatures(room.features),
+        };
 
+        const polyPts = Array.isArray(room.polygon_points) && room.polygon_points.length >= 3
+          ? room.polygon_points
+          : null;
+
+        if (polyPts) {
+          const pixelPoints = polyPts.map(pt => ({
+            x: percentToPixelsX(pt.x, editorCanvasWidth),
+            y: percentToPixelsY(pt.y, editorCanvasHeight),
+          }));
+          const svgPoints = pixelPoints.map(pt => `${pt.x},${pt.y}`).join(' ');
+          const center = polygonCenter(svgPoints);
+          return {
+            ...commonProps,
+            shape: 'polygon',
+            points: svgPoints,
+            pixelPoints,
+            labelX: center.x,
+            labelY: center.y,
+          };
+        }
+
+        const x = percentToPixelsX(room.coord_x, editorCanvasWidth);
+        const y = percentToPixelsY(room.coord_y, editorCanvasHeight);
+        const width = percentToPixelsX(room.coord_width || 6, editorCanvasWidth);
+        const height = percentToPixelsY(room.coord_height || 4, editorCanvasHeight);
+        return {
+          ...commonProps,
           shape: 'rect',
           x,
           y,
@@ -507,12 +567,6 @@ export default function MapEditorPage() {
           height,
           labelX: x + width / 2,
           labelY: y + height / 2,
-
-          coord_x: Number(room.coord_x) || 0,
-          coord_y: Number(room.coord_y) || 0,
-          coord_width: Number(room.coord_width) || 6,
-          coord_height: Number(room.coord_height) || 4,
-          features: parseFeatures(room.features),
         };
       });
 
@@ -546,20 +600,10 @@ export default function MapEditorPage() {
       ) {
         return;
       }
-
-      if (mode === 'add') {
-        const coords = screenToCanvas(e.clientX, e.clientY);
-        setPendingCoords({
-          x: clampNumber(coords.x, 0, 100),
-          y: clampNumber(coords.y, 0, 100),
-        });
-        setShowAddModal(true);
-      } else {
-        setSelectedRoomId(null);
-        setEditRoom(null);
-      }
+      setSelectedRoomId(null);
+      setEditRoom(null);
     },
-    [mode, screenToCanvas]
+    []
   );
 
   const handleRoomClick = useCallback(
@@ -603,6 +647,9 @@ export default function MapEditorPage() {
   );
 
   function handleDesignBlockMouseDown(event, block) {
+    // Middle mouse starts canvas pan — don't block drag, let it bubble up.
+    if (event.button === 1) return;
+
     if (mode !== 'select') return;
 
     if (!block.dbId) {
@@ -624,6 +671,43 @@ export default function MapEditorPage() {
     };
 
     setSelectedRoomId(block.id);
+  }
+
+  function handleVertexHandleMouseDown(e, block, vertexIndex) {
+    e.stopPropagation();
+    if (parseFeatures(block.features).is_locked) return;
+    const isPolygon = block.shape === 'polygon';
+    const rawRoom = roomsRef.current.find(r => r.id === block.dbId);
+    vertexDrag.current = {
+      active: true,
+      dbId: block.dbId,
+      isPolygon,
+      vertexIndex,
+      startX: e.clientX,
+      startY: e.clientY,
+      origPoints: isPolygon ? (rawRoom?.polygon_points || []) : null,
+      origX: block.coord_x,
+      origY: block.coord_y,
+      origWidth: block.coord_width,
+      origHeight: block.coord_height,
+    };
+  }
+
+  function handleCenterHandleMouseDown(e, block) {
+    e.stopPropagation();
+    if (parseFeatures(block.features).is_locked) return;
+    const isPolygon = block.shape === 'polygon';
+    const rawRoom = roomsRef.current.find(r => r.id === block.dbId);
+    centerDrag.current = {
+      active: true,
+      dbId: block.dbId,
+      isPolygon,
+      startX: e.clientX,
+      startY: e.clientY,
+      origPoints: isPolygon ? (rawRoom?.polygon_points || []) : null,
+      origX: block.coord_x,
+      origY: block.coord_y,
+    };
   }
 
   async function persistRoomPosition(room) {
@@ -676,6 +760,49 @@ export default function MapEditorPage() {
         return;
       }
 
+      if (vertexDrag.current.active) {
+        const dxPx = (e.clientX - vertexDrag.current.startX) / transform.scale;
+        const dyPx = (e.clientY - vertexDrag.current.startY) / transform.scale;
+        const dxPct = pixelsToPercentX(dxPx, editorCanvasWidth);
+        const dyPct = pixelsToPercentY(dyPx, editorCanvasHeight);
+
+        if (vertexDrag.current.isPolygon) {
+          const orig = vertexDrag.current.origPoints;
+          const vi = vertexDrag.current.vertexIndex;
+          const next = orig.map((pt, i) => i === vi ? { x: pt.x + dxPct, y: pt.y + dyPct } : pt);
+          setRooms(prev => prev.map(r => r.id === vertexDrag.current.dbId ? { ...r, polygon_points: next } : r));
+        } else {
+          const { origX, origY, origWidth, origHeight, vertexIndex: vi } = vertexDrag.current;
+          let nx = origX, ny = origY, nw = origWidth, nh = origHeight;
+          if (vi === 0) { nx = origX + dxPct; ny = origY + dyPct; nw = origWidth - dxPct; nh = origHeight - dyPct; }
+          else if (vi === 1) { ny = origY + dyPct; nw = origWidth + dxPct; nh = origHeight - dyPct; }
+          else if (vi === 2) { nw = origWidth + dxPct; nh = origHeight + dyPct; }
+          else if (vi === 3) { nx = origX + dxPct; nw = origWidth - dxPct; nh = origHeight + dyPct; }
+          setRooms(prev => prev.map(r => r.id === vertexDrag.current.dbId
+            ? { ...r, coord_x: clampNumber(nx, 0, 100), coord_y: clampNumber(ny, 0, 100), coord_width: Math.max(1, nw), coord_height: Math.max(1, nh) }
+            : r));
+        }
+        return;
+      }
+
+      if (centerDrag.current.active) {
+        const dxPx = (e.clientX - centerDrag.current.startX) / transform.scale;
+        const dyPx = (e.clientY - centerDrag.current.startY) / transform.scale;
+        const dxPct = pixelsToPercentX(dxPx, editorCanvasWidth);
+        const dyPct = pixelsToPercentY(dyPx, editorCanvasHeight);
+
+        if (centerDrag.current.isPolygon) {
+          const orig = centerDrag.current.origPoints;
+          const next = orig.map(pt => ({ x: pt.x + dxPct, y: pt.y + dyPct }));
+          setRooms(prev => prev.map(r => r.id === centerDrag.current.dbId ? { ...r, polygon_points: next } : r));
+        } else {
+          setRooms(prev => prev.map(r => r.id === centerDrag.current.dbId
+            ? { ...r, coord_x: clampNumber(centerDrag.current.origX + dxPct, 0, 100), coord_y: clampNumber(centerDrag.current.origY + dyPct, 0, 100) }
+            : r));
+        }
+        return;
+      }
+
       if (panDrag.current.active) {
         setTransform(t => ({
           ...t,
@@ -686,6 +813,36 @@ export default function MapEditorPage() {
     };
 
     const onUp = async () => {
+      if (vertexDrag.current.active) {
+        const room = roomsRef.current.find(r => r.id === vertexDrag.current.dbId);
+        if (room) {
+          try {
+            if (vertexDrag.current.isPolygon) {
+              await roomAPI.update(room.id, { polygon_points: room.polygon_points });
+            } else {
+              await roomAPI.update(room.id, { coord_x: room.coord_x, coord_y: room.coord_y, coord_width: room.coord_width, coord_height: room.coord_height });
+            }
+          } catch { toast.error('Could not save shape.'); }
+        }
+        vertexDrag.current.active = false;
+        return;
+      }
+
+      if (centerDrag.current.active) {
+        const room = roomsRef.current.find(r => r.id === centerDrag.current.dbId);
+        if (room) {
+          try {
+            if (centerDrag.current.isPolygon) {
+              await roomAPI.update(room.id, { polygon_points: room.polygon_points });
+            } else {
+              await roomAPI.update(room.id, { coord_x: room.coord_x, coord_y: room.coord_y });
+            }
+          } catch { toast.error('Could not save position.'); }
+        }
+        centerDrag.current.active = false;
+        return;
+      }
+
       if (designDrag.current.active) {
         const room = roomsRef.current.find(r => r.id === designDrag.current.dbId);
 
@@ -712,14 +869,19 @@ export default function MapEditorPage() {
   }, [transform.scale, editorCanvasWidth, editorCanvasHeight]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleCanvasMouseDown = e => {
-    if (
-      e.target !== canvasRef.current &&
-      !e.target.classList.contains('mec-canvas-bg')
-    ) {
-      return;
-    }
+    const isMiddle = e.button === 1;
 
-    if (mode === 'add') return;
+    if (isMiddle) {
+      // Prevent the browser autoscroll cursor.
+      e.preventDefault();
+    } else {
+      if (
+        e.target !== canvasRef.current &&
+        !e.target.classList.contains('mec-canvas-bg')
+      ) {
+        return;
+      }
+    }
 
     panDrag.current = {
       active: true,
@@ -757,11 +919,24 @@ export default function MapEditorPage() {
     return () => el.removeEventListener('wheel', handleWheel);
   }, [handleWheel]);
 
+  useEffect(() => {
+    const onKeyDown = e => {
+      if (e.key === 'Escape') fitCanvas();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [fitCanvas]);
+
   const handleAddRoom = async () => {
-    if (!newRoomForm.room_number || !newRoomForm.name) {
-      toast.error('Room number and name are required');
+    if (!newRoomForm.room_number || !newRoomForm.name || !newRoomForm.type) {
+      toast.error('Room number, name and type are required');
       return;
     }
+
+    const isPolygon = addWizardShape === 'polygon';
+    const polygonPoints = isPolygon
+      ? generateDefaultPolygonPoints(50, 50, addWizardVertexCount, 8)
+      : null;
 
     try {
       const { data } = await roomAPI.create({
@@ -771,36 +946,34 @@ export default function MapEditorPage() {
         type: newRoomForm.type,
         department: newRoomForm.department || null,
         capacity: newRoomForm.capacity ? parseInt(newRoomForm.capacity, 10) : null,
-        coord_x: pendingCoords?.x || 10,
-        coord_y: pendingCoords?.y || 10,
-        coord_width: 6,
-        coord_height: 4,
+        coord_x: isPolygon ? null : 45,
+        coord_y: isPolygon ? null : 45,
+        coord_width: isPolygon ? null : 10,
+        coord_height: isPolygon ? null : 8,
+        polygon_points: polygonPoints,
         features: {},
       });
 
+      const saved = data.data.room;
       setRooms(prev => [
         ...prev,
         {
-          ...data.data.room,
-          coord_x: Number(data.data.room.coord_x) || 10,
-          coord_y: Number(data.data.room.coord_y) || 10,
-          coord_width: Number(data.data.room.coord_width) || 6,
-          coord_height: Number(data.data.room.coord_height) || 4,
-          features: parseFeatures(data.data.room.features),
+          ...saved,
+          coord_x: Number(saved.coord_x) || 45,
+          coord_y: Number(saved.coord_y) || 45,
+          coord_width: Number(saved.coord_width) || 10,
+          coord_height: Number(saved.coord_height) || 8,
+          polygon_points: saved.polygon_points || polygonPoints,
+          features: parseFeatures(saved.features),
         },
       ]);
 
       setShowAddModal(false);
-      setNewRoomForm({
-        room_number: '',
-        name: '',
-        type: 'classroom',
-        department: '',
-        capacity: '',
-      });
-      setPendingCoords(null);
+      setAddWizardStep(1);
+      setAddWizardShape('rect');
+      setNewRoomForm({ room_number: '', name: '', type: 'classroom', department: '', capacity: '' });
 
-      toast.success(`Room ${data.data.room.room_number} added`);
+      toast.success(`Room ${saved.room_number} added`);
     } catch (err) {
       toast.error(getErrorMessage(err));
     }
@@ -931,23 +1104,19 @@ export default function MapEditorPage() {
         </div>
 
         <div className="mec-toolbar__modes">
-          {[
-            { key: 'select', label: '↖ Select', tip: 'Drag blocks like Lego' },
-            { key: 'add', label: '＋ Add', tip: 'Click canvas to add room' },
-            { key: 'connect', label: '🔗 Connect', tip: 'Click two rooms to add pathfinding edge' },
-          ].map(item => (
-            <button
-              key={item.key}
-              className={`btn btn--sm ${mode === item.key ? 'btn--primary' : 'btn--secondary'}`}
-              onClick={() => {
-                setMode(item.key);
-                setConnecting(null);
-              }}
-              title={item.tip}
-            >
-              {item.label}
-            </button>
-          ))}
+          <button
+            className="btn btn--sm btn--primary"
+            onClick={() => {
+              setAddWizardStep(1);
+              setAddWizardShape('rect');
+              setAddWizardVertexCount(4);
+              setShowAddModal(true);
+            }}
+            disabled={!selectedFloor}
+            title="Add a new room to this floor"
+          >
+            ＋ Add Room
+          </button>
         </div>
 
         <div className="mec-toolbar__right">
@@ -955,8 +1124,8 @@ export default function MapEditorPage() {
             {rooms.length} rooms · {adjacency.length} connections
           </span>
 
-          <button className="btn btn--secondary btn--sm" onClick={() => setTransform(t => ({ ...t, scale: Math.min(5, t.scale * 1.2) }))}>+</button>
-          <button className="btn btn--secondary btn--sm" onClick={() => setTransform(t => ({ ...t, scale: Math.max(0.05, t.scale / 1.2) }))}>−</button>
+          <button className="btn btn--secondary btn--sm" onClick={() => zoomAtViewportCenter(1.2)}>+</button>
+          <button className="btn btn--secondary btn--sm" onClick={() => zoomAtViewportCenter(1 / 1.2)}>−</button>
           <button className="btn btn--secondary btn--sm" onClick={fitCanvas}>⊙ Fit</button>
 
           <Button variant="primary" size="sm" loading={saving} onClick={handleSaveLayout} disabled={!selectedFloor}>
@@ -965,20 +1134,9 @@ export default function MapEditorPage() {
         </div>
       </div>
 
-      <div className="mec-hint">
-        {mode === 'select' && '↖ Drag any linked block to move it as one piece. The shape/points stay unchanged.'}
-        {mode === 'add' && '＋ Click anywhere on the canvas to place a new database room.'}
-        {mode === 'connect' && `🔗 ${connecting ? 'Now click the second room to connect' : 'Click the first room to start a connection'}`}
-        {connecting && (
-          <span style={{ marginLeft: 12, color: 'var(--amber)', fontWeight: 600 }}>
-            Connecting from: {rooms.find(room => room.id === connecting)?.room_number}
-          </span>
-        )}
-      </div>
-
       <div className="mec-main">
         <div
-          className={`mec-canvas ${mode === 'add' ? 'mec-canvas--crosshair' : ''}`}
+          className="mec-canvas"
           ref={canvasRef}
           onMouseDown={handleCanvasMouseDown}
           onClick={handleCanvasClick}
@@ -1051,20 +1209,11 @@ export default function MapEditorPage() {
 
                   const handleBlockClick = event => {
                     event.stopPropagation();
-
-                    if (mode === 'connect') {
-                      if (!block.dbId) {
-                        toast.error('This block is not linked to a database room yet.');
-                        return;
-                      }
-
-                      handleRoomClick(event, block.dbId);
-                      return;
-                    }
-
                     setSelectedRoomId(block.id);
                     setEditRoom(null);
                   };
+
+                  const isLocked = parseFeatures(block.features).is_locked;
 
                   return (
                     <g
@@ -1106,6 +1255,51 @@ export default function MapEditorPage() {
                             <span>{block.name}</span>
                           </div>
                         </foreignObject>
+                      )}
+
+                      {selected && block.isDynamicDbBlock && !isLocked && (
+                        <>
+                          {/* Center move handle */}
+                          <circle
+                            cx={block.labelX}
+                            cy={block.labelY}
+                            r={9}
+                            className="mec-center-handle"
+                            onMouseDown={e => handleCenterHandleMouseDown(e, block)}
+                            onClick={e => e.stopPropagation()}
+                          />
+
+                          {/* Polygon vertex handles */}
+                          {block.shape === 'polygon' && block.pixelPoints?.map((pt, vi) => (
+                            <circle
+                              key={vi}
+                              cx={pt.x}
+                              cy={pt.y}
+                              r={6}
+                              className="mec-vertex-handle"
+                              onMouseDown={e => handleVertexHandleMouseDown(e, block, vi)}
+                              onClick={e => e.stopPropagation()}
+                            />
+                          ))}
+
+                          {/* Rect corner handles */}
+                          {block.shape === 'rect' && [
+                            [block.x, block.y],
+                            [block.x + block.width, block.y],
+                            [block.x + block.width, block.y + block.height],
+                            [block.x, block.y + block.height],
+                          ].map(([cx, cy], vi) => (
+                            <circle
+                              key={vi}
+                              cx={cx}
+                              cy={cy}
+                              r={6}
+                              className="mec-vertex-handle"
+                              onMouseDown={e => handleVertexHandleMouseDown(e, block, vi)}
+                              onClick={e => e.stopPropagation()}
+                            />
+                          ))}
+                        </>
                       )}
                     </g>
                   );
@@ -1223,14 +1417,33 @@ export default function MapEditorPage() {
                   />
                 </div>
 
-                <div style={{ padding: '8px 0', borderTop: '1px solid var(--border)', marginTop: 8 }}>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6 }}>Block Position</div>
-                  <p style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.5 }}>
-                    Drag this block to move it like Lego. Its shape and polygon points stay unchanged.
-                  </p>
-                </div>
+                {/* Lock position toggle */}
+                {!selectedRoom.isStaticOnly && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderTop: '1px solid var(--border)', marginTop: 4 }}>
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: 13 }}>Lock Position</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                        {parseFeatures(selectedRoom.features).is_locked ? 'Shape is locked' : 'Drag handles to reshape'}
+                      </div>
+                    </div>
+                    <button
+                      className={`mec-lock-btn${parseFeatures(selectedRoom.features).is_locked ? ' mec-lock-btn--locked' : ''}`}
+                      onClick={async () => {
+                        const roomId = selectedRoom.dbId || selectedRoom.id;
+                        const cur = parseFeatures(selectedRoom.features);
+                        const next = { ...cur, is_locked: !cur.is_locked };
+                        try {
+                          await roomAPI.update(roomId, { features: next });
+                          setRooms(prev => prev.map(r => r.id === roomId ? { ...r, features: next } : r));
+                        } catch { toast.error('Could not update lock state'); }
+                      }}
+                    >
+                      {parseFeatures(selectedRoom.features).is_locked ? '🔒 Locked' : '🔓 Unlocked'}
+                    </button>
+                  </div>
+                )}
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 12 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
                   <Button variant="primary" size="sm" full onClick={handleUpdateRoom} disabled={selectedRoom.isStaticOnly}>
                     Save Room Info
                   </Button>
@@ -1241,8 +1454,19 @@ export default function MapEditorPage() {
                 </div>
 
                 <div style={{ marginTop: 16 }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', marginBottom: 8 }}>
-                    Connections
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)' }}>
+                      Pathfinding Connections
+                    </div>
+                    {selectedRoom.dbId && (
+                      <button
+                        className="btn btn--ghost btn--sm"
+                        style={{ fontSize: 11, padding: '2px 6px' }}
+                        onClick={() => { setMode('connect'); setConnecting(selectedRoom.dbId); toast('Click another room to connect', { icon: '🔗' }); }}
+                      >
+                        + Connect
+                      </button>
+                    )}
                   </div>
 
                   {selectedRoomConnections.map((edge, index) => {
@@ -1264,7 +1488,7 @@ export default function MapEditorPage() {
                   })}
 
                   {selectedRoomConnections.length === 0 && (
-                    <p style={{ fontSize: 12, color: 'var(--text-faint)' }}>No connections yet. Use 🔗 Connect mode.</p>
+                    <p style={{ fontSize: 12, color: 'var(--text-faint)' }}>No pathfinding connections yet.</p>
                   )}
                 </div>
               </div>
@@ -1301,32 +1525,85 @@ export default function MapEditorPage() {
 
       <Modal
         open={showAddModal}
-        onClose={() => setShowAddModal(false)}
-        title="Add New Room"
+        onClose={() => { setShowAddModal(false); setAddWizardStep(1); }}
+        title={addWizardStep === 1 ? 'Add Room — Step 1: Shape' : 'Add Room — Step 2: Details'}
         size="sm"
         footer={
-          <>
-            <Button variant="secondary" onClick={() => setShowAddModal(false)}>Cancel</Button>
-            <Button variant="primary" onClick={handleAddRoom}>Add Room</Button>
-          </>
+          addWizardStep === 1 ? (
+            <>
+              <Button variant="secondary" onClick={() => setShowAddModal(false)}>Cancel</Button>
+              <Button variant="primary" onClick={() => setAddWizardStep(2)}>Next →</Button>
+            </>
+          ) : (
+            <>
+              <Button variant="secondary" onClick={() => setAddWizardStep(1)}>← Back</Button>
+              <Button variant="primary" onClick={handleAddRoom}>Create Room</Button>
+            </>
+          )
         }
       >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {pendingCoords && (
-            <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-              Position: ({pendingCoords.x?.toFixed(1)}%, {pendingCoords.y?.toFixed(1)}%)
+        {addWizardStep === 1 && (
+          <div className="mec-wizard-step">
+            <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 16 }}>
+              Choose the shape of the clickable room area on the map.
             </p>
-          )}
 
-          <Input label="Room Number" required value={newRoomForm.room_number} onChange={e => setNewRoomForm(form => ({ ...form, room_number: e.target.value }))} placeholder="e.g. 101" />
-          <Input label="Room Name" required value={newRoomForm.name} onChange={e => setNewRoomForm(form => ({ ...form, name: e.target.value }))} placeholder="e.g. Computer Lab" />
-          <Select label="Type" value={newRoomForm.type} onChange={e => setNewRoomForm(form => ({ ...form, type: e.target.value }))} options={ROOM_TYPES.map(type => ({ value: type, label: roomTypeLabel(type) }))} />
+            <div className="mec-wizard-shapes">
+              <button
+                className={`mec-wizard-shape-btn${addWizardShape === 'rect' ? ' mec-wizard-shape-btn--active' : ''}`}
+                onClick={() => setAddWizardShape('rect')}
+              >
+                <svg width="52" height="40" viewBox="0 0 52 40">
+                  <rect x="4" y="6" width="44" height="28" rx="3" fill="none" stroke="currentColor" strokeWidth="3" />
+                </svg>
+                <span>Rectangle</span>
+              </button>
 
-          <div className="form-row">
-            <Input label="Department" value={newRoomForm.department} onChange={e => setNewRoomForm(form => ({ ...form, department: e.target.value }))} placeholder="Optional" />
-            <Input label="Capacity" type="number" value={newRoomForm.capacity} onChange={e => setNewRoomForm(form => ({ ...form, capacity: e.target.value }))} placeholder="Optional" />
+              <button
+                className={`mec-wizard-shape-btn${addWizardShape === 'polygon' ? ' mec-wizard-shape-btn--active' : ''}`}
+                onClick={() => setAddWizardShape('polygon')}
+              >
+                <svg width="52" height="40" viewBox="0 0 52 40">
+                  <polygon points="26,3 49,15 41,37 11,37 3,15" fill="none" stroke="currentColor" strokeWidth="3" />
+                </svg>
+                <span>Polygon</span>
+              </button>
+            </div>
+
+            {addWizardShape === 'polygon' && (
+              <div style={{ marginTop: 20 }}>
+                <label className="form-label">Number of vertices (corners)</label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 6 }}>
+                  <input
+                    type="range"
+                    min="3"
+                    max="12"
+                    value={addWizardVertexCount}
+                    onChange={e => setAddWizardVertexCount(Number(e.target.value))}
+                    style={{ flex: 1 }}
+                  />
+                  <span className="mec-wizard-vertex-count">{addWizardVertexCount}</span>
+                </div>
+                <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 6 }}>
+                  {addWizardVertexCount === 3 ? 'Triangle' : addWizardVertexCount === 4 ? 'Quadrilateral' : addWizardVertexCount === 5 ? 'Pentagon' : addWizardVertexCount === 6 ? 'Hexagon' : `${addWizardVertexCount}-sided polygon`}
+                  {' — '}vertices appear on map as drag handles
+                </p>
+              </div>
+            )}
           </div>
-        </div>
+        )}
+
+        {addWizardStep === 2 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <Input label="Room Number *" required value={newRoomForm.room_number} onChange={e => setNewRoomForm(f => ({ ...f, room_number: e.target.value }))} placeholder="e.g. 2590" />
+            <Input label="Room Name *" required value={newRoomForm.name} onChange={e => setNewRoomForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. Computer Lab" />
+            <Select label="Type *" value={newRoomForm.type} onChange={e => setNewRoomForm(f => ({ ...f, type: e.target.value }))} options={ROOM_TYPES.map(t => ({ value: t, label: roomTypeLabel(t) }))} />
+            <div className="form-row">
+              <Input label="Department" value={newRoomForm.department} onChange={e => setNewRoomForm(f => ({ ...f, department: e.target.value }))} placeholder="Optional" />
+              <Input label="Capacity" type="number" value={newRoomForm.capacity} onChange={e => setNewRoomForm(f => ({ ...f, capacity: e.target.value }))} placeholder="Optional" />
+            </div>
+          </div>
+        )}
       </Modal>
 
       <ConfirmDialog

@@ -262,6 +262,103 @@
   opacity: 0.9;
 }
 
+/* ── Vertex handles ─────────────────────────────────────── */
+.mec-vertex-handle {
+  fill: #ffffff;
+  stroke: #ef4444;
+  stroke-width: 2;
+  cursor: crosshair;
+  filter: drop-shadow(0 1px 3px rgba(0,0,0,0.25));
+  vector-effect: non-scaling-stroke;
+}
+.mec-vertex-handle:hover {
+  fill: #fef2f2;
+  stroke: #dc2626;
+  stroke-width: 2.5;
+}
+
+/* ── Center move handle ──────────────────────────────────── */
+.mec-center-handle {
+  fill: #2563eb;
+  stroke: #ffffff;
+  stroke-width: 2;
+  cursor: move;
+  opacity: 0.92;
+  filter: drop-shadow(0 1px 4px rgba(37,99,235,0.4));
+  vector-effect: non-scaling-stroke;
+}
+.mec-center-handle:hover {
+  fill: #1d4ed8;
+  opacity: 1;
+}
+
+/* ── Lock toggle button ──────────────────────────────────── */
+.mec-lock-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1.5px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  transition: background 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+.mec-lock-btn:hover { background: var(--surface-hover, #f1f5f9); }
+.mec-lock-btn--locked {
+  background: #fef2f2;
+  border-color: #fca5a5;
+  color: #b91c1c;
+}
+.mec-lock-btn--locked:hover { background: #fee2e2; }
+
+/* ── Add Room wizard modal ───────────────────────────────── */
+.mec-wizard-step { padding: 4px 0; }
+
+.mec-wizard-shapes {
+  display: flex;
+  gap: 14px;
+}
+
+.mec-wizard-shape-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 18px 10px;
+  border-radius: 10px;
+  border: 2px solid var(--border);
+  background: var(--bg);
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+.mec-wizard-shape-btn:hover {
+  border-color: var(--najah-blue, #1d4ed8);
+  color: var(--najah-blue, #1d4ed8);
+  background: #eff6ff;
+}
+.mec-wizard-shape-btn--active {
+  border-color: var(--najah-blue, #1d4ed8);
+  background: #eff6ff;
+  color: var(--najah-blue, #1d4ed8);
+}
+
+.mec-wizard-vertex-count {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 20px;
+  font-weight: 700;
+  min-width: 28px;
+  text-align: center;
+  color: var(--najah-blue, #1d4ed8);
+}
 
 .mec-canvas-wrap {
   position: relative;
