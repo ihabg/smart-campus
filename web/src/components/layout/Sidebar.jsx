@@ -32,6 +32,8 @@ const NAV = {
     label: 'Professor Portal', badge: 'badge--green',
     links: [
       { to: '/professor',           end: true, icon: '⊞',  label: 'Dashboard' },
+      { to: '/professor/schedule',             icon: '📅', label: 'My Schedule' },
+      { to: '/professor/students',             icon: '👥', label: 'Students & Grades' },
       { to: '/announcements',                  icon: '📢', label: 'Announcements' },
       { to: '/profile',                        icon: '👤', label: 'My Profile' },
     ],
@@ -40,6 +42,8 @@ const NAV = {
     label: 'Professor Portal', badge: 'badge--green',
     links: [
       { to: '/professor',           end: true, icon: '⊞',  label: 'Dashboard' },
+      { to: '/professor/schedule',             icon: '📅', label: 'My Schedule' },
+      { to: '/professor/students',             icon: '👥', label: 'Students & Grades' },
       { to: '/announcements',                  icon: '📢', label: 'Announcements' },
       { to: '/profile',                        icon: '👤', label: 'My Profile' },
     ],

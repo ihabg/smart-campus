@@ -225,4 +225,26 @@ export const instructorAPI = {
 
   delete: (id) => api.delete(`/instructors/${id}`)
 };
+// ─── professorAPI ─────────────────────────────────────────────
+export const professorAPI = {
+  getDashboard: () => api.get('/professor/dashboard'),
+
+  getSchedule: (params = {}) => api.get('/professor/schedule', { params }),
+
+  getSectionStudents: (sectionId) =>
+    api.get(`/professor/sections/${sectionId}/students`),
+
+  getAttendance: (sectionId, params = {}) =>
+    api.get(`/professor/sections/${sectionId}/attendance`, { params }),
+
+  getAttendanceSummary: (sectionId) =>
+    api.get(`/professor/sections/${sectionId}/attendance/summary`),
+
+  markAttendance: (data) => api.post('/professor/attendance', data),
+
+  saveGradesBulk: (data) => api.post('/professor/grades/bulk', data),
+
+  sendWarning: (data) => api.post('/professor/warning', data)
+};
+
 export default api;

@@ -659,19 +659,45 @@ async function getSchedule(req, res, next) {
     const profId = await requireInstructor(req, res);
     if (!profId) return;
 
+    const { semester, academic_year } = req.query;
+
+    const params = [profId];
+    let filter = '';
+
+    if (semester) {
+      params.push(semester);
+      filter += ` AND s.semester::TEXT = $${params.length}`;
+    }
+
+    if (academic_year) {
+      params.push(academic_year);
+      filter += ` AND s.academic_year = $${params.length}`;
+    }
+
     const result = await query(
       `
       SELECT
         s.id,
+        sm.id AS meeting_id,
         s.section_number,
+        s.semester::TEXT AS semester,
+        s.academic_year,
         COALESCE(sm.day_of_week, d.day_value) AS day_of_week,
         COALESCE(sm.start_time, s.start_time) AS start_time,
         COALESCE(sm.end_time, s.end_time) AS end_time,
+        COALESCE(sm.meeting_type, 'lecture') AS meeting_type,
+        c.id AS course_id,
         c.code,
         c.name AS course_name,
         COALESCE(c.name_ar, c.name) AS course_name_ar,
+        COALESCE(c.credit_hours, 3) AS credit_hours,
+        c.department AS course_department,
+        r.id AS room_id,
         r.room_number,
+        r.name AS room_name,
         f.floor_label,
+        b.name AS building_name,
+        COALESCE(NULLIF(to_jsonb(b)->>'campus', ''), 'الجديد') AS campus,
         (
           SELECT COUNT(*)
           FROM enrollments e
@@ -685,19 +711,485 @@ async function getSchedule(req, res, next) {
         ON sm.id IS NULL
       LEFT JOIN rooms r ON r.id = COALESCE(sm.room_id, s.room_id)
       LEFT JOIN floors f ON f.id = r.floor_id
+      LEFT JOIN buildings b ON b.id = f.building_id
       WHERE s.instructor_id = $1
         AND s.is_active = TRUE
+        ${filter}
       ORDER BY
         COALESCE(sm.day_of_week, d.day_value),
-        COALESCE(sm.start_time, s.start_time)
+        COALESCE(sm.start_time, s.start_time),
+        c.code,
+        s.section_number
       `,
-      [profId]
+      params
+    );
+
+    let activeChanges = [];
+
+    try {
+      const changeResult = await query(
+        `
+        SELECT
+          cmc.id,
+          cmc.section_id,
+          cmc.section_meeting_id AS meeting_id,
+          cmc.change_scope,
+          cmc.change_date,
+          cmc.start_date,
+          cmc.end_date,
+          cmc.old_day_of_week,
+          cmc.old_start_time,
+          cmc.old_end_time,
+          old_room.room_number AS old_room_number,
+          cmc.new_day_of_week,
+          cmc.new_start_time,
+          cmc.new_end_time,
+          new_room.room_number AS new_room_number,
+          new_room.name AS new_room_name,
+          cmc.reason,
+          cmc.created_at,
+          s.section_number,
+          c.code,
+          c.name AS course_name,
+          COALESCE(c.name_ar, c.name) AS course_name_ar
+        FROM section_meeting_changes cmc
+        JOIN sections s ON s.id = cmc.section_id
+        JOIN courses c ON c.id = s.course_id
+        LEFT JOIN rooms old_room ON old_room.id = cmc.old_room_id
+        LEFT JOIN rooms new_room ON new_room.id = cmc.new_room_id
+        WHERE s.instructor_id = $1
+          AND s.is_active = TRUE
+          AND cmc.is_active = TRUE
+          AND (
+            cmc.change_scope = 'permanent'
+            OR cmc.change_date >= CURRENT_DATE
+            OR cmc.end_date >= CURRENT_DATE
+          )
+        ORDER BY
+          COALESCE(cmc.change_date, cmc.start_date, CURRENT_DATE),
+          cmc.new_start_time,
+          c.code
+        `,
+        [profId]
+      );
+
+      activeChanges = changeResult.rows;
+    } catch (changeError) {
+      activeChanges = [];
+    }
+
+    let officeHours = [];
+
+    try {
+      const ohResult = await query(
+        `
+        SELECT
+          oh.id,
+          NULLIF(to_jsonb(oh)->>'day_of_week', '')::INT AS day_of_week,
+          NULLIF(to_jsonb(oh)->>'start_time', '')::TIME AS start_time,
+          NULLIF(to_jsonb(oh)->>'end_time', '')::TIME AS end_time,
+          COALESCE(
+            NULLIF(to_jsonb(oh)->>'location', ''),
+            NULLIF(to_jsonb(oh)->>'room_number', ''),
+            NULLIF(to_jsonb(oh)->>'room', '')
+          ) AS location,
+          COALESCE(
+            NULLIF(to_jsonb(oh)->>'notes', ''),
+            NULLIF(to_jsonb(oh)->>'note', '')
+          ) AS note
+        FROM office_hours oh
+        WHERE to_jsonb(oh)->>'instructor_id' = $1::TEXT
+           OR to_jsonb(oh)->>'professor_id' = $1::TEXT
+        ORDER BY
+          NULLIF(to_jsonb(oh)->>'day_of_week', '')::INT,
+          NULLIF(to_jsonb(oh)->>'start_time', '')::TIME
+        `,
+        [profId]
+      );
+
+      officeHours = ohResult.rows.filter(
+        (row) => row.day_of_week !== null && row.start_time && row.end_time
+      );
+    } catch (officeError) {
+      officeHours = [];
+    }
+
+    res.json({
+      success: true,
+      data: {
+        sections: result.rows,
+        office_hours: officeHours,
+        active_changes: activeChanges
+      }
+    });
+  } catch (e) {
+    next(e);
+  }
+}
+
+async function getRoomsForChange(req, res, next) {
+  try {
+    const instructorId = await requireInstructor(req, res);
+    if (!instructorId) return;
+
+    const result = await query(
+      `
+      SELECT
+        r.id,
+        r.room_number,
+        r.name,
+        r.type::TEXT AS type,
+        r.capacity,
+        f.floor_label,
+        b.name AS building_name
+      FROM rooms r
+      LEFT JOIN floors f ON f.id = r.floor_id
+      LEFT JOIN buildings b ON b.id = f.building_id
+      WHERE r.is_active = TRUE
+      ORDER BY
+        CASE
+          WHEN r.room_number IN ('9999', '509999') THEN 0
+          WHEN r.type::TEXT IN ('lecture_hall', 'classroom', 'lab') THEN 1
+          ELSE 2
+        END,
+        r.room_number
+      `
     );
 
     res.json({
       success: true,
       data: {
-        sections: result.rows
+        rooms: result.rows
+      }
+    });
+  } catch (e) {
+    next(e);
+  }
+}
+
+async function changeMeeting(req, res, next) {
+  try {
+    const instructorId = await requireInstructor(req, res);
+    if (!instructorId) return;
+
+    const { sectionId } = req.params;
+    const {
+      meeting_id,
+      change_scope = 'single_day',
+      change_date,
+      start_date,
+      end_date,
+      day_of_week,
+      start_time,
+      end_time,
+      room_id,
+      reason
+    } = req.body;
+
+    const allowedScopes = ['single_day', 'date_range', 'permanent'];
+
+    if (!allowedScopes.includes(change_scope)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid change scope.'
+      });
+    }
+
+    if (day_of_week === undefined || !start_time || !end_time) {
+      return res.status(400).json({
+        success: false,
+        message: 'Day, start time, and end time are required.'
+      });
+    }
+
+    if (Number(day_of_week) < 0 || Number(day_of_week) > 6) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid day.'
+      });
+    }
+
+    if (String(start_time).slice(0, 5) >= String(end_time).slice(0, 5)) {
+      return res.status(400).json({
+        success: false,
+        message: 'End time must be after start time.'
+      });
+    }
+
+    if (change_scope === 'single_day' && !change_date) {
+      return res.status(400).json({
+        success: false,
+        message: 'Choose the lecture date for a one-day change.'
+      });
+    }
+
+    if (change_scope === 'date_range') {
+      if (!start_date || !end_date) {
+        return res.status(400).json({
+          success: false,
+          message: 'Choose start date and end date for a range change.'
+        });
+      }
+
+      if (String(start_date) > String(end_date)) {
+        return res.status(400).json({
+          success: false,
+          message: 'End date must be after or equal to start date.'
+        });
+      }
+    }
+
+    const sectionRes = await query(
+      `
+      SELECT
+        s.id,
+        s.section_number,
+        s.room_id AS current_room_id,
+        s.day_of_week,
+        s.start_time,
+        s.end_time,
+        c.code,
+        c.name AS course_name
+      FROM sections s
+      JOIN courses c ON c.id = s.course_id
+      WHERE s.id = $1
+        AND s.instructor_id = $2
+        AND s.is_active = TRUE
+      `,
+      [sectionId, instructorId]
+    );
+
+    if (!sectionRes.rows.length) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not your active section.'
+      });
+    }
+
+    const section = sectionRes.rows[0];
+
+    let oldMeetingRes;
+
+    if (meeting_id) {
+      oldMeetingRes = await query(
+        `
+        SELECT
+          sm.id,
+          sm.day_of_week,
+          sm.start_time,
+          sm.end_time,
+          sm.room_id,
+          r.room_number AS old_room_number
+        FROM section_meetings sm
+        LEFT JOIN rooms r ON r.id = sm.room_id
+        WHERE sm.id = $1
+          AND sm.section_id = $2
+        `,
+        [meeting_id, sectionId]
+      );
+    } else {
+      oldMeetingRes = await query(
+        `
+        SELECT
+          NULL::UUID AS id,
+          COALESCE(($2)::INT, s.day_of_week[1]) AS day_of_week,
+          s.start_time,
+          s.end_time,
+          s.room_id,
+          r.room_number AS old_room_number
+        FROM sections s
+        LEFT JOIN rooms r ON r.id = s.room_id
+        WHERE s.id = $1
+        `,
+        [sectionId, Number(day_of_week)]
+      );
+    }
+
+    if (meeting_id && !oldMeetingRes.rows.length) {
+      return res.status(404).json({
+        success: false,
+        message: 'Meeting not found for this section.'
+      });
+    }
+
+    const oldMeeting = oldMeetingRes.rows[0] || {};
+
+    let newRoom = null;
+    if (room_id) {
+      const roomRes = await query(
+        `SELECT id, room_number, name FROM rooms WHERE id = $1 AND is_active = TRUE`,
+        [room_id]
+      );
+
+      if (!roomRes.rows.length) {
+        return res.status(404).json({
+          success: false,
+          message: 'Selected room was not found.'
+        });
+      }
+
+      newRoom = roomRes.rows[0];
+    }
+
+    let savedChange = null;
+
+    if (change_scope === 'permanent') {
+      if (meeting_id) {
+        await query(
+          `
+          UPDATE section_meetings
+          SET
+            day_of_week = $1,
+            start_time = $2,
+            end_time = $3,
+            room_id = $4,
+            note = COALESCE(NULLIF($5, ''), note)
+          WHERE id = $6
+            AND section_id = $7
+          `,
+          [Number(day_of_week), start_time, end_time, room_id || null, reason || '', meeting_id, sectionId]
+        );
+      } else {
+        await query(
+          `
+          UPDATE sections
+          SET
+            day_of_week = ARRAY[$1]::SMALLINT[],
+            start_time = $2,
+            end_time = $3,
+            room_id = $4,
+            updated_at = NOW()
+          WHERE id = $5
+            AND instructor_id = $6
+          `,
+          [Number(day_of_week), start_time, end_time, room_id || null, sectionId, instructorId]
+        );
+      }
+    }
+
+    const changeInsert = await query(
+      `
+      INSERT INTO section_meeting_changes (
+        section_id,
+        section_meeting_id,
+        change_scope,
+        change_date,
+        start_date,
+        end_date,
+        old_day_of_week,
+        old_start_time,
+        old_end_time,
+        old_room_id,
+        new_day_of_week,
+        new_start_time,
+        new_end_time,
+        new_room_id,
+        reason,
+        created_by,
+        is_active
+      )
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,TRUE)
+      RETURNING id
+      `,
+      [
+        sectionId,
+        meeting_id || null,
+        change_scope,
+        change_scope === 'single_day' ? change_date : null,
+        change_scope === 'date_range' ? start_date : null,
+        change_scope === 'date_range' ? end_date : null,
+        oldMeeting.day_of_week ?? null,
+        oldMeeting.start_time || null,
+        oldMeeting.end_time || null,
+        oldMeeting.room_id || null,
+        Number(day_of_week),
+        start_time,
+        end_time,
+        room_id || null,
+        reason || null,
+        req.user.id
+      ]
+    );
+
+    savedChange = changeInsert.rows[0];
+
+    const scopeText =
+      change_scope === 'single_day'
+        ? `for ${change_date} only`
+        : change_scope === 'date_range'
+          ? `from ${start_date} to ${end_date}`
+          : 'for all future lectures';
+
+    const locationText = newRoom?.room_number ? `room ${newRoom.room_number}` : 'online';
+
+    const notificationRes = await query(
+      `
+      INSERT INTO notifications (
+        title,
+        body,
+        type,
+        sender_id,
+        target_role,
+        related_room_id,
+        data,
+        is_published,
+        published_at
+      )
+      VALUES ($1, $2, 'schedule_change', $3, 'student', $4, $5::jsonb, TRUE, NOW())
+      RETURNING id
+      `,
+      [
+        `Schedule change: ${section.code}`,
+        `Your class ${section.code} — ${section.course_name} section ${section.section_number} was changed ${scopeText}. New time: ${start_time} - ${end_time}. New location: ${locationText}.${reason ? ` Note: ${reason}` : ''}`,
+        req.user.id,
+        room_id || null,
+        JSON.stringify({
+          change_id: savedChange?.id || null,
+          section_id: sectionId,
+          meeting_id: meeting_id || null,
+          change_scope,
+          change_date: change_scope === 'single_day' ? change_date : null,
+          start_date: change_scope === 'date_range' ? start_date : null,
+          end_date: change_scope === 'date_range' ? end_date : null,
+          course_code: section.code,
+          course_name: section.course_name,
+          section_number: section.section_number,
+          old_day_of_week: oldMeeting.day_of_week,
+          old_start_time: oldMeeting.start_time,
+          old_end_time: oldMeeting.end_time,
+          old_room_id: oldMeeting.room_id,
+          old_room_number: oldMeeting.old_room_number,
+          new_day_of_week: Number(day_of_week),
+          new_start_time: start_time,
+          new_end_time: end_time,
+          new_room_id: room_id || null,
+          new_room_number: newRoom?.room_number || null,
+          reason: reason || null
+        })
+      ]
+    );
+
+    await query(
+      `
+      INSERT INTO notification_receipts (notification_id, user_id)
+      SELECT $1, e.student_id
+      FROM enrollments e
+      WHERE e.section_id = $2
+        AND e.status = 'enrolled'
+      ON CONFLICT (notification_id, user_id) DO NOTHING
+      `,
+      [notificationRes.rows[0].id, sectionId]
+    );
+
+    res.json({
+      success: true,
+      data: {
+        message:
+          change_scope === 'permanent'
+            ? 'Weekly schedule changed permanently and students were notified.'
+            : 'Temporary schedule change saved and students were notified.',
+        change_id: savedChange?.id || null,
+        notification_id: notificationRes.rows[0].id
       }
     });
   } catch (e) {
@@ -713,5 +1205,7 @@ module.exports = {
   markAttendance,
   saveGradesBulk,
   sendAttendanceWarning,
-  getSchedule
+  getSchedule,
+  getRoomsForChange,
+  changeMeeting
 };
