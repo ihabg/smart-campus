@@ -436,6 +436,9 @@ function parseRoomFeatures(features) {
 }
 
 function getRoomOffsetPixels(block, floorMeta) {
+  // DB rooms store absolute position in polygon_points — never apply extra offset
+  if (block.fromDatabase) return { x: 0, y: 0 };
+
   const features = parseRoomFeatures(block.features);
 
   if (features.geometry_mode !== 'offset_from_design') {
@@ -738,20 +741,20 @@ const visibleBlocks = useMemo(() => {
 useEffect(() => {
   const params = new URLSearchParams(location.search);
   const roomFromUrl = params.get('room');
-  const source = params.get('source');
 
   if (!roomFromUrl) return;
 
   const result = findBlockByRoomSearch(roomFromUrl);
 
   if (!result) {
-    setRoomSearch(roomFromUrl);
-    setRoomSearchError(`Room "${roomFromUrl}" was not found on the map.`);
+    // Only show "not found" after DB rooms have finished loading — avoids a
+    // false-error flash while the async fetch is still in flight.
+    if (dbRoomsLoaded) {
+      setRoomSearch(roomFromUrl);
+      setRoomSearchError(`Room "${roomFromUrl}" was not found on the map.`);
+    }
     return;
   }
-
-  const cameFromSchedule =
-    source === 'schedule' || location.state?.fromSchedule === true;
 
   setActiveFloor(result.floorKey);
   setSelectedNeed('all');
@@ -760,13 +763,10 @@ useEffect(() => {
   setRoomSearchError('');
   resetMapView();
 
-  if (cameFromSchedule) {
-    setSelectedBlock(null);
-    setScheduleHighlightedBlock(result.block);
-  } else {
-    setScheduleHighlightedBlock(null);
-    setSelectedBlock(result.block);
-  }
+  // Open the room info panel regardless of whether we came from the schedule
+  // or from a direct URL — the panel is the primary way to see room details.
+  setScheduleHighlightedBlock(null);
+  setSelectedBlock(result.block);
 
   if (result.floorKey === 'G') {
     setStartNodeId('G_NORTH_ENTRANCE_NODE');
@@ -775,7 +775,7 @@ useEffect(() => {
   if (result.floorKey === 'B2') {
     setStartNodeId('B2_LEFT_STAIRS');
   }
-}, [location.search, location.state, mapFloors]);
+}, [location.search, location.state, mapFloors, dbRoomsLoaded]);
 
   function clearRoute() {
     setRoutePath([]);
