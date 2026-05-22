@@ -36,6 +36,14 @@ router.get(
   ctrl.getSemesterMeetings
 );
 
+// Room availability for map-based section assignment
+router.get(
+  '/room-availability',
+  protect,
+  restrictTo('admin', 'super_admin'),
+  ctrl.getRoomAvailability
+);
+
 // Admin CRUD routes
 router.post(
   '/',

@@ -869,6 +869,262 @@ async function getSemesterStats(req, res, next) {
 // GET /schedule/meetings?semester=spring&academic_year=2025/2026
 // Returns every section_meetings row for the semester, joined with
 // section, course, instructor, and room data for the Timetable tab.
+// ─── Room availability for map-based assignment ───────────────
+//
+// GET /api/schedule/room-availability
+// Returns every active room annotated with an availability status
+// for the requested semester / day / time window.
+//
+// Status priority (high → low):
+//   booked            — a section_meetings row conflicts with the slot
+//   too_small         — capacity < expected_capacity (only for teaching rooms)
+//   available         — teaching room, no conflict, capacity ok
+//   not_teaching_room — room_types.is_teaching is false / null
+//
+async function getRoomAvailability(req, res, next) {
+  try {
+    const {
+      semester,
+      academic_year,
+      day_of_week,
+      start_time,
+      end_time,
+      expected_capacity,
+    } = req.query;
+
+    // ── Validate required params ─────────────────────────────
+    const missing = [];
+    if (!semester)                                  missing.push('semester');
+    if (!academic_year)                             missing.push('academic_year');
+    if (day_of_week === undefined || day_of_week === '') missing.push('day_of_week');
+    if (!start_time)                                missing.push('start_time');
+    if (!end_time)                                  missing.push('end_time');
+
+    if (missing.length) {
+      return res.status(400).json({
+        success: false,
+        message: `Missing required parameters: ${missing.join(', ')}`,
+      });
+    }
+
+    if (!['fall', 'spring', 'summer'].includes(semester)) {
+      return res.status(400).json({
+        success: false,
+        message: 'semester must be fall, spring, or summer.',
+      });
+    }
+
+    if (!/^\d{4}\/\d{4}$/.test(academic_year)) {
+      return res.status(400).json({
+        success: false,
+        message: 'academic_year must be in YYYY/YYYY format.',
+      });
+    }
+
+    const dayInt = parseInt(day_of_week, 10);
+    if (!Number.isInteger(dayInt) || dayInt < 0 || dayInt > 6) {
+      return res.status(400).json({
+        success: false,
+        message: 'day_of_week must be an integer 0 (Sun) to 6 (Sat).',
+      });
+    }
+
+    const timeRe = /^\d{2}:\d{2}$/;
+    const start  = String(start_time).slice(0, 5);
+    const end    = String(end_time).slice(0, 5);
+
+    if (!timeRe.test(start) || !timeRe.test(end)) {
+      return res.status(400).json({
+        success: false,
+        message: 'start_time and end_time must be in HH:MM format.',
+      });
+    }
+
+    if (start >= end) {
+      return res.status(400).json({
+        success: false,
+        message: 'start_time must be before end_time.',
+      });
+    }
+
+    let capacityFilter = null;
+    if (expected_capacity !== undefined && expected_capacity !== '') {
+      capacityFilter = parseInt(expected_capacity, 10);
+      if (!Number.isInteger(capacityFilter) || capacityFilter < 1) {
+        return res.status(400).json({
+          success: false,
+          message: 'expected_capacity must be a positive integer.',
+        });
+      }
+    }
+
+    // ── Main query ───────────────────────────────────────────
+    //
+    // For every active room:
+    //   1. LEFT JOIN room_types (by r.type::text = rt.value) to get
+    //      label, icon, color, and is_teaching flag.
+    //   2. LEFT JOIN LATERAL finds the first conflicting booking —
+    //      a section_meetings row where:
+    //        • the room matches (COALESCE sm.room_id, s.room_id)
+    //        • same semester / academic_year
+    //        • same day_of_week
+    //        • time ranges overlap: sm.start < req_end AND sm.end > req_start
+    //
+    // Status is computed in JS after the query because it depends on
+    // the optional capacityFilter which is not a DB column.
+    //
+    const result = await query(
+      `
+      SELECT
+        r.id              AS room_id,
+        r.room_number,
+        r.name            AS room_name,
+        r.type            AS room_type,
+        r.capacity,
+        r.floor_id,
+        f.building_id,
+
+        rt.label_en       AS room_type_label,
+        rt.icon           AS room_type_icon,
+        rt.color          AS room_type_color,
+        rt.is_teaching,
+
+        conflict.section_id      AS booked_section_id,
+        conflict.course_code,
+        conflict.course_name,
+        conflict.section_number,
+        conflict.instructor_name,
+        conflict.meeting_start   AS booked_start_time,
+        conflict.meeting_end     AS booked_end_time,
+        conflict.enrolled,
+        conflict.max_capacity    AS booked_max_capacity
+
+      FROM rooms r
+      LEFT JOIN floors     f  ON f.id    = r.floor_id
+      LEFT JOIN room_types rt ON rt.value = r.type::text
+
+      -- Find the first conflicting booking for this room on the
+      -- requested day/time. LATERAL lets us reference r.id in the
+      -- subquery. ON TRUE keeps all rooms (LEFT JOIN behaviour).
+      LEFT JOIN LATERAL (
+        SELECT
+          s.id              AS section_id,
+          c.code            AS course_code,
+          c.name            AS course_name,
+          s.section_number,
+          TRIM(CONCAT_WS(' ',
+            NULLIF(TRIM(COALESCE(i.title, '')), ''),
+            i.first_name,
+            i.last_name
+          ))                AS instructor_name,
+          sm.start_time     AS meeting_start,
+          sm.end_time       AS meeting_end,
+          s.enrolled,
+          s.max_capacity
+        FROM   section_meetings sm
+        JOIN   sections     s  ON s.id  = sm.section_id
+        JOIN   courses      c  ON c.id  = s.course_id
+        LEFT JOIN instructors i ON i.id = s.instructor_id
+        WHERE  COALESCE(sm.room_id, s.room_id) = r.id
+          AND  s.is_active     = TRUE
+          AND  s.semester      = $1
+          AND  s.academic_year = $2
+          AND  sm.day_of_week  = $3
+          AND  sm.start_time   < $5::time
+          AND  sm.end_time     > $4::time
+        ORDER BY sm.start_time
+        LIMIT 1
+      ) conflict ON TRUE
+
+      WHERE r.is_active = TRUE
+      ORDER BY
+        -- Teaching rooms first, then by type sort_order, then room_number
+        CASE WHEN rt.is_teaching IS TRUE THEN 0 ELSE 1 END,
+        rt.sort_order NULLS LAST,
+        r.room_number
+      `,
+      [semester, academic_year, dayInt, start, end]
+    );
+
+    // ── Assign status for each room ──────────────────────────
+    const rooms = result.rows.map(row => {
+      let status;
+      let booking = null;
+
+      if (!row.is_teaching) {
+        // Not a teaching space — no point showing availability.
+        status = 'not_teaching_room';
+      } else if (row.booked_section_id) {
+        // A conflicting booking exists — booked takes priority over too_small.
+        status = 'booked';
+        booking = {
+          course_code:     row.course_code,
+          course_name:     row.course_name,
+          section_number:  row.section_number,
+          instructor_name: row.instructor_name,
+          start_time:      normalizeTime(row.booked_start_time),
+          end_time:        normalizeTime(row.booked_end_time),
+          enrolled:        row.enrolled,
+          max_capacity:    row.booked_max_capacity,
+        };
+      } else if (
+        capacityFilter !== null &&
+        row.capacity !== null &&
+        Number(row.capacity) < capacityFilter
+      ) {
+        status = 'too_small';
+      } else {
+        status = 'available';
+      }
+
+      const room = {
+        room_id:         row.room_id,
+        room_number:     row.room_number,
+        room_name:       row.room_name,
+        room_type:       row.room_type,
+        room_type_label: row.room_type_label || String(row.room_type),
+        room_type_icon:  row.room_type_icon  || null,
+        room_type_color: row.room_type_color || null,
+        capacity:        row.capacity,
+        floor_id:        row.floor_id,
+        building_id:     row.building_id,
+        status,
+      };
+
+      if (booking) room.booking = booking;
+
+      return room;
+    });
+
+    // ── Summary counts ────────────────────────────────────────
+    const summary = {
+      total_rooms:        rooms.length,
+      available_count:    rooms.filter(r => r.status === 'available').length,
+      booked_count:       rooms.filter(r => r.status === 'booked').length,
+      too_small_count:    rooms.filter(r => r.status === 'too_small').length,
+      not_teaching_count: rooms.filter(r => r.status === 'not_teaching_room').length,
+    };
+
+    res.json({
+      success: true,
+      data: {
+        rooms,
+        summary,
+        query: {
+          semester,
+          academic_year,
+          day_of_week:       dayInt,
+          start_time:        start,
+          end_time:          end,
+          expected_capacity: capacityFilter,
+        },
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
 async function getSemesterMeetings(req, res, next) {
   try {
     const { semester, academic_year, department_contains } = req.query;
@@ -959,4 +1215,5 @@ module.exports = {
   dropEnrollment,
   getSemesterStats,
   getSemesterMeetings,
+  getRoomAvailability,
 };
