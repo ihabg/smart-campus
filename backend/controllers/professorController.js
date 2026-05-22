@@ -1318,6 +1318,8 @@ async function getMaterials(req, res, next) {
     const instructorId = await requireInstructor(req, res);
     if (!instructorId) return;
 
+    const { section_id } = req.query;
+
     const sectionsRes = await query(
       `
       SELECT
@@ -1341,6 +1343,10 @@ async function getMaterials(req, res, next) {
           SELECT COUNT(*)
           FROM professor_course_materials pcm
           WHERE pcm.section_id = s.id
+            AND (
+              pcm.file_url IS NULL
+              OR pcm.file_url NOT LIKE '/fake-materials/%'
+            )
         ) AS materials_count
       FROM sections s
       JOIN courses c ON c.id = s.course_id
@@ -1351,6 +1357,14 @@ async function getMaterials(req, res, next) {
       `,
       [instructorId]
     );
+
+    const materialParams = [instructorId];
+    let sectionFilter = '';
+
+    if (section_id) {
+      materialParams.push(section_id);
+      sectionFilter = `AND pcm.section_id = $${materialParams.length}`;
+    }
 
     const materialsRes = await query(
       `
@@ -1389,9 +1403,14 @@ async function getMaterials(req, res, next) {
       JOIN sections s ON s.id = pcm.section_id
       JOIN courses c ON c.id = pcm.course_id
       WHERE pcm.instructor_id = $1
+        AND (
+          pcm.file_url IS NULL
+          OR pcm.file_url NOT LIKE '/fake-materials/%'
+        )
+        ${sectionFilter}
       ORDER BY c.code, s.section_number, pcm.week_number NULLS LAST, pcm.uploaded_at DESC
       `,
-      [instructorId]
+      materialParams
     );
 
     res.json({

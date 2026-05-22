@@ -281,10 +281,32 @@ function getScheduleRoomNumber(item) {
     .replace(/^Room\s*/i, '')
     .trim();
 }
+
+function isOnlineRoom(roomNumber) {
+  const value = String(roomNumber || '').trim();
+  return value === '9999' || value.endsWith('9999');
+}
+
+function displayRoom(roomNumber, fallback = '—') {
+  if (isOnlineRoom(roomNumber)) return 'الكتروني';
+  return roomNumber || fallback;
+}
+
+function hasActiveScheduleChange(item) {
+  return Boolean(item?.schedule_change_id);
+}
+
+function changeLabel(item) {
+  if (!hasActiveScheduleChange(item)) return '';
+  if (item.change_scope === 'single_day') return 'تغيير لهذا اليوم';
+  if (item.change_scope === 'date_range') return 'تغيير مؤقت';
+  return 'تغيير دائم';
+}
+
 function CourseBlock({ meeting }) {
   const rawRoomNumber = getScheduleRoomNumber(meeting);
   const targetRoomNumber = normalizeScheduleRoomNumber(rawRoomNumber);
-  const mapUrl = targetRoomNumber
+  const mapUrl = targetRoomNumber && !isOnlineRoom(targetRoomNumber)
     ? `/map?room=${encodeURIComponent(targetRoomNumber)}`
     : null;
 
@@ -295,7 +317,10 @@ function CourseBlock({ meeting }) {
       <small>
         {cleanTime(meeting.start_time)} - {cleanTime(meeting.end_time)}
       </small>
-      <em>Room {meeting.room_number || '—'}</em>
+      <em>{displayRoom(meeting.room_number)}</em>
+      {hasActiveScheduleChange(meeting) && (
+        <small className="sc-change-note">{changeLabel(meeting)}</small>
+      )}
     </>
   );
 
@@ -327,7 +352,7 @@ function getMapRoomUrl(item) {
   const rawRoomNumber = getScheduleRoomNumber(item);
   const targetRoomNumber = normalizeScheduleRoomNumber(rawRoomNumber);
 
-  if (!targetRoomNumber) return null;
+  if (!targetRoomNumber || isOnlineRoom(targetRoomNumber)) return null;
 
   return `/map?room=${encodeURIComponent(targetRoomNumber)}&source=schedule`;
 }
@@ -412,15 +437,18 @@ function TextSchedule({ sections, totalCredits, openOfficeHours }) {
               <td>
   {getMapRoomUrl(row) ? (
     <Link className="sc-room-link" to={getMapRoomUrl(row)}>
-      {row.room_number || '—'}
+      {displayRoom(row.room_number)}
     </Link>
   ) : (
-    row.room_number || '—'
+    displayRoom(row.room_number)
+  )}
+  {hasActiveScheduleChange(row) && (
+    <div className="sc-change-chip">{changeLabel(row)}</div>
   )}
 </td>
 
               <td>
-                {row.meeting_type === 'electronic' || row.note ? (
+                {isOnlineRoom(row.room_number) || row.meeting_type === 'electronic' || row.note ? (
                   <span className="online-text">{row.note || 'الكتروني'}</span>
                 ) : (
                   'الجديد'

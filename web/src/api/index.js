@@ -64,6 +64,17 @@ export const scheduleAPI = {
 
   getToday: () => api.get('/schedule/today'),
 
+  getMaterials: (params = {}) => api.get('/schedule/materials', { params }),
+
+  openMaterial: (materialId) =>
+    api.post(`/schedule/materials/${materialId}/open`),
+
+  getMessages: () => api.get('/schedule/messages'),
+
+  getAttendanceSummary: () => api.get('/schedule/attendance-summary'),
+
+  getGrades: () => api.get('/schedule/grades'),
+
   getAll: (params = {}) => api.get('/schedule', { params }),
 
   create: (data) => api.post('/schedule', data),
@@ -248,3 +259,61 @@ export const professorAPI = {
 };
 
 export default api;
+// ─── assessmentAPI ──────────────────────────────────────────
+function assessmentFormData(data = {}, file) {
+  const form = new FormData();
+  Object.entries(data || {}).forEach(([key, value]) => {
+    if (value === undefined || value === null) return;
+    if (Array.isArray(value) || typeof value === 'object') {
+      form.append(key, JSON.stringify(value));
+    } else {
+      form.append(key, value);
+    }
+  });
+  if (file) form.append('attachment', file);
+  return form;
+}
+
+export const assessmentAPI = {
+  professorSections: () => api.get('/assessments/professor/sections'),
+
+  professorList: (params = {}) => api.get('/assessments/professor', { params }),
+
+  professorCreate: (data, file) => api.post('/assessments/professor', assessmentFormData(data, file), {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  }),
+
+  professorDetail: (assessmentId) => api.get(`/assessments/professor/${assessmentId}`),
+
+  professorUpdate: (assessmentId, data, file) => api.patch(`/assessments/professor/${assessmentId}`, assessmentFormData(data, file), {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  }),
+
+  professorDelete: (assessmentId) => api.delete(`/assessments/professor/${assessmentId}`),
+
+  professorResults: (assessmentId) => api.get(`/assessments/professor/${assessmentId}/results`),
+
+  gradeSubmission: (assessmentId, submissionId, data) =>
+    api.patch(`/assessments/professor/${assessmentId}/submissions/${submissionId}/grade`, data),
+
+  studentList: (params = {}) => api.get('/assessments/student', { params }),
+
+  studentDetail: (assessmentId) => api.get(`/assessments/student/${assessmentId}`),
+
+  submitAssignment: (assessmentId, data, file) => {
+    const form = new FormData();
+    Object.entries(data || {}).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) form.append(key, value);
+    });
+    if (file) form.append('submission', file);
+
+    return api.post(`/assessments/student/${assessmentId}/assignment-submit`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
+  },
+
+  startQuiz: (assessmentId) => api.post(`/assessments/student/${assessmentId}/quiz-start`),
+
+  submitQuiz: (assessmentId, answers) =>
+    api.post(`/assessments/student/${assessmentId}/quiz-submit`, { answers })
+};

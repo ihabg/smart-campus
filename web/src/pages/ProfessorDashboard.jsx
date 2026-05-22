@@ -307,20 +307,26 @@ export default function ProfessorDashboard() {
     }
   }, [semester, academicYear, showToast]);
 
-  const loadMaterials = useCallback(async () => {
+  const loadMaterials = useCallback(async (sectionIdArg) => {
     setMaterialsLoading(true);
     try {
-      const r = await axiosInstance.get('/professor/materials');
+      const selectedSectionId = sectionIdArg ?? materialSectionId;
+      const r = await axiosInstance.get('/professor/materials', {
+        params: selectedSectionId ? { section_id: selectedSectionId } : {}
+      });
+
       const sections = r.data.data.sections || [];
+      const nextSectionId = selectedSectionId || sections[0]?.id || '';
+
       setMaterialSections(sections);
+      setMaterialSectionId(nextSectionId);
       setMaterials(r.data.data.materials || []);
-      setMaterialSectionId((prev) => prev || sections[0]?.id || '');
     } catch {
       showToast('Failed to load course materials', 'error');
     } finally {
       setMaterialsLoading(false);
     }
-  }, [showToast]);
+  }, [materialSectionId, showToast]);
 
   const loadOfficeHoursPage = useCallback(async () => {
     setOfficeLoading(true);
@@ -515,6 +521,12 @@ export default function ProfessorDashboard() {
     }
   };
 
+  const handleMaterialSectionChange = (sectionId) => {
+    setMaterialSectionId(sectionId);
+    resetMaterialForm();
+    loadMaterials(sectionId);
+  };
+
   const selectedMaterialSection = materialSections.find((s) => s.id === materialSectionId);
 
   const filteredMaterials = useMemo(() => {
@@ -560,7 +572,7 @@ export default function ProfessorDashboard() {
       const fileUrl = r.data?.data?.file_url || material.file_url;
 
       if (fileUrl) {
-        window.open(fileUrl, '_blank', 'noopener,noreferrer');
+        window.open(toPublicFileUrl(fileUrl), '_blank', 'noopener,noreferrer');
       }
 
       setMaterials((prev) => prev.map((m) => (
@@ -635,7 +647,7 @@ export default function ProfessorDashboard() {
       }
 
       resetMaterialForm();
-      await loadMaterials();
+      await loadMaterials(materialSectionId);
     } catch (err) {
       showToast(err?.response?.data?.message || 'Failed to save material', 'error');
     } finally {
@@ -662,7 +674,7 @@ export default function ProfessorDashboard() {
     try {
       await axiosInstance.delete(`/professor/materials/${materialId}`);
       showToast('Material deleted');
-      await loadMaterials();
+      await loadMaterials(materialSectionId);
     } catch {
       showToast('Failed to delete material', 'error');
     }
@@ -1506,7 +1518,7 @@ export default function ProfessorDashboard() {
 
               <label className="prof-field">
                 <span>Section</span>
-                <select value={materialSectionId} onChange={(e) => setMaterialSectionId(e.target.value)}>
+                <select value={materialSectionId} onChange={(e) => handleMaterialSectionChange(e.target.value)}>
                   {materialSections.map((s) => (
                     <option key={s.id} value={s.id}>
                       {s.code} — {s.course_name} §{s.section_number}
@@ -1519,7 +1531,7 @@ export default function ProfessorDashboard() {
                 <strong>{selectedMaterialSection?.code || 'No section selected'}</strong>
                 <p>{selectedMaterialSection?.course_name || 'Choose a section to add materials.'}</p>
                 {selectedMaterialSection && (
-                  <small>§{selectedMaterialSection.section_number} · {selectedMaterialSection.enrolled || 0} students · {selectedMaterialSection.materials_count || 0} materials</small>
+                  <small>§{selectedMaterialSection.section_number} · {selectedMaterialSection.enrolled || 0} students · {filteredMaterials.length} real materials</small>
                 )}
               </div>
 
@@ -1610,8 +1622,8 @@ export default function ProfessorDashboard() {
 
             <div className="card prof-feature-list-card">
               <div className="prof-card-hdr">
-                <h3>📄 Materials list</h3>
-                <button className="btn btn--sm btn--secondary" onClick={loadMaterials}>Refresh</button>
+                <h3>📄 Materials list{selectedMaterialSection ? ` — ${selectedMaterialSection.code} §${selectedMaterialSection.section_number}` : ''}</h3>
+                <button className="btn btn--sm btn--secondary" onClick={() => loadMaterials(materialSectionId)}>Refresh</button>
               </div>
 
               {materialsLoading ? <div className="spinner" /> : (
@@ -1638,7 +1650,12 @@ export default function ProfessorDashboard() {
                       </div>
                     </div>
                   ))}
-                  {filteredMaterials.length === 0 && <div className="empty-state"><p className="empty-state__title">No materials for this section yet.</p></div>}
+                  {filteredMaterials.length === 0 && (
+                    <div className="empty-state">
+                      <p className="empty-state__title">No real uploaded materials for this section yet.</p>
+                      <p>Choose a file and click Add material to create the first item for this course.</p>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -2013,3 +2030,17 @@ export default function ProfessorDashboard() {
     </div>
   );
 }
+
+function toPublicFileUrl(fileUrl) {
+  if (!fileUrl) return '';
+
+  if (/^https?:\/\//i.test(fileUrl)) {
+    return fileUrl;
+  }
+
+  const apiBase = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+  const publicBase = apiBase.replace(/\/api\/?$/, '');
+
+  return `${publicBase}${fileUrl.startsWith('/') ? fileUrl : `/${fileUrl}`}`;
+}
+

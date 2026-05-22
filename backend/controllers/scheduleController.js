@@ -189,11 +189,22 @@ async function getMySchedule(req, res, next) {
         CONCAT(i.title, ' ', i.first_name, ' ', i.last_name) AS instructor_name,
 
         sm.id AS meeting_id,
-        sm.day_of_week,
-        sm.start_time,
-        sm.end_time,
+        COALESCE(ch.new_day_of_week, sm.day_of_week) AS day_of_week,
+        COALESCE(ch.new_start_time, sm.start_time) AS start_time,
+        COALESCE(ch.new_end_time, sm.end_time) AS end_time,
+        sm.day_of_week AS original_day_of_week,
+        sm.start_time AS original_start_time,
+        sm.end_time AS original_end_time,
         sm.meeting_type,
         sm.note,
+
+        ch.id AS schedule_change_id,
+        ch.change_scope,
+        ch.change_date,
+        ch.start_date AS change_start_date,
+        ch.end_date AS change_end_date,
+        ch.reason AS schedule_change_reason,
+        ch.created_at AS schedule_change_created_at,
 
         r.id AS room_id,
         r.room_number,
@@ -203,6 +214,9 @@ async function getMySchedule(req, res, next) {
         r.coord_y,
         r.coord_width,
         r.coord_height,
+
+        base_room.room_number AS original_room_number,
+        base_room.name AS original_room_name,
 
         f.id AS floor_id,
         f.floor_label,
@@ -220,14 +234,67 @@ async function getMySchedule(req, res, next) {
         CASE
           WHEN COALESCE(abs.absence_total, 0) >= 6 THEN 'نعم'
           ELSE 'لا'
-        END AS deprivation_status
+        END AS deprivation_status,
+
+        COALESCE(materials.materials_count, 0) AS materials_count,
+        upcoming.upcoming_changes
 
       FROM enrollments e
       JOIN sections s ON s.id = e.section_id
       JOIN courses c ON c.id = s.course_id
       LEFT JOIN instructors i ON i.id = s.instructor_id
       LEFT JOIN section_meetings sm ON sm.section_id = s.id
-      LEFT JOIN rooms r ON r.id = COALESCE(sm.room_id, s.room_id)
+
+      LEFT JOIN LATERAL (
+        SELECT cmc.*
+        FROM section_meeting_changes cmc
+        WHERE cmc.section_id = s.id
+          AND cmc.is_active = TRUE
+          AND (cmc.section_meeting_id IS NULL OR cmc.section_meeting_id = sm.id)
+          AND (
+            (cmc.change_scope = 'single_day' AND cmc.change_date = CURRENT_DATE)
+            OR (cmc.change_scope = 'date_range' AND CURRENT_DATE BETWEEN cmc.start_date AND cmc.end_date)
+            OR (cmc.change_scope = 'permanent')
+          )
+        ORDER BY
+          CASE cmc.change_scope
+            WHEN 'single_day' THEN 1
+            WHEN 'date_range' THEN 2
+            WHEN 'permanent' THEN 3
+            ELSE 4
+          END,
+          cmc.created_at DESC
+        LIMIT 1
+      ) ch ON TRUE
+
+      LEFT JOIN LATERAL (
+        SELECT json_agg(
+          json_build_object(
+            'id', cmc.id,
+            'change_scope', cmc.change_scope,
+            'change_date', cmc.change_date,
+            'start_date', cmc.start_date,
+            'end_date', cmc.end_date,
+            'new_day_of_week', cmc.new_day_of_week,
+            'new_start_time', cmc.new_start_time,
+            'new_end_time', cmc.new_end_time,
+            'new_room_number', rr.room_number,
+            'reason', cmc.reason
+          ) ORDER BY COALESCE(cmc.change_date, cmc.start_date, CURRENT_DATE), cmc.created_at DESC
+        ) AS upcoming_changes
+        FROM section_meeting_changes cmc
+        LEFT JOIN rooms rr ON rr.id = cmc.new_room_id
+        WHERE cmc.section_id = s.id
+          AND cmc.is_active = TRUE
+          AND (cmc.section_meeting_id IS NULL OR cmc.section_meeting_id = sm.id)
+          AND (
+            (cmc.change_scope = 'single_day' AND cmc.change_date >= CURRENT_DATE)
+            OR (cmc.change_scope = 'date_range' AND cmc.end_date >= CURRENT_DATE)
+          )
+      ) upcoming ON TRUE
+
+      LEFT JOIN rooms base_room ON base_room.id = COALESCE(sm.room_id, s.room_id)
+      LEFT JOIN rooms r ON r.id = COALESCE(ch.new_room_id, sm.room_id, s.room_id)
       LEFT JOIN floors f ON f.id = r.floor_id
       LEFT JOIN buildings b ON b.id = f.building_id
 
@@ -241,6 +308,13 @@ async function getMySchedule(req, res, next) {
         GROUP BY student_id, section_id
       ) abs ON abs.student_id = e.student_id
            AND abs.section_id = e.section_id
+
+      LEFT JOIN (
+        SELECT section_id, COUNT(*)::int AS materials_count
+        FROM professor_course_materials
+        WHERE is_published = TRUE
+        GROUP BY section_id
+      ) materials ON materials.section_id = s.id
 
       WHERE e.student_id = $1
         AND e.status = 'enrolled'
@@ -262,8 +336,8 @@ async function getMySchedule(req, res, next) {
 
     sql += `
       ORDER BY
-        sm.day_of_week,
-        sm.start_time,
+        COALESCE(ch.new_day_of_week, sm.day_of_week),
+        COALESCE(ch.new_start_time, sm.start_time),
         c.code
     `;
 
@@ -301,6 +375,7 @@ async function getMySchedule(req, res, next) {
           absence_total: row.absence_total,
           excused_absence_total: row.excused_absence_total,
           deprivation_status: row.deprivation_status,
+          materials_count: row.materials_count,
 
           meetings: []
         });
@@ -311,13 +386,27 @@ async function getMySchedule(req, res, next) {
         day_of_week: row.day_of_week,
         start_time: row.start_time,
         end_time: row.end_time,
+        original_day_of_week: row.original_day_of_week,
+        original_start_time: row.original_start_time,
+        original_end_time: row.original_end_time,
         meeting_type: row.meeting_type,
         note: row.note,
+
+        schedule_change_id: row.schedule_change_id,
+        change_scope: row.change_scope,
+        change_date: row.change_date,
+        change_start_date: row.change_start_date,
+        change_end_date: row.change_end_date,
+        schedule_change_reason: row.schedule_change_reason,
+        schedule_change_created_at: row.schedule_change_created_at,
+        upcoming_changes: row.upcoming_changes || [],
 
         room_id: row.room_id,
         room_number: row.room_number,
         room_name: row.room_name,
         room_type: row.room_type,
+        original_room_number: row.original_room_number,
+        original_room_name: row.original_room_name,
         coord_x: row.coord_x,
         coord_y: row.coord_y,
         coord_width: row.coord_width,
@@ -377,11 +466,18 @@ async function getTodaySchedule(req, res, next) {
         c.name AS course_name,
         c.name_ar AS course_name_ar,
 
-        sm.day_of_week,
-        sm.start_time,
-        sm.end_time,
+        COALESCE(ch.new_day_of_week, sm.day_of_week) AS day_of_week,
+        COALESCE(ch.new_start_time, sm.start_time) AS start_time,
+        COALESCE(ch.new_end_time, sm.end_time) AS end_time,
         sm.meeting_type,
         sm.note,
+
+        ch.id AS schedule_change_id,
+        ch.change_scope,
+        ch.change_date,
+        ch.start_date AS change_start_date,
+        ch.end_date AS change_end_date,
+        ch.reason AS schedule_change_reason,
 
         CONCAT(i.title, ' ', i.first_name, ' ', i.last_name) AS instructor_name,
         i.email AS instructor_email,
@@ -405,7 +501,30 @@ async function getTodaySchedule(req, res, next) {
       JOIN courses c ON c.id = s.course_id
       LEFT JOIN instructors i ON i.id = s.instructor_id
       JOIN section_meetings sm ON sm.section_id = s.id
-      LEFT JOIN rooms r ON r.id = COALESCE(sm.room_id, s.room_id)
+
+      LEFT JOIN LATERAL (
+        SELECT cmc.*
+        FROM section_meeting_changes cmc
+        WHERE cmc.section_id = s.id
+          AND cmc.is_active = TRUE
+          AND (cmc.section_meeting_id IS NULL OR cmc.section_meeting_id = sm.id)
+          AND (
+            (cmc.change_scope = 'single_day' AND cmc.change_date = CURRENT_DATE)
+            OR (cmc.change_scope = 'date_range' AND CURRENT_DATE BETWEEN cmc.start_date AND cmc.end_date)
+            OR (cmc.change_scope = 'permanent')
+          )
+        ORDER BY
+          CASE cmc.change_scope
+            WHEN 'single_day' THEN 1
+            WHEN 'date_range' THEN 2
+            WHEN 'permanent' THEN 3
+            ELSE 4
+          END,
+          cmc.created_at DESC
+        LIMIT 1
+      ) ch ON TRUE
+
+      LEFT JOIN rooms r ON r.id = COALESCE(ch.new_room_id, sm.room_id, s.room_id)
       LEFT JOIN floors f ON f.id = r.floor_id
       LEFT JOIN buildings b ON b.id = f.building_id
 
@@ -414,9 +533,9 @@ async function getTodaySchedule(req, res, next) {
         AND s.is_active = TRUE
         AND s.semester = $2
         AND s.academic_year = $3
-        AND sm.day_of_week = $4
+        AND COALESCE(ch.new_day_of_week, sm.day_of_week) = $4
 
-      ORDER BY sm.start_time, c.code
+      ORDER BY COALESCE(ch.new_start_time, sm.start_time), c.code
       `,
       [
         req.user.id,
@@ -774,9 +893,292 @@ async function dropEnrollment(req, res, next) {
   }
 }
 
+
+async function getStudentMaterials(req, res, next) {
+  try {
+    const { semester, academic_year, section_id } = req.query;
+
+    const params = [req.user.id];
+    let idx = 2;
+
+    let whereSql = `
+      WHERE e.student_id = $1
+        AND e.status = 'enrolled'
+        AND s.is_active = TRUE
+        AND pcm.is_published = TRUE
+    `;
+
+    if (semester) {
+      params.push(semester);
+      whereSql += ` AND s.semester = $${idx++}`;
+    }
+
+    if (academic_year) {
+      params.push(academic_year);
+      whereSql += ` AND s.academic_year = $${idx++}`;
+    }
+
+    if (section_id) {
+      params.push(section_id);
+      whereSql += ` AND s.id = $${idx++}`;
+    }
+
+    const sectionsRes = await query(
+      `
+      SELECT
+        s.id AS section_id,
+        s.section_number,
+        s.semester,
+        s.academic_year,
+        c.id AS course_id,
+        c.code AS course_code,
+        c.name AS course_name,
+        COALESCE(c.name_ar, c.name) AS course_name_ar,
+        i.id AS instructor_id,
+        CONCAT(i.title, ' ', i.first_name, ' ', i.last_name) AS instructor_name,
+        i.email AS instructor_email,
+        COUNT(pcm.id)::int AS materials_count,
+        MAX(pcm.uploaded_at) AS last_material_at
+      FROM enrollments e
+      JOIN sections s ON s.id = e.section_id
+      JOIN courses c ON c.id = s.course_id
+      LEFT JOIN instructors i ON i.id = s.instructor_id
+      LEFT JOIN professor_course_materials pcm ON pcm.section_id = s.id AND pcm.is_published = TRUE
+      ${whereSql.replace('AND pcm.is_published = TRUE', '')}
+      GROUP BY s.id, c.id, i.id
+      ORDER BY c.code, s.section_number
+      `,
+      params
+    );
+
+    const materialsRes = await query(
+      `
+      SELECT
+        pcm.id,
+        pcm.section_id,
+        pcm.course_id,
+        pcm.title,
+        pcm.material_type,
+        pcm.description,
+        pcm.file_url,
+        pcm.week_number,
+        pcm.room_number,
+        pcm.room_name,
+        pcm.day_of_week,
+        pcm.start_time,
+        pcm.end_time,
+        pcm.semester,
+        pcm.academic_year,
+        pcm.uploaded_at,
+        COALESCE(pcm.download_count, 0) AS download_count,
+        c.code AS course_code,
+        c.name AS course_name,
+        COALESCE(c.name_ar, c.name) AS course_name_ar,
+        s.section_number,
+        CONCAT(i.title, ' ', i.first_name, ' ', i.last_name) AS instructor_name,
+        i.email AS instructor_email,
+        EXISTS (
+          SELECT 1
+          FROM professor_material_access_logs mal
+          WHERE mal.material_id = pcm.id
+            AND mal.user_id = $1
+        ) AS opened_by_me
+      FROM enrollments e
+      JOIN sections s ON s.id = e.section_id
+      JOIN courses c ON c.id = s.course_id
+      LEFT JOIN instructors i ON i.id = s.instructor_id
+      JOIN professor_course_materials pcm ON pcm.section_id = s.id
+      ${whereSql}
+      ORDER BY c.code, s.section_number, pcm.week_number NULLS LAST, pcm.uploaded_at DESC
+      `,
+      params
+    );
+
+    res.json({
+      success: true,
+      data: {
+        sections: sectionsRes.rows,
+        materials: materialsRes.rows
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function recordStudentMaterialOpen(req, res, next) {
+  try {
+    const { materialId } = req.params;
+
+    const materialRes = await query(
+      `
+      SELECT pcm.id, pcm.file_url
+      FROM professor_course_materials pcm
+      JOIN enrollments e ON e.section_id = pcm.section_id
+      JOIN sections s ON s.id = pcm.section_id
+      WHERE pcm.id = $1
+        AND pcm.is_published = TRUE
+        AND e.student_id = $2
+        AND e.status = 'enrolled'
+        AND s.is_active = TRUE
+      LIMIT 1
+      `,
+      [materialId, req.user.id]
+    );
+
+    if (!materialRes.rows.length) {
+      return res.status(404).json({
+        success: false,
+        message: 'Material not found for your enrolled courses.'
+      });
+    }
+
+    await query(
+      `
+      INSERT INTO professor_material_access_logs (material_id, user_id, accessed_at)
+      VALUES ($1, $2, NOW())
+      `,
+      [materialId, req.user.id]
+    );
+
+    const updateRes = await query(
+      `
+      UPDATE professor_course_materials
+      SET download_count = COALESCE(download_count, 0) + 1
+      WHERE id = $1
+      RETURNING download_count
+      `,
+      [materialId]
+    );
+
+    res.json({
+      success: true,
+      data: {
+        file_url: materialRes.rows[0].file_url,
+        download_count: updateRes.rows[0]?.download_count || 0
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function getStudentCourseMessages(req, res, next) {
+  try {
+    const result = await query(
+      `
+      SELECT
+        sm.id,
+        sm.section_id,
+        sm.title,
+        sm.body,
+        sm.is_pinned,
+        sm.created_at,
+        c.code AS course_code,
+        c.name AS course_name,
+        COALESCE(c.name_ar, c.name) AS course_name_ar,
+        s.section_number,
+        CONCAT(i.title, ' ', i.first_name, ' ', i.last_name) AS instructor_name
+      FROM section_messages sm
+      JOIN sections s ON s.id = sm.section_id
+      JOIN courses c ON c.id = s.course_id
+      LEFT JOIN instructors i ON i.id = sm.instructor_id
+      JOIN enrollments e ON e.section_id = s.id
+      WHERE e.student_id = $1
+        AND e.status = 'enrolled'
+        AND sm.is_active = TRUE
+      ORDER BY sm.is_pinned DESC, sm.created_at DESC
+      `,
+      [req.user.id]
+    );
+
+    res.json({ success: true, data: { messages: result.rows } });
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function getStudentAttendanceSummary(req, res, next) {
+  try {
+    const result = await query(
+      `
+      SELECT
+        s.id AS section_id,
+        c.code AS course_code,
+        c.name AS course_name,
+        COALESCE(c.name_ar, c.name) AS course_name_ar,
+        s.section_number,
+        COUNT(a.id) FILTER (WHERE a.status = 'present')::int AS present,
+        COUNT(a.id) FILTER (WHERE a.status = 'absent')::int AS absent,
+        COUNT(a.id) FILTER (WHERE a.status = 'late')::int AS late,
+        COUNT(a.id) FILTER (WHERE a.status = 'excused')::int AS excused,
+        COUNT(a.id)::int AS total,
+        ROUND(
+          COUNT(a.id) FILTER (WHERE a.status IN ('present','late'))::numeric
+          / NULLIF(COUNT(a.id), 0) * 100,
+          1
+        ) AS attendance_pct
+      FROM enrollments e
+      JOIN sections s ON s.id = e.section_id
+      JOIN courses c ON c.id = s.course_id
+      LEFT JOIN attendance a ON a.section_id = s.id AND a.student_id = e.student_id
+      WHERE e.student_id = $1
+        AND e.status = 'enrolled'
+        AND s.is_active = TRUE
+      GROUP BY s.id, c.id
+      ORDER BY c.code, s.section_number
+      `,
+      [req.user.id]
+    );
+
+    res.json({ success: true, data: { summary: result.rows } });
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function getStudentGrades(req, res, next) {
+  try {
+    const result = await query(
+      `
+      SELECT
+        s.id AS section_id,
+        c.code AS course_code,
+        c.name AS course_name,
+        COALESCE(c.name_ar, c.name) AS course_name_ar,
+        s.section_number,
+        g.midterm,
+        g.final,
+        g.assignments,
+        g.practical,
+        g.letter_grade,
+        COALESCE(g.midterm, 0) + COALESCE(g.final, 0) + COALESCE(g.assignments, 0) + COALESCE(g.practical, 0) AS total_grade
+      FROM enrollments e
+      JOIN sections s ON s.id = e.section_id
+      JOIN courses c ON c.id = s.course_id
+      LEFT JOIN grades g ON g.section_id = s.id AND g.student_id = e.student_id
+      WHERE e.student_id = $1
+        AND e.status = 'enrolled'
+        AND s.is_active = TRUE
+      ORDER BY c.code, s.section_number
+      `,
+      [req.user.id]
+    );
+
+    res.json({ success: true, data: { grades: result.rows } });
+  } catch (error) {
+    next(error);
+  }
+}
+
 module.exports = {
   getMySchedule,
   getTodaySchedule,
+  getStudentMaterials,
+  recordStudentMaterialOpen,
+  getStudentCourseMessages,
+  getStudentAttendanceSummary,
+  getStudentGrades,
   getAllSections,
   createSection,
   updateSection,

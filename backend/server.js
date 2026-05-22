@@ -28,6 +28,7 @@ const secretaryRoutes    = require('./routes/secretary');
 const authPatchRoutes    = require('./routes/auth_patch');
 const facultyRoutes      = require('./routes/faculty');
 const officeHoursRoutes = require('./routes/officeHours');
+const assessmentRoutes   = require('./routes/assessments');
 
 const app  = express();
 const PORT = process.env.PORT || 5000;
@@ -104,6 +105,7 @@ app.use('/api/map-editor',    mapEditorRoutes);
 app.use('/api/announcements', announcementRoutes);
 app.use('/api/chat',          chatRoutes);
 app.use('/api/professor',     professorRoutes);
+app.use('/api/assessments',   assessmentRoutes);
 app.use('/api/dean',          deanRoutes);
 app.use('/api/dept-head',     deptHeadRoutes);
 app.use('/api/lab-assistant', labAssistantRoutes);

@@ -14,6 +14,8 @@ import ForgotPasswordPage                  from './pages/ForgotPassword';
 import DashboardPage                       from './pages/DashboardPage';
 import MapPage                             from './pages/MapPage';
 import SchedulePage                        from './pages/SchedulePage';
+import StudentMaterialsPage                from './pages/StudentMaterialsPage';
+import StudentAssessmentsPage              from './pages/StudentAssessmentsPage';
 import { SearchPage, NotificationsPage }  from './pages/SearchAndNotifications';
 import { ProfilePage, AnnouncementsPage } from './pages/ProfileAndAnnouncements';
 import {
@@ -27,6 +29,7 @@ import {
 import AdminRoomsPage from './pages/admin/AdminRoomsPage';
 import MapEditorPage from './pages/admin/MapEditorPage';
 import ProfessorDashboard from './pages/ProfessorDashboard';
+import ProfessorAssessmentsPage from './pages/ProfessorAssessmentsPage';
 import './styles/variables.css';
 import './styles/global.css';
 import './styles/responsive.css';
@@ -86,6 +89,8 @@ export default function App() {
           <Route element={<RequireAuth><AppShell /></RequireAuth>}>
             <Route path="/dashboard"     element={<DashboardPage />} />
             <Route path="/schedule"      element={<SchedulePage />} />
+            <Route path="/materials"     element={<StudentMaterialsPage />} />
+            <Route path="/assessments"  element={<StudentAssessmentsPage />} />
             <Route path="/search"        element={<SearchPage />} />
             <Route path="/notifications" element={<NotificationsPage />} />
             <Route path="/announcements" element={<AnnouncementsPage />} />
@@ -95,6 +100,7 @@ export default function App() {
             <Route path="/professor/schedule"           element={<ProfessorDashboard />} />
             <Route path="/professor/students"           element={<ProfessorDashboard />} />
             <Route path="/professor/materials"          element={<ProfessorDashboard />} />
+            <Route path="/professor/assessments"       element={<ProfessorAssessmentsPage />} />
             <Route path="/professor/messages"           element={<ProfessorDashboard />} />
             <Route path="/professor/office-hours"       element={<ProfessorDashboard />} />
             <Route path="/professor/change-history"     element={<ProfessorDashboard />} />

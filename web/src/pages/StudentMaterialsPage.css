@@ -1,0 +1,373 @@
+.student-materials-page {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  animation: pageEnter var(--t-slow) var(--ease) both;
+}
+
+.sm-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  background: linear-gradient(125deg, #03184a 0%, #0a2d6e 100%);
+  border-radius: var(--r-2xl);
+  padding: 28px 32px;
+  color: #fff;
+  position: relative;
+  overflow: hidden;
+}
+
+.sm-hero::after {
+  content: '';
+  position: absolute;
+  right: -70px;
+  top: -70px;
+  width: 260px;
+  height: 260px;
+  border-radius: 50%;
+  background: rgba(201, 168, 76, .10);
+}
+
+.sm-kicker {
+  display: inline-flex;
+  padding: 5px 13px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.12);
+  border: 1px solid rgba(255,255,255,.22);
+  font-size: 11px;
+  font-weight: 900;
+  margin-bottom: 10px;
+}
+
+.sm-hero h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 28px;
+  color: #fff;
+}
+
+.sm-hero p {
+  margin: 8px 0 0;
+  color: rgba(255,255,255,.72);
+  max-width: 720px;
+}
+
+.sm-hero__stats {
+  display: flex;
+  gap: 12px;
+  z-index: 1;
+}
+
+.sm-hero__stats div {
+  min-width: 96px;
+  text-align: center;
+  border-radius: var(--r-xl);
+  border: 1px solid rgba(255,255,255,.18);
+  background: rgba(255,255,255,.11);
+  padding: 14px 18px;
+}
+
+.sm-hero__stats strong {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 30px;
+  line-height: 1;
+}
+
+.sm-hero__stats span {
+  display: block;
+  font-size: 11px;
+  color: rgba(255,255,255,.65);
+  margin-top: 5px;
+}
+
+.sm-toolbar {
+  display: grid;
+  grid-template-columns: 150px 170px minmax(240px, 1fr) minmax(260px, 1.2fr);
+  gap: 12px;
+  align-items: end;
+}
+
+.sm-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sm-field span {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.sm-field input,
+.sm-field select {
+  height: 42px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 0 12px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.sm-field input:focus,
+.sm-field select:focus {
+  outline: none;
+  border-color: var(--navy);
+}
+
+.sm-alert {
+  border: 1px solid #fecaca;
+  background: #fff7f7;
+  color: #dc2626;
+  border-radius: var(--r-lg);
+  padding: 12px 14px;
+  font-weight: 700;
+}
+
+.sm-grid {
+  display: grid;
+  grid-template-columns: 310px minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.sm-course-list {
+  position: sticky;
+  top: 84px;
+  display: grid;
+  gap: 8px;
+}
+
+.sm-course-list h3,
+.sm-group__head h2 {
+  font-family: var(--font-display);
+  color: var(--text);
+}
+
+.sm-course-list h3 {
+  margin-bottom: 8px;
+}
+
+.sm-course-list button {
+  width: 100%;
+  border: 1px solid var(--border);
+  background: #fff;
+  border-radius: var(--r-md);
+  padding: 12px;
+  text-align: left;
+  cursor: pointer;
+  transition: all var(--t-fast);
+}
+
+.sm-course-list button:hover,
+.sm-course-list button.active {
+  border-color: var(--navy);
+  background: #f5f8ff;
+  transform: translateX(3px);
+}
+
+.sm-course-list strong,
+.sm-course-list span,
+.sm-course-list small {
+  display: block;
+}
+
+.sm-course-list strong {
+  color: var(--navy);
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+.sm-course-list span {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+  margin-top: 4px;
+}
+
+.sm-course-list small {
+  color: var(--text-muted);
+  font-size: 11px;
+  margin-top: 4px;
+}
+
+.sm-material-groups {
+  display: grid;
+  gap: 16px;
+}
+
+.sm-group__head {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: flex-start;
+  margin-bottom: 14px;
+}
+
+.sm-group__head h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.sm-group__head p {
+  margin: 5px 0 0;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.sm-material-list {
+  display: grid;
+  gap: 10px;
+}
+
+.sm-material {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr) auto;
+  gap: 13px;
+  align-items: center;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  border-radius: var(--r-lg);
+  padding: 13px;
+  transition: all var(--t-fast);
+}
+
+.sm-material:hover {
+  transform: translateY(-2px);
+  border-color: var(--navy);
+  box-shadow: 0 10px 22px rgba(3,24,74,.08);
+}
+
+.sm-material--opened {
+  background: #fbfdff;
+}
+
+.sm-material__icon {
+  width: 46px;
+  height: 46px;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #eef4ff;
+  font-size: 23px;
+}
+
+.sm-material__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 5px;
+}
+
+.sm-material__meta span {
+  border-radius: 999px;
+  padding: 3px 9px;
+  background: #eef4ff;
+  color: var(--navy);
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.sm-material__meta .sm-seen {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.sm-material h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 15px;
+}
+
+.sm-material p {
+  margin: 5px 0 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.sm-material__details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  color: var(--text-faint);
+  font-size: 11px;
+  margin-top: 8px;
+}
+
+.sm-open-btn {
+  border: 0;
+  border-radius: 999px;
+  background: var(--navy);
+  color: #fff;
+  padding: 9px 16px;
+  font-weight: 900;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.sm-open-btn:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+
+.sm-empty {
+  text-align: center;
+  padding: 46px 20px;
+}
+
+.sm-empty div {
+  font-size: 42px;
+  margin-bottom: 12px;
+}
+
+.sm-empty strong {
+  display: block;
+  color: var(--text);
+  font-size: 18px;
+}
+
+.sm-empty p {
+  color: var(--text-muted);
+  margin: 8px 0 0;
+}
+
+@media (max-width: 1100px) {
+  .sm-toolbar,
+  .sm-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .sm-course-list {
+    position: static;
+  }
+}
+
+@media (max-width: 720px) {
+  .sm-hero,
+  .sm-group__head {
+    flex-direction: column;
+  }
+
+  .sm-hero__stats {
+    width: 100%;
+  }
+
+  .sm-hero__stats div {
+    flex: 1;
+  }
+
+  .sm-material {
+    grid-template-columns: 1fr;
+  }
+
+  .sm-open-btn {
+    width: 100%;
+  }
+}

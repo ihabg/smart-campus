@@ -1,0 +1,553 @@
+.student-assess-page {
+  padding: 32px;
+  color: #071a44;
+}
+
+.student-assess-hero {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 24px;
+  padding: 34px 38px;
+  border-radius: 28px;
+  background: linear-gradient(135deg, #071a44, #143b7a);
+  color: white;
+  box-shadow: 0 18px 42px rgba(5, 22, 62, .18);
+  margin-bottom: 20px;
+}
+
+.student-assess-hero span {
+  display: inline-block;
+  padding: 7px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,.25);
+  font-size: 12px;
+  font-weight: 800;
+  margin-bottom: 12px;
+}
+
+.student-assess-hero h1 {
+  margin: 0 0 8px;
+  font-size: 30px;
+}
+
+.student-assess-hero p {
+  max-width: 780px;
+  margin: 0;
+  color: rgba(255,255,255,.75);
+}
+
+.student-assess-stats {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 5px 12px;
+  padding: 16px 20px;
+  border-radius: 20px;
+  border: 1px solid rgba(255,255,255,.22);
+  background: rgba(255,255,255,.1);
+  align-items: end;
+}
+
+.student-assess-stats strong {
+  font-size: 28px;
+  line-height: 1;
+}
+
+.student-assess-stats span {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  color: rgba(255,255,255,.8);
+}
+
+.student-assess-toolbar {
+  display: grid;
+  grid-template-columns: 180px 190px 1fr 160px;
+  gap: 12px;
+  padding: 18px;
+  border-radius: 22px;
+  background: white;
+  border: 1px solid rgba(133, 152, 188, .28);
+  box-shadow: 0 12px 30px rgba(12, 31, 72, .08);
+  margin-bottom: 18px;
+}
+
+.student-assess-toolbar label,
+.student-submit-form label {
+  display: block;
+  color: #637199;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.student-assess-toolbar select,
+.student-submit-form textarea,
+.student-submit-form input,
+.student-question textarea {
+  width: 100%;
+  border: 1px solid #d9e1f3;
+  border-radius: 12px;
+  padding: 12px;
+  margin-top: 7px;
+  font: inherit;
+  outline: none;
+  background: white;
+  color: #12234a;
+}
+
+.student-assess-alert {
+  padding: 13px 16px;
+  border-radius: 14px;
+  margin-bottom: 14px;
+  font-weight: 700;
+}
+
+.student-assess-alert--error {
+  background: #fff1f1;
+  border: 1px solid #ffc7c7;
+  color: #b42318;
+}
+
+.student-assess-alert--ok {
+  background: #eefbf3;
+  border: 1px solid #bde8cb;
+  color: #12733b;
+}
+
+.student-assess-layout {
+  display: grid;
+  grid-template-columns: minmax(360px, 520px) 1fr;
+  gap: 20px;
+  align-items: start;
+}
+
+.student-assess-list,
+.student-assess-detail,
+.student-assess-card,
+.student-assess-empty {
+  background: white;
+  border: 1px solid rgba(133, 152, 188, .28);
+  border-radius: 22px;
+  box-shadow: 0 12px 30px rgba(12, 31, 72, .08);
+}
+
+.student-assess-list {
+  padding: 18px;
+}
+
+.student-assess-item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: start;
+  gap: 14px;
+  padding: 18px;
+  border-radius: 18px;
+  border: 1px solid #dfe6f5;
+  background: #fbfcff;
+  margin-bottom: 12px;
+}
+
+.student-assess-item h3 {
+  margin: 8px 0 4px;
+}
+
+.student-assess-item p {
+  margin: 0 0 8px;
+  color: #68779f;
+}
+
+.student-assess-item small {
+  color: #526189;
+}
+
+.student-assess-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.student-assess-badges span {
+  border-radius: 999px;
+  background: #edf3ff;
+  color: #2454b6;
+  border: 1px solid #c9d8ff;
+  padding: 4px 9px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.student-assess-btn {
+  border: 0;
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.student-assess-btn:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}
+
+.student-assess-btn--primary {
+  background: #06194a;
+  color: white;
+}
+
+.student-assess-detail {
+  padding: 0;
+  min-height: 260px;
+}
+
+.student-assess-card {
+  padding: 22px;
+  box-shadow: none;
+  border: 0;
+}
+
+.student-assess-card__head {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: start;
+  margin-bottom: 12px;
+}
+
+.student-assess-card__head span {
+  color: #64739a;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.student-assess-card__head h2 {
+  margin: 5px 0 0;
+}
+
+.student-assess-card__head strong {
+  color: #06194a;
+  background: #eef3ff;
+  border: 1px solid #d6e1ff;
+  border-radius: 999px;
+  padding: 7px 11px;
+  white-space: nowrap;
+}
+
+.student-assess-info {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 16px 0;
+}
+
+.student-assess-info span {
+  border-radius: 999px;
+  background: #f5f7fc;
+  color: #526189;
+  padding: 7px 10px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.student-assess-empty {
+  padding: 42px 24px;
+  text-align: center;
+  color: #64739a;
+  font-weight: 800;
+}
+
+.submitted-box {
+  display: grid;
+  gap: 8px;
+  padding: 15px;
+  border-radius: 16px;
+  background: #eefbf3;
+  border: 1px solid #c8ead2;
+  margin: 16px 0;
+}
+
+.submitted-box a {
+  color: #153b8a;
+  font-weight: 800;
+}
+
+.student-submit-form {
+  display: grid;
+  gap: 14px;
+}
+
+.danger-text {
+  color: #b42318;
+  font-weight: 800;
+}
+
+.quiz-taking {
+  margin-top: 18px;
+}
+
+.quiz-timer {
+  position: sticky;
+  top: 12px;
+  z-index: 2;
+  margin-bottom: 16px;
+  padding: 13px 16px;
+  border-radius: 16px;
+  background: #06194a;
+  color: white;
+  font-weight: 900;
+  text-align: center;
+}
+
+.quiz-timer--danger {
+  background: #b42318;
+}
+
+.student-question {
+  border: 1px solid #e1e7f4;
+  border-radius: 18px;
+  padding: 16px;
+  background: #fbfcff;
+  margin-bottom: 14px;
+}
+
+.student-question__head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: #06194a;
+}
+
+.student-options {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.student-options label {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid #dfe6f5;
+  border-radius: 14px;
+  padding: 12px;
+  background: white;
+}
+
+.student-options input {
+  width: auto;
+}
+
+@media (max-width: 1100px) {
+  .student-assess-layout,
+  .student-assess-toolbar {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .student-assess-page {
+    padding: 16px;
+  }
+
+  .student-assess-hero,
+  .student-assess-item,
+  .student-assess-card__head {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+}
+
+.student-assignment-view {
+  padding: 0;
+}
+
+.assignment-brief {
+  display: grid;
+  gap: 7px;
+  padding: 18px 0;
+  border-top: 1px solid #dfe6f5;
+  border-bottom: 1px solid #dfe6f5;
+  margin: 16px 0;
+  color: #526189;
+}
+
+.assignment-description {
+  background: #fbfcff;
+  padding: 18px;
+  border-radius: 14px;
+  border: 1px solid #e4eaf6;
+  color: #405075;
+}
+
+.assignment-resource {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: #f5f8ff;
+  border: 1px solid #dfe7fb;
+  margin-bottom: 16px;
+}
+
+.assignment-resource a,
+.submission-status-card a,
+.current-file-note a {
+  color: #0755ff;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.assignment-resource a:hover,
+.submission-status-card a:hover,
+.current-file-note a:hover {
+  text-decoration: underline;
+}
+
+.submission-status-card {
+  padding: 20px;
+  border-radius: 16px;
+  background: white;
+  border: 1px solid #e4eaf6;
+  margin-top: 16px;
+}
+
+.submission-status-card h3,
+.moodle-submit-form h3 {
+  margin: 20px 0 16px;
+  font-size: 22px;
+}
+
+.submission-status-card table {
+  width: 100%;
+  border-collapse: collapse;
+  overflow: hidden;
+  border-radius: 12px;
+}
+
+.submission-status-card th,
+.submission-status-card td {
+  text-align: left;
+  padding: 14px 16px;
+  border-bottom: 1px solid #edf1f7;
+  color: #4c5d82;
+}
+
+.submission-status-card th {
+  width: 230px;
+  background: #f1f3f6;
+  font-weight: 500;
+}
+
+.submission-status-card td {
+  background: #f7f8fa;
+}
+
+.moodle-submit-form {
+  padding: 20px;
+  border-radius: 16px;
+  background: white;
+  border: 1px solid #e4eaf6;
+  margin-top: 16px;
+}
+
+.drop-zone {
+  position: relative;
+  display: grid;
+  gap: 10px;
+  min-height: 150px;
+  border: 1px solid #d5deef;
+  border-radius: 12px;
+  background: #fbfcff;
+  margin-top: 8px;
+  padding: 12px;
+}
+
+.drop-zone input[type="file"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.drop-zone__button {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: #eef3ff;
+  color: #12336f;
+  border: 1px solid #ccd9f6;
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.drop-zone__content {
+  display: grid;
+  place-items: center;
+  gap: 8px;
+  border: 2px dashed #b7bfcb;
+  border-radius: 8px;
+  min-height: 92px;
+  color: #64739a;
+}
+
+.drop-zone__content strong {
+  font-size: 28px;
+  color: #8b96a9;
+}
+
+.current-file-note {
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #f5f8ff;
+  color: #526189;
+  border: 1px solid #dfe7fb;
+}
+
+.submission-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.student-assess-btn--light {
+  background: #f3f6fc;
+  color: #0b255c;
+  border: 1px solid #d7e0f2;
+}
+
+@media (max-width: 720px) {
+  .submission-status-card th,
+  .submission-status-card td {
+    display: block;
+    width: 100%;
+  }
+
+  .assignment-resource,
+  .submission-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+}
+
+.file-submission-label {
+  display: block;
+  color: #637199;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.drop-zone__button {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 13px;
+}

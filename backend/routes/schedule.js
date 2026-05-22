@@ -13,6 +13,11 @@ const {
 // Student routes
 router.get('/my', protect, ctrl.getMySchedule);
 router.get('/today', protect, ctrl.getTodaySchedule);
+router.get('/materials', protect, ctrl.getStudentMaterials);
+router.post('/materials/:materialId/open', protect, ctrl.recordStudentMaterialOpen);
+router.get('/messages', protect, ctrl.getStudentCourseMessages);
+router.get('/attendance-summary', protect, ctrl.getStudentAttendanceSummary);
+router.get('/grades', protect, ctrl.getStudentGrades);
 router.post('/enroll', protect, ctrl.enrollStudent);
 router.delete('/enroll/:section_id', protect, ctrl.dropEnrollment);
 
