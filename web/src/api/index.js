@@ -74,7 +74,10 @@ export const scheduleAPI = {
 
   enroll: (section_id) => api.post('/schedule/enroll', { section_id }),
 
-  drop: (section_id) => api.delete(`/schedule/enroll/${section_id}`)
+  drop: (section_id) => api.delete(`/schedule/enroll/${section_id}`),
+
+  getRoomAvailability: (params = {}) =>
+    api.get('/schedule/room-availability', { params }),
 };
 
 // ─── searchAPI ───────────────────────────────────────────────

@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import {
   userAPI,
@@ -1054,6 +1054,65 @@ const SEMESTER_OPTIONS = [
   { value: 'summer', label: 'Summer' },
 ];
 
+const ACADEMIC_YEAR_MIN = 2020;
+const ACADEMIC_YEAR_MAX = 2035;
+
+export function AcademicYearStepper({ value, onChange, minYear = ACADEMIC_YEAR_MIN, maxYear = ACADEMIC_YEAR_MAX }) {
+  const startYear = parseInt((value || '').split('/')[0], 10) || new Date().getFullYear();
+
+  const dec = () => {
+    if (startYear <= minYear) return;
+    onChange(`${startYear - 1}/${startYear}`);
+  };
+  const inc = () => {
+    if (startYear >= maxYear) return;
+    onChange(`${startYear + 1}/${startYear + 2}`);
+  };
+
+  const atMin = startYear <= minYear;
+  const atMax = startYear >= maxYear;
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', border: '1px solid #d1d5db', borderRadius: 8, background: '#fff', overflow: 'hidden', height: 38 }}>
+      <button
+        type="button"
+        onClick={dec}
+        disabled={atMin}
+        style={{
+          width: 36, height: 38, fontSize: 16, border: 'none',
+          cursor: atMin ? 'not-allowed' : 'pointer',
+          background: 'transparent',
+          color: atMin ? '#d1d5db' : '#374151',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          borderRight: '1px solid #d1d5db', flexShrink: 0,
+        }}
+        title="Previous year"
+      >
+        ‹
+      </button>
+      <span style={{ flex: 1, textAlign: 'center', fontSize: 14, fontWeight: 600, color: '#111827', whiteSpace: 'nowrap', userSelect: 'none', padding: '0 8px' }}>
+        {startYear}/{startYear + 1}
+      </span>
+      <button
+        type="button"
+        onClick={inc}
+        disabled={atMax}
+        style={{
+          width: 36, height: 38, fontSize: 16, border: 'none',
+          cursor: atMax ? 'not-allowed' : 'pointer',
+          background: 'transparent',
+          color: atMax ? '#d1d5db' : '#374151',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          borderLeft: '1px solid #d1d5db', flexShrink: 0,
+        }}
+        title="Next year"
+      >
+        ›
+      </button>
+    </div>
+  );
+}
+
 const DAY_OPTIONS = [
   { value: 0, label: 'Sunday' },
   { value: 1, label: 'Monday' },
@@ -1385,6 +1444,15 @@ export function SectionFormModal({
   const [rooms, setRooms] = useState([]);
   const [errors, setErrors] = useState({});
 
+  // ── Room availability panel ─────────────────────────────────
+  const [availOpen, setAvailOpen]       = useState(false);
+  const [availLoading, setAvailLoading] = useState(false);
+  const [availRooms, setAvailRooms]     = useState(null);
+  const [availError, setAvailError]     = useState('');
+  const [availDay, setAvailDay]         = useState(null);
+  const formRef = useRef(form);
+  formRef.current = form;
+
   const loadLookups = useCallback(async () => {
     setLookupsLoading(true);
 
@@ -1435,6 +1503,53 @@ export function SectionFormModal({
     loadLookups,
     externalCourses,
   ]);
+
+  // Reset availability panel whenever the modal closes.
+  useEffect(() => {
+    if (!open) {
+      setAvailOpen(false);
+      setAvailRooms(null);
+      setAvailError('');
+      setAvailDay(null);
+    }
+  }, [open]);
+
+  const handleFindRooms = async (dayOverride) => {
+    const f = formRef.current;
+    const days = Array.isArray(f.day_of_week) ? f.day_of_week : [];
+
+    if (!days.length || !f.start_time || !f.end_time) {
+      setAvailError('Please select at least one day and set start/end time first.');
+      setAvailRooms(null);
+      setAvailOpen(true);
+      return;
+    }
+
+    const checkDay = dayOverride ?? days[0];
+    setAvailDay(checkDay);
+    setAvailOpen(true);
+    setAvailLoading(true);
+    setAvailError('');
+    setAvailRooms(null);
+
+    try {
+      const params = {
+        semester:      f.semester,
+        academic_year: f.academic_year,
+        day_of_week:   checkDay,
+        start_time:    f.start_time,
+        end_time:      f.end_time,
+      };
+      if (f.max_capacity) params.expected_capacity = f.max_capacity;
+
+      const res = await scheduleAPI.getRoomAvailability(params);
+      setAvailRooms(res.data?.data?.rooms || []);
+    } catch (err) {
+      setAvailError(getErrorMessage(err));
+    } finally {
+      setAvailLoading(false);
+    }
+  };
 
   const set = key => event => {
     setForm(current => ({
@@ -1639,6 +1754,38 @@ export function SectionFormModal({
             />
           </div>
 
+          {/* Find Available Room trigger */}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: -4 }}>
+            <button
+              type="button"
+              onClick={() => handleFindRooms()}
+              style={{
+                background: 'none', border: 'none', cursor: 'pointer',
+                fontSize: 12, color: 'var(--najah-blue)', padding: '2px 4px',
+                display: 'flex', alignItems: 'center', gap: 4,
+              }}
+            >
+              🔍 Find Available Room
+            </button>
+          </div>
+
+          {/* Availability panel */}
+          {availOpen && (
+            <RoomAvailabilityPanel
+              loading={availLoading}
+              error={availError}
+              rooms={availRooms}
+              form={form}
+              availDay={availDay}
+              onSwitchDay={handleFindRooms}
+              onSelectRoom={roomId => {
+                setVal('room_id')(roomId);
+                setAvailOpen(false);
+              }}
+              onClose={() => setAvailOpen(false)}
+            />
+          )}
+
           <div className="form-row">
             <Select
               label="Semester"
@@ -1649,14 +1796,14 @@ export function SectionFormModal({
               error={errors.semester}
             />
 
-            <Input
-              label="Academic Year"
-              required
-              value={form.academic_year}
-              onChange={set('academic_year')}
-              placeholder="2026/2027"
-              error={errors.academic_year}
-            />
+            <div className="form-group">
+              <label className="form-label">Academic Year *</label>
+              <AcademicYearStepper
+                value={form.academic_year}
+                onChange={v => setForm(f => ({ ...f, academic_year: v }))}
+              />
+              {errors.academic_year && <p className="form-error">{errors.academic_year}</p>}
+            </div>
           </div>
 
           <div className="form-group">
@@ -2309,6 +2456,210 @@ export function AdminNotifications() {
         <div style={{ padding: '0 16px' }}><Pagination pagination={pagination} onPageChange={setPage} /></div>
       </div>
       <CreateNotifModal open={showCreate} onClose={() => setShowCreate(false)} onCreated={() => { setShowCreate(false); refetch(); }} />
+    </div>
+  );
+}
+
+// ─── Room Availability Panel ─────────────────────────────────
+const STATUS_META = {
+  available:           { label: 'Available',           color: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0' },
+  booked:              { label: 'Booked',               color: '#dc2626', bg: '#fef2f2', border: '#fecaca' },
+  too_small:           { label: 'Too Small',            color: '#d97706', bg: '#fffbeb', border: '#fde68a' },
+  not_teaching_room:   { label: 'Not Teaching Room',    color: '#6b7280', bg: '#f9fafb', border: '#e5e7eb' },
+};
+
+function RoomAvailabilityPanel({ loading, error, rooms, form, availDay, onSwitchDay, onSelectRoom, onClose }) {
+  const days = Array.isArray(form?.day_of_week) ? form.day_of_week : [];
+
+  // Group rooms by status
+  const grouped = React.useMemo(() => {
+    if (!rooms) return {};
+    const g = {};
+    for (const r of rooms) {
+      const s = r.status || 'not_teaching_room';
+      if (!g[s]) g[s] = [];
+      g[s].push(r);
+    }
+    return g;
+  }, [rooms]);
+
+  const statusOrder = ['available', 'booked', 'too_small', 'not_teaching_room'];
+  const totalAvailable = grouped.available?.length || 0;
+
+  const panelStyle = {
+    border: '1px solid var(--border)',
+    borderRadius: 8,
+    background: 'var(--surface)',
+    marginBottom: 12,
+    overflow: 'hidden',
+  };
+
+  const headerStyle = {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: '10px 14px',
+    background: 'var(--surface-raised, #f8fafc)',
+    borderBottom: '1px solid var(--border)',
+  };
+
+  return (
+    <div style={panelStyle}>
+      {/* Header */}
+      <div style={headerStyle}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontWeight: 600, fontSize: 13 }}>Find Available Room</span>
+          {rooms && !loading && (
+            <span style={{ fontSize: 11, color: totalAvailable > 0 ? '#16a34a' : '#6b7280' }}>
+              {totalAvailable} available
+            </span>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 16, color: '#6b7280', lineHeight: 1, padding: 2 }}
+        >
+          ×
+        </button>
+      </div>
+
+      {/* Day pills — only shown when multiple days selected */}
+      {days.length > 1 && (
+        <div style={{ display: 'flex', gap: 6, padding: '8px 14px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 11, color: '#6b7280', alignSelf: 'center', marginRight: 2 }}>Check day:</span>
+          {days.map(d => {
+            const dayMeta = DAY_OPTIONS.find(o => o.value === d || o.value === Number(d));
+            const isActive = String(availDay) === String(d);
+            return (
+              <button
+                key={d}
+                type="button"
+                onClick={() => onSwitchDay(d)}
+                style={{
+                  padding: '2px 10px',
+                  borderRadius: 12,
+                  border: '1px solid',
+                  fontSize: 11,
+                  cursor: 'pointer',
+                  fontWeight: isActive ? 600 : 400,
+                  background: isActive ? 'var(--najah-blue)' : 'transparent',
+                  borderColor: isActive ? 'var(--najah-blue)' : 'var(--border)',
+                  color: isActive ? '#fff' : 'inherit',
+                }}
+              >
+                {dayMeta?.label || d}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Body */}
+      <div style={{ maxHeight: 320, overflowY: 'auto', padding: loading || error || !rooms ? '16px 14px' : 0 }}>
+        {loading && (
+          <div style={{ display: 'flex', justifyContent: 'center', padding: 24 }}>
+            <Spinner />
+          </div>
+        )}
+
+        {!loading && error && (
+          <p style={{ margin: 0, fontSize: 12, color: '#dc2626' }}>{error}</p>
+        )}
+
+        {!loading && !error && rooms && rooms.length === 0 && (
+          <p style={{ margin: 0, fontSize: 12, color: '#6b7280' }}>No rooms found.</p>
+        )}
+
+        {!loading && !error && rooms && rooms.length > 0 && (
+          <div>
+            {statusOrder.map(status => {
+              const list = grouped[status];
+              if (!list || list.length === 0) return null;
+              const meta = STATUS_META[status] || STATUS_META.not_teaching_room;
+              const isSelectable = status === 'available';
+
+              return (
+                <div key={status}>
+                  {/* Group label */}
+                  <div style={{
+                    padding: '6px 14px 4px',
+                    fontSize: 10,
+                    fontWeight: 700,
+                    letterSpacing: '0.06em',
+                    textTransform: 'uppercase',
+                    color: meta.color,
+                    background: meta.bg,
+                    borderBottom: `1px solid ${meta.border}`,
+                    borderTop: '1px solid var(--border)',
+                    position: 'sticky',
+                    top: 0,
+                  }}>
+                    {meta.label} ({list.length})
+                  </div>
+
+                  {/* Room rows */}
+                  {list.map(room => (
+                    <div
+                      key={room.room_id}
+                      onClick={isSelectable ? () => onSelectRoom(room.room_id) : undefined}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        gap: 10,
+                        padding: '8px 14px',
+                        borderBottom: '1px solid var(--border)',
+                        cursor: isSelectable ? 'pointer' : 'default',
+                        transition: 'background 0.12s',
+                        background: 'transparent',
+                      }}
+                      onMouseEnter={e => { if (isSelectable) e.currentTarget.style.background = meta.bg; }}
+                      onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+                    >
+                      {/* Status dot */}
+                      <div style={{
+                        width: 8, height: 8, borderRadius: '50%',
+                        background: meta.color, flexShrink: 0, marginTop: 4,
+                      }} />
+
+                      {/* Info */}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, flexWrap: 'wrap' }}>
+                          <span style={{ fontWeight: 600, fontSize: 13 }}>{room.room_number}</span>
+                          {room.room_name && (
+                            <span style={{ fontSize: 11, color: '#6b7280', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 160 }}>{room.room_name}</span>
+                          )}
+                        </div>
+                        <div style={{ fontSize: 11, color: '#6b7280', marginTop: 1 }}>
+                          {room.room_type_label || room.room_type}
+                          {room.capacity ? ` · Cap: ${room.capacity}` : ''}
+                        </div>
+                        {/* Booking details */}
+                        {status === 'booked' && room.booked_section_id && (
+                          <div style={{ fontSize: 11, color: '#dc2626', marginTop: 2 }}>
+                            {room.course_code} — {room.instructor_name || 'No instructor'}
+                            {' · '}{room.booked_start_time?.slice(0,5)}–{room.booked_end_time?.slice(0,5)}
+                          </div>
+                        )}
+                        {status === 'too_small' && room.booked_section_id && (
+                          <div style={{ fontSize: 11, color: '#d97706', marginTop: 2 }}>
+                            Booked: {room.course_code}{room.instructor_name ? ` · ${room.instructor_name}` : ''}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Select hint */}
+                      {isSelectable && (
+                        <span style={{ fontSize: 10, color: meta.color, flexShrink: 0, marginTop: 3 }}>Select →</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

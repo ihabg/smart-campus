@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { semesterAPI, scheduleAPI, roomAPI } from '../../api';
-import { SectionFormModal } from './AdminPages';
+import { SectionFormModal, AcademicYearStepper } from './AdminPages';
 import { ConfirmDialog } from '../../components/ui/index';
 import { useCourses, useInstructors, useRoomTypes } from '../../hooks/index';
 import { daysArrayToString, formatTime, getErrorMessage } from '../../utils/helpers';
@@ -558,37 +558,12 @@ export default function SemesterManagementPage() {
           <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 6, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
             Academic Year
           </label>
-          <div style={{ display: 'flex', alignItems: 'center', border: '1px solid #d1d5db', borderRadius: 8, background: '#fff', overflow: 'hidden' }}>
-            <button
-              onClick={() => setStartYear(y => Math.max(YEAR_MIN, y - 1))}
-              disabled={startYear <= YEAR_MIN}
-              style={{
-                width: 36, height: 38, fontSize: 16, border: 'none', cursor: startYear <= YEAR_MIN ? 'not-allowed' : 'pointer',
-                background: 'transparent', color: startYear <= YEAR_MIN ? '#d1d5db' : '#374151',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                borderRight: '1px solid #d1d5db',
-              }}
-              title="Previous year"
-            >
-              ‹
-            </button>
-            <span style={{ padding: '0 14px', fontSize: 14, fontWeight: 600, color: '#111827', whiteSpace: 'nowrap', userSelect: 'none' }}>
-              {academicYear}
-            </span>
-            <button
-              onClick={() => setStartYear(y => Math.min(YEAR_MAX, y + 1))}
-              disabled={startYear >= YEAR_MAX}
-              style={{
-                width: 36, height: 38, fontSize: 16, border: 'none', cursor: startYear >= YEAR_MAX ? 'not-allowed' : 'pointer',
-                background: 'transparent', color: startYear >= YEAR_MAX ? '#d1d5db' : '#374151',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                borderLeft: '1px solid #d1d5db',
-              }}
-              title="Next year"
-            >
-              ›
-            </button>
-          </div>
+          <AcademicYearStepper
+            value={academicYear}
+            onChange={v => setStartYear(parseInt(v.split('/')[0], 10))}
+            minYear={YEAR_MIN}
+            maxYear={YEAR_MAX}
+          />
         </div>
 
       </div>
