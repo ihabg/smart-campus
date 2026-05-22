@@ -198,6 +198,15 @@ export const mapEditorAPI = {
   saveRoomPosition: (room_id, data) =>
     api.patch(`/map-editor/rooms/${room_id}/position`, data)
 };
+// ─── semesterAPI ─────────────────────────────────────────────
+export const semesterAPI = {
+  getSemesterStats: (semester, academic_year) =>
+    api.get('/schedule/stats', { params: { semester, academic_year } }),
+
+  getSemesterMeetings: (semester, academic_year) =>
+    api.get('/schedule/meetings', { params: { semester, academic_year } }),
+};
+
 // ─── courseAPI ────────────────────────────────────────────────
 export const courseAPI = {
   getAll: (params = {}) => api.get('/courses', { params }),

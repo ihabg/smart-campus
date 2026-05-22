@@ -26,6 +26,7 @@ import {
 } from './pages/admin/AdminPages';
 import AdminRoomsPage from './pages/admin/AdminRoomsPage';
 import MapEditorPage from './pages/admin/MapEditorPage';
+import SemesterManagementPage from './pages/admin/SemesterManagementPage';
 import ProfessorDashboard from './pages/ProfessorDashboard';
 import './styles/variables.css';
 import './styles/global.css';
@@ -115,6 +116,7 @@ export default function App() {
   <Route path="/admin/rooms"         element={<AdminRoomsPage />} />
   <Route path="/admin/map-editor"    element={<MapEditorPage />} />
   <Route path="/admin/schedule"      element={<AdminSchedule />} />
+  <Route path="/admin/semester"      element={<SemesterManagementPage />} />
   <Route path="/admin/notifications" element={<AdminNotifications />} />
   <Route path="/admin/announcements" element={<AdminAnnouncements />} />
 </Route>

@@ -774,6 +774,159 @@ async function dropEnrollment(req, res, next) {
   }
 }
 
+// ─── Semester Stats (admin) ──────────────────────────────────
+// GET /schedule/stats?semester=spring&academic_year=2025/2026
+// Returns summary counts for the Semester Management dashboard cards.
+async function getSemesterStats(req, res, next) {
+  try {
+    const { semester, academic_year } = req.query;
+
+    if (!semester || !academic_year) {
+      return res.status(400).json({
+        success: false,
+        message: 'semester and academic_year query parameters are required.',
+      });
+    }
+
+    // Run the section-level aggregates and the meetings count in parallel.
+    const [sectionsRes, meetingsRes] = await Promise.all([
+
+      query(
+        `SELECT
+           COUNT(*)::int                                                    AS total_sections,
+           COUNT(DISTINCT course_id)::int                                   AS total_courses,
+           COUNT(DISTINCT instructor_id)
+             FILTER (WHERE instructor_id IS NOT NULL)::int                  AS instructors_assigned,
+           COUNT(*) FILTER (WHERE instructor_id IS NULL)::int               AS sections_without_instructor,
+           COUNT(DISTINCT room_id)
+             FILTER (WHERE room_id IS NOT NULL)::int                        AS rooms_assigned,
+           COUNT(*) FILTER (WHERE room_id IS NULL)::int                     AS sections_without_room,
+           COALESCE(SUM(enrolled), 0)::int                                  AS total_enrolled,
+           COALESCE(SUM(max_capacity), 0)::int                              AS total_capacity
+         FROM sections
+         WHERE is_active = TRUE
+           AND semester     = $1
+           AND academic_year = $2`,
+        [semester, academic_year]
+      ),
+
+      query(
+        `SELECT COUNT(*)::int AS total_meetings
+         FROM section_meetings sm
+         JOIN sections s ON s.id = sm.section_id
+         WHERE s.is_active    = TRUE
+           AND s.semester     = $1
+           AND s.academic_year = $2`,
+        [semester, academic_year]
+      ),
+
+    ]);
+
+    const s = sectionsRes.rows[0];
+
+    res.json({
+      success: true,
+      data: {
+        semester,
+        academic_year,
+        // Sections & courses
+        total_sections:               s.total_sections,
+        total_courses:                s.total_courses,
+        // Enrollment
+        total_enrolled:               s.total_enrolled,
+        total_capacity:               s.total_capacity,
+        // Assignment gaps
+        instructors_assigned:         s.instructors_assigned,
+        sections_without_instructor:  s.sections_without_instructor,
+        rooms_assigned:               s.rooms_assigned,
+        sections_without_room:        s.sections_without_room,
+        // Meetings
+        total_meetings:               meetingsRes.rows[0].total_meetings,
+        // Conflict count is placeholder until /schedule/validate is implemented
+        conflicts_found:              0,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+// ─── Semester Meetings (admin) ───────────────────────────────
+// GET /schedule/meetings?semester=spring&academic_year=2025/2026
+// Returns every section_meetings row for the semester, joined with
+// section, course, instructor, and room data for the Timetable tab.
+async function getSemesterMeetings(req, res, next) {
+  try {
+    const { semester, academic_year } = req.query;
+
+    if (!semester || !academic_year) {
+      return res.status(400).json({
+        success: false,
+        message: 'semester and academic_year query parameters are required.',
+      });
+    }
+
+    const result = await query(
+      `SELECT
+         sm.id             AS meeting_id,
+         sm.day_of_week,
+         sm.start_time,
+         sm.end_time,
+         sm.meeting_type,
+         sm.note,
+
+         s.id              AS section_id,
+         s.section_number,
+         s.semester,
+         s.academic_year,
+         s.enrolled,
+         s.max_capacity,
+
+         c.id              AS course_id,
+         c.code            AS course_code,
+         c.name            AS course_name,
+         c.department,
+
+         CONCAT(i.title, ' ', i.first_name, ' ', i.last_name) AS instructor_name,
+         i.email           AS instructor_email,
+
+         r.id              AS room_id,
+         r.room_number,
+         r.name            AS room_name,
+         r.capacity        AS room_capacity,
+
+         f.floor_label,
+         b.code            AS building_code,
+         b.name            AS building_name
+
+       FROM section_meetings sm
+       JOIN sections    s  ON s.id  = sm.section_id
+       JOIN courses     c  ON c.id  = s.course_id
+       LEFT JOIN instructors i ON i.id = s.instructor_id
+       LEFT JOIN rooms   r  ON r.id  = COALESCE(sm.room_id, s.room_id)
+       LEFT JOIN floors  f  ON f.id  = r.floor_id
+       LEFT JOIN buildings b ON b.id = f.building_id
+       WHERE s.is_active    = TRUE
+         AND s.semester     = $1
+         AND s.academic_year = $2
+       ORDER BY sm.day_of_week, sm.start_time, c.code`,
+      [semester, academic_year]
+    );
+
+    res.json({
+      success: true,
+      data: {
+        meetings: result.rows,
+        total:    result.rows.length,
+        semester,
+        academic_year,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
 module.exports = {
   getMySchedule,
   getTodaySchedule,
@@ -783,4 +936,6 @@ module.exports = {
   deleteSection,
   enrollStudent,
   dropEnrollment,
+  getSemesterStats,
+  getSemesterMeetings,
 };
