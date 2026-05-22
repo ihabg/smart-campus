@@ -16,7 +16,7 @@ import MapPage                             from './pages/MapPage';
 import SchedulePage                        from './pages/SchedulePage';
 import StudentMaterialsPage                from './pages/StudentMaterialsPage';
 import StudentAssessmentsPage              from './pages/StudentAssessmentsPage';
-import { SearchPage, NotificationsPage }  from './pages/SearchAndNotifications';
+import { NotificationsPage }             from './pages/SearchAndNotifications';
 import { ProfilePage, AnnouncementsPage } from './pages/ProfileAndAnnouncements';
 import {
   AdminDashboard,
@@ -28,7 +28,6 @@ import {
 } from './pages/admin/AdminPages';
 import AdminRoomsPage from './pages/admin/AdminRoomsPage';
 import MapEditorPage from './pages/admin/MapEditorPage';
-import SemesterManagementPage from './pages/admin/SemesterManagementPage';
 import ProfessorDashboard from './pages/ProfessorDashboard';
 import ProfessorAssessmentsPage from './pages/ProfessorAssessmentsPage';
 import './styles/variables.css';
@@ -92,7 +91,6 @@ export default function App() {
             <Route path="/schedule"      element={<SchedulePage />} />
             <Route path="/materials"     element={<StudentMaterialsPage />} />
             <Route path="/assessments"  element={<StudentAssessmentsPage />} />
-            <Route path="/search"        element={<SearchPage />} />
             <Route path="/notifications" element={<NotificationsPage />} />
             <Route path="/announcements" element={<AnnouncementsPage />} />
             <Route path="/announcements/:id" element={<AnnouncementDetailPage />} />
@@ -122,7 +120,6 @@ export default function App() {
   <Route path="/admin/rooms"         element={<AdminRoomsPage />} />
   <Route path="/admin/map-editor"    element={<MapEditorPage />} />
   <Route path="/admin/schedule"      element={<AdminSchedule />} />
-  <Route path="/admin/semester"      element={<SemesterManagementPage />} />
   <Route path="/admin/notifications" element={<AdminNotifications />} />
   <Route path="/admin/announcements" element={<AdminAnnouncements />} />
 </Route>

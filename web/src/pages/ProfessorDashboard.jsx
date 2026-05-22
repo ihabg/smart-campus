@@ -273,6 +273,32 @@ export default function ProfessorDashboard() {
 
   const [analytics, setAnalytics] = useState({ totals: {}, sections: [] });
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  const [analyticsSectionId, setAnalyticsSectionId] = useState('all');
+
+  const analyticsSections = useMemo(() => analytics.sections || [], [analytics.sections]);
+
+  const filteredAnalyticsSections = useMemo(() => {
+    if (analyticsSectionId === 'all') return analyticsSections;
+    return analyticsSections.filter((s) => String(s.section_id) === String(analyticsSectionId));
+  }, [analyticsSections, analyticsSectionId]);
+
+  const analyticsTotals = useMemo(() => {
+    const rows = filteredAnalyticsSections;
+    const totalCourses = new Set(rows.map((s) => s.course_id || s.code)).size;
+
+    return {
+      total_sections: rows.length,
+      total_students: rows.reduce((sum, s) => sum + Number(s.enrolled || 0), 0),
+      total_courses: totalCourses,
+      warnings_sent: rows.reduce((sum, s) => sum + Number(s.warnings_sent || 0), 0)
+    };
+  }, [filteredAnalyticsSections]);
+
+  const selectedAnalyticsLabel = useMemo(() => {
+    if (analyticsSectionId === 'all') return 'All courses / sections';
+    const row = analyticsSections.find((s) => String(s.section_id) === String(analyticsSectionId));
+    return row ? `${row.code} §${row.section_number}` : 'Selected course';
+  }, [analyticsSections, analyticsSectionId]);
 
   const showToast = useCallback((msg, type = 'success') => {
     setToast({ msg, type });
@@ -408,6 +434,16 @@ export default function ProfessorDashboard() {
     if (mode === 'analytics') loadAnalytics();
   }, [mode, loadAnalytics]);
 
+  useEffect(() => {
+    if (
+      analyticsSectionId !== 'all'
+      && analyticsSections.length > 0
+      && !analyticsSections.some((s) => String(s.section_id) === String(analyticsSectionId))
+    ) {
+      setAnalyticsSectionId('all');
+    }
+  }, [analyticsSectionId, analyticsSections]);
+
 
   useEffect(() => {
     if (mode === 'messages') loadMessages();
@@ -532,6 +568,7 @@ export default function ProfessorDashboard() {
   const filteredMaterials = useMemo(() => {
     return materials.filter((m) => !materialSectionId || m.section_id === materialSectionId);
   }, [materials, materialSectionId]);
+
 
   const uploadMaterialFile = async (file) => {
     if (!file) return;
@@ -1832,21 +1869,45 @@ export default function ProfessorDashboard() {
 
       {mode === 'analytics' && (
         <div className="prof-analytics-page">
+          <div className="card prof-analytics-toolbar">
+            <div>
+              <h3>📊 Attendance Analytics & Grade Summary</h3>
+              <p>Choose one course section, or keep it on all courses to see the full summary.</p>
+            </div>
+            <div className="prof-analytics-controls">
+              <label className="prof-analytics-filter">
+                <span>Course / section</span>
+                <select
+                  className="prof-select prof-analytics-select"
+                  value={analyticsSectionId}
+                  onChange={(e) => setAnalyticsSectionId(e.target.value)}
+                >
+                  <option value="all">All courses / sections</option>
+                  {analyticsSections.map((s) => (
+                    <option key={s.section_id} value={s.section_id}>
+                      {s.code} — {s.course_name} §{s.section_number}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button className="btn btn--sm btn--secondary" onClick={loadAnalytics}>Refresh</button>
+            </div>
+          </div>
+
           <section className="prof-insight-grid">
-            <div className="prof-insight-card"><span>Sections</span><strong>{analytics.totals?.total_sections || 0}</strong><small>active sections</small></div>
-            <div className="prof-insight-card"><span>Students</span><strong>{analytics.totals?.total_students || 0}</strong><small>enrolled students</small></div>
-            <div className="prof-insight-card"><span>Courses</span><strong>{analytics.totals?.total_courses || 0}</strong><small>different courses</small></div>
-            <div className="prof-insight-card prof-insight-card--danger"><span>Warnings</span><strong>{analytics.totals?.warnings_sent || 0}</strong><small>sent warnings</small></div>
+            <div className="prof-insight-card"><span>Sections</span><strong>{analyticsTotals.total_sections || 0}</strong><small>{selectedAnalyticsLabel}</small></div>
+            <div className="prof-insight-card"><span>Students</span><strong>{analyticsTotals.total_students || 0}</strong><small>enrolled students</small></div>
+            <div className="prof-insight-card"><span>Courses</span><strong>{analyticsTotals.total_courses || 0}</strong><small>{analyticsSectionId === 'all' ? 'different courses' : 'selected course'}</small></div>
+            <div className="prof-insight-card prof-insight-card--danger"><span>Warnings</span><strong>{analyticsTotals.warnings_sent || 0}</strong><small>sent warnings</small></div>
           </section>
 
           <div className="card">
-            <div className="prof-card-hdr"><h3>📊 Attendance Analytics & Grade Summary</h3><button className="btn btn--sm btn--secondary" onClick={loadAnalytics}>Refresh</button></div>
             {analyticsLoading ? <div className="spinner" /> : (
               <div className="table-wrap">
                 <table className="table">
                   <thead><tr><th>Section</th><th>Students</th><th>Avg Attendance</th><th>Below 75%</th><th>Avg Grade</th><th>High</th><th>Low</th><th>Missing Grades</th><th>Failing</th></tr></thead>
                   <tbody>
-                    {(analytics.sections || []).map((s) => (
+                    {filteredAnalyticsSections.map((s) => (
                       <tr key={s.section_id}>
                         <td><strong>{s.code}</strong><div style={{fontSize:11,color:'var(--text-muted)'}}>{s.course_name} §{s.section_number}</div></td>
                         <td>{s.enrolled || 0}</td>
@@ -1859,7 +1920,13 @@ export default function ProfessorDashboard() {
                         <td><span className={Number(s.failing_count) > 0 ? 'badge badge--red' : ''}>{s.failing_count || 0}</span></td>
                       </tr>
                     ))}
-                    {(!analytics.sections || analytics.sections.length === 0) && <tr><td colSpan={9} style={{textAlign:'center',padding:24,color:'var(--text-muted)'}}>No analytics yet.</td></tr>}
+                    {filteredAnalyticsSections.length === 0 && (
+                      <tr>
+                        <td colSpan={9} style={{textAlign:'center',padding:24,color:'var(--text-muted)'}}>
+                          {analyticsSectionId === 'all' ? 'No analytics yet.' : 'No analytics for the selected course yet.'}
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>

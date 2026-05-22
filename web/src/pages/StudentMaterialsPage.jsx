@@ -34,7 +34,8 @@ export default function StudentMaterialsPage() {
         const response = await scheduleAPI.getMaterials({
           semester,
           academic_year: year,
-          section_id: activeSection === 'all' ? undefined : activeSection
+          // Always load all enrolled courses for the selected semester/year.
+          // Course selection is handled locally so the user can always return to the original full list.
         });
 
         if (!alive) return;
@@ -53,13 +54,18 @@ export default function StudentMaterialsPage() {
 
     loadMaterials();
     return () => { alive = false; };
-  }, [semester, year, activeSection]);
+  }, [semester, year]);
 
   const filteredMaterials = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return data.materials;
 
     return data.materials.filter((material) => {
+      if (activeSection !== 'all' && String(material.section_id) !== String(activeSection)) {
+        return false;
+      }
+
+      if (!q) return true;
+
       const text = [
         material.title,
         material.description,
@@ -73,7 +79,7 @@ export default function StudentMaterialsPage() {
 
       return text.includes(q);
     });
-  }, [data.materials, search]);
+  }, [data.materials, search, activeSection]);
 
   const groupedMaterials = useMemo(() => {
     const groups = new Map();
@@ -98,6 +104,18 @@ export default function StudentMaterialsPage() {
 
     return Array.from(groups.values());
   }, [filteredMaterials]);
+
+  const selectedSection = useMemo(() => {
+    if (activeSection === 'all') return null;
+    return data.sections.find((section) => String(section.section_id) === String(activeSection)) || null;
+  }, [data.sections, activeSection]);
+
+  const hasActiveFilters = activeSection !== 'all' || Boolean(search.trim());
+
+  function resetToOriginalView() {
+    setActiveSection('all');
+    setSearch('');
+  }
 
   async function openMaterial(material) {
     try {
@@ -128,7 +146,7 @@ export default function StudentMaterialsPage() {
       <section className="sm-toolbar card">
         <div className="sm-field">
           <span>Academic year</span>
-          <select value={year} onChange={(e) => setYear(e.target.value)}>
+          <select value={year} onChange={(e) => { setYear(e.target.value); resetToOriginalView(); }}>
             <option value="2025/2026">2025/2026</option>
             <option value="2024/2025">2024/2025</option>
             <option value="2023/2024">2023/2024</option>
@@ -137,7 +155,7 @@ export default function StudentMaterialsPage() {
 
         <div className="sm-field">
           <span>Semester</span>
-          <select value={semester} onChange={(e) => setSemester(e.target.value)}>
+          <select value={semester} onChange={(e) => { setSemester(e.target.value); resetToOriginalView(); }}>
             <option value="fall">First Semester</option>
             <option value="spring">Second Semester</option>
             <option value="summer">Summer Semester</option>
@@ -164,26 +182,42 @@ export default function StudentMaterialsPage() {
             placeholder="Search material, week, course, professor..."
           />
         </div>
+
+        <button
+          type="button"
+          className="sm-reset-btn"
+          disabled={!hasActiveFilters}
+          onClick={resetToOriginalView}
+        >
+          Back to all courses
+        </button>
       </section>
 
       {error && <div className="sm-alert">{error}</div>}
 
       {loading ? (
         <Spinner center />
-      ) : groupedMaterials.length === 0 ? (
+      ) : data.sections.length === 0 ? (
         <div className="card sm-empty">
           <div>📭</div>
-          <strong>No materials found</strong>
-          <p>Your professors have not published materials for the selected filters yet.</p>
+          <strong>No enrolled courses found</strong>
+          <p>You do not have enrolled courses for the selected semester and academic year.</p>
         </div>
       ) : (
         <div className="sm-grid">
           <aside className="card sm-course-list">
             <h3>My courses</h3>
+
+            <button className={activeSection === 'all' ? 'active' : ''} onClick={resetToOriginalView}>
+              <strong>All</strong>
+              <span>All enrolled courses</span>
+              <small>{data.materials.length} total materials</small>
+            </button>
+
             {data.sections.map((section) => (
               <button
                 key={section.section_id}
-                className={activeSection === section.section_id ? 'active' : ''}
+                className={String(activeSection) === String(section.section_id) ? 'active' : ''}
                 onClick={() => setActiveSection(section.section_id)}
               >
                 <strong>{section.course_code}</strong>
@@ -191,59 +225,77 @@ export default function StudentMaterialsPage() {
                 <small>{section.materials_count || 0} materials · {section.instructor_name || '—'}</small>
               </button>
             ))}
-            <button className={activeSection === 'all' ? 'active' : ''} onClick={() => setActiveSection('all')}>
-              <strong>All</strong>
-              <span>All enrolled courses</span>
-              <small>{data.materials.length} total materials</small>
-            </button>
           </aside>
 
           <main className="sm-material-groups">
-            {groupedMaterials.map((group) => (
-              <section key={group.section_id} className="card sm-group">
-                <div className="sm-group__head">
-                  <div>
-                    <h2>{group.course_code} — {group.course_name}</h2>
-                    <p>Section {group.section_number} · {group.instructor_name || 'Professor'}</p>
+            {selectedSection && (
+              <div className="card sm-selected-course">
+                <div>
+                  <span>Selected course</span>
+                  <strong>{selectedSection.course_code} §{selectedSection.section_number} — {selectedSection.course_name}</strong>
+                </div>
+                <button type="button" onClick={resetToOriginalView}>Back to all courses</button>
+              </div>
+            )}
+
+            {groupedMaterials.length === 0 ? (
+              <div className="card sm-empty">
+                <div>📭</div>
+                <strong>No materials found</strong>
+                <p>Your professors have not published materials for the selected filters yet.</p>
+                {hasActiveFilters && (
+                  <button type="button" className="sm-empty__button" onClick={resetToOriginalView}>
+                    Back to original list
+                  </button>
+                )}
+              </div>
+            ) : (
+              groupedMaterials.map((group) => (
+                <section key={group.section_id} className="card sm-group">
+                  <div className="sm-group__head">
+                    <div>
+                      <h2>{group.course_code} — {group.course_name}</h2>
+                      <p>Section {group.section_number} · {group.instructor_name || 'Professor'}</p>
+                    </div>
+                    <Link to="/schedule" className="btn btn--sm btn--secondary">Open schedule</Link>
                   </div>
-                  <Link to="/schedule" className="btn btn--sm btn--secondary">Open schedule</Link>
-                </div>
 
-                <div className="sm-material-list">
-                  {group.materials.map((material) => (
-                    <article key={material.id} className={`sm-material ${material.opened_by_me ? 'sm-material--opened' : ''}`}>
-                      <div className="sm-material__icon">{iconForMaterial(material.material_type)}</div>
+                  <div className="sm-material-list">
+                    {group.materials.map((material) => (
+                      <article key={material.id} className={`sm-material ${material.opened_by_me ? 'sm-material--opened' : ''}`}>
+                        <div className="sm-material__icon">{iconForMaterial(material.material_type)}</div>
 
-                      <div className="sm-material__body">
-                        <div className="sm-material__meta">
-                          <span>{MATERIAL_TYPES[material.material_type] || material.material_type}</span>
-                          {material.week_number && <span>Week {material.week_number}</span>}
-                          {material.opened_by_me && <span className="sm-seen">Opened</span>}
+                        <div className="sm-material__body">
+                          <div className="sm-material__meta">
+                            <span>{MATERIAL_TYPES[material.material_type] || material.material_type}</span>
+                            {material.week_number && <span>Week {material.week_number}</span>}
+                            {material.opened_by_me && <span className="sm-seen">Opened</span>}
+                          </div>
+
+                          <h3>{material.title}</h3>
+                          {material.description && <p>{material.description}</p>}
+
+                          <div className="sm-material__details">
+                            <span>{formatDate(material.uploaded_at)}</span>
+                            {material.room_number && <span>{displayRoom(material.room_number)}</span>}
+                            <span>{Number(material.download_count || 0)} opens</span>
+                          </div>
                         </div>
 
-                        <h3>{material.title}</h3>
-                        {material.description && <p>{material.description}</p>}
-
-                        <div className="sm-material__details">
-                          <span>{formatDate(material.uploaded_at)}</span>
-                          {material.room_number && <span>{displayRoom(material.room_number)}</span>}
-                          <span>{Number(material.download_count || 0)} opens</span>
-                        </div>
-                      </div>
-
-                      <button
-                        type="button"
-                        className="sm-open-btn"
-                        disabled={!material.file_url}
-                        onClick={() => openMaterial(material)}
-                      >
-                        {material.file_url ? 'Open' : 'No file'}
-                      </button>
-                    </article>
-                  ))}
-                </div>
-              </section>
-            ))}
+                        <button
+                          type="button"
+                          className="sm-open-btn"
+                          disabled={!material.file_url}
+                          onClick={() => openMaterial(material)}
+                        >
+                          {material.file_url ? 'Open' : 'No file'}
+                        </button>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+              ))
+            )}
           </main>
         </div>
       )}

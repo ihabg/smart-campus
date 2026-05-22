@@ -2338,6 +2338,8 @@ async function getAnalytics(req, res, next) {
     const instructorId = await requireInstructor(req, res);
     if (!instructorId) return;
 
+    const sectionId = req.query.section_id || null;
+
     const sectionsRes = await query(
       `
       WITH attendance_by_student AS (
@@ -2361,6 +2363,7 @@ async function getAnalytics(req, res, next) {
       )
       SELECT
         s.id AS section_id,
+        s.course_id,
         s.section_number,
         c.code,
         c.name AS course_name,
@@ -2375,18 +2378,21 @@ async function getAnalytics(req, res, next) {
           WHERE e.status = 'enrolled'
             AND gbs.student_id IS NULL
         ) AS missing_grades,
-        COUNT(DISTINCT gbs.student_id) FILTER (WHERE gbs.total_grade < 60) AS failing_count
+        COUNT(DISTINCT gbs.student_id) FILTER (WHERE gbs.total_grade < 60) AS failing_count,
+        COUNT(DISTINCT aw.id) AS warnings_sent
       FROM sections s
       JOIN courses c ON c.id = s.course_id
       LEFT JOIN enrollments e ON e.section_id = s.id
       LEFT JOIN attendance_by_student abs ON abs.section_id = s.id AND abs.student_id = e.student_id
       LEFT JOIN grade_by_student gbs ON gbs.section_id = s.id AND gbs.student_id = e.student_id
+      LEFT JOIN attendance_warnings aw ON aw.section_id = s.id
       WHERE s.instructor_id = $1
         AND s.is_active = TRUE
-      GROUP BY s.id, s.section_number, c.code, c.name, c.name_ar
+        AND ($2::uuid IS NULL OR s.id = $2::uuid)
+      GROUP BY s.id, s.course_id, s.section_number, c.code, c.name, c.name_ar
       ORDER BY c.code, s.section_number
       `,
-      [instructorId]
+      [instructorId, sectionId]
     );
 
     const totalsRes = await query(
@@ -2402,8 +2408,9 @@ async function getAnalytics(req, res, next) {
       LEFT JOIN attendance_warnings aw ON aw.section_id = s.id
       WHERE s.instructor_id = $1
         AND s.is_active = TRUE
+        AND ($2::uuid IS NULL OR s.id = $2::uuid)
       `,
-      [instructorId]
+      [instructorId, sectionId]
     );
 
     res.json({
@@ -2417,6 +2424,7 @@ async function getAnalytics(req, res, next) {
     next(e);
   }
 }
+
 
 module.exports = {
   getDashboard,

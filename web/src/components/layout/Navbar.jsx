@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../hooks/index';
-import { BellIcon, SearchIcon } from '../ui/index';
+import { BellIcon } from '../ui/index';
 import { timeAgo } from '../../utils/helpers';
 import toast from 'react-hot-toast';
 import './Navbar.css';
@@ -19,7 +19,6 @@ export default function Navbar({ onMenuToggle }) {
 
   const [notifOpen, setNotifOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
 
   const notifRef = useRef(null);
   const profileRef = useRef(null);
@@ -43,17 +42,6 @@ export default function Navbar({ onMenuToggle }) {
 
     return () => document.removeEventListener('mousedown', handler);
   }, []);
-
-  const handleSearch = (e) => {
-    e.preventDefault();
-
-    const q = searchQuery.trim();
-
-    if (q.length >= 2) {
-      navigate(`/search?q=${encodeURIComponent(q)}`);
-      setSearchQuery('');
-    }
-  };
 
   const handleLogout = async () => {
     try {
@@ -86,19 +74,7 @@ export default function Navbar({ onMenuToggle }) {
         </Link>
       </div>
 
-      <form className="navbar__search" onSubmit={handleSearch}>
-        <span className="navbar__search-icon">
-          <SearchIcon size={14} />
-        </span>
-
-        <input
-          className="navbar__search-input"
-          type="text"
-          placeholder="Search rooms, courses, instructors…"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-        />
-      </form>
+      <div className="navbar__spacer" />
 
       <div className="navbar__right">
         <div className="navbar__notif-wrap" ref={notifRef}>
