@@ -16,9 +16,17 @@ const YEAR_MIN = 2020;
 const YEAR_MAX = 2035;
 const TABS = ['Sections', 'Timetable', 'Enrollments', 'Doctors', 'Rooms', 'Validation'];
 
-// Faculty filter: show only Engineering departments (case-insensitive contains match).
-// Mathematics, Physics, Chemistry, Statistics, Geology, etc. are excluded automatically.
-const DEPT_FILTER = 'Engineering';
+// ─── College / Faculty config ─────────────────────────────────
+// Add entries here to support additional colleges in the future.
+// departmentContains is passed to backend as `department_contains`
+// and used for frontend filtering of courses/instructors.
+const COLLEGES = [
+  { label: 'Faculty of Engineering', departmentContains: 'Engineering' },
+];
+
+const COLLEGE_FILTERS = Object.fromEntries(
+  COLLEGES.map(c => [c.label, { departmentContains: c.departmentContains }])
+);
 
 const DAY_MAP = {
   0: 'Sun', 1: 'Mon', 2: 'Tue', 3: 'Wed', 4: 'Thu', 5: 'Fri', 6: 'Sat',
@@ -146,16 +154,19 @@ function PlaceholderTab({ name }) {
 // ─── Sections tab ─────────────────────────────────────────────
 const SECTIONS_LIMIT = 50;
 
-function SectionsTab({ semester, academicYear, onDataChanged }) {
+function SectionsTab({ semester, academicYear, departmentContains, onDataChanged }) {
   // ── Lookup data for the form modal ─────────────────────────
   const { courses: allCourses }         = useCourses({ limit: 1000 });
   const { instructors: allInstructors } = useInstructors({ limit: 1000, active_only: 'true' });
   const { roomTypes }                   = useRoomTypes();
   const [allRooms, setAllRooms]         = useState([]);
 
-  // Filter to Faculty of Engineering: any department containing "Engineering" (case-insensitive)
-  const lookupCourses     = (allCourses     || []).filter(c => (c.department || '').toLowerCase().includes('engineering'));
-  const lookupInstructors = (allInstructors || []).filter(i => (i.department || '').toLowerCase().includes('engineering'));
+  // Filter courses and instructors to the selected college using the
+  // departmentContains filter (case-insensitive). An empty string means
+  // "show everything" — safe default for future colleges without a filter.
+  const deptLower         = (departmentContains || '').toLowerCase();
+  const lookupCourses     = (allCourses     || []).filter(c => !deptLower || (c.department || '').toLowerCase().includes(deptLower));
+  const lookupInstructors = (allInstructors || []).filter(i => !deptLower || (i.department || '').toLowerCase().includes(deptLower));
 
   // Teaching room types come from the DB metadata — no hardcoding.
   // If a type is later marked is_teaching=true in room_types, it appears here automatically.
@@ -193,7 +204,7 @@ function SectionsTab({ semester, academicYear, onDataChanged }) {
         academic_year: academicYear,
         page,
         limit: SECTIONS_LIMIT,
-        department_contains: DEPT_FILTER,
+        department_contains: departmentContains || undefined,
       });
       const d = res.data?.data || {};
       setSections(d.sections || []);
@@ -203,12 +214,12 @@ function SectionsTab({ semester, academicYear, onDataChanged }) {
     } finally {
       setLoading(false);
     }
-  }, [semester, academicYear, page]);
+  }, [semester, academicYear, page, departmentContains]);
 
   useEffect(() => { loadSections(); }, [loadSections]);
 
-  // Reset to page 1 when semester/year changes
-  useEffect(() => { setPage(1); }, [semester, academicYear]);
+  // Reset to page 1 when semester, year, or college changes
+  useEffect(() => { setPage(1); }, [semester, academicYear, departmentContains]);
 
   const handleSaved = () => {
     setShowCreate(false);
@@ -430,6 +441,10 @@ export default function SemesterManagementPage() {
   const academicYear = `${startYear}/${startYear + 1}`;
   const [activeTab, setActiveTab] = useState('Timetable');
 
+  // College / Faculty selector — defaults to the first (and currently only) college.
+  const [selectedCollege, setSelectedCollege] = useState(COLLEGES[0].label);
+  const deptFilter = COLLEGE_FILTERS[selectedCollege]?.departmentContains || '';
+
   const [stats, setStats] = useState(null);
   const [meetings, setMeetings] = useState([]);
   const [statsLoading, setStatsLoading] = useState(false);
@@ -441,27 +456,31 @@ export default function SemesterManagementPage() {
     setStatsLoading(true);
     setError(null);
     try {
-      const res = await semesterAPI.getSemesterStats(semester, academicYear, { department_contains: DEPT_FILTER });
+      const res = await semesterAPI.getSemesterStats(semester, academicYear, {
+        department_contains: deptFilter || undefined,
+      });
       setStats(res.data.data);
     } catch {
       setError('Failed to load stats — check semester and year values.');
     } finally {
       setStatsLoading(false);
     }
-  }, [semester, academicYear]);
+  }, [semester, academicYear, deptFilter]);
 
   const loadMeetings = useCallback(async () => {
     if (!semester || !academicYear) return;
     setMeetingsLoading(true);
     try {
-      const res = await semesterAPI.getSemesterMeetings(semester, academicYear, { department_contains: DEPT_FILTER });
+      const res = await semesterAPI.getSemesterMeetings(semester, academicYear, {
+        department_contains: deptFilter || undefined,
+      });
       setMeetings(res.data.data.meetings || []);
     } catch {
       setMeetings([]);
     } finally {
       setMeetingsLoading(false);
     }
-  }, [semester, academicYear]);
+  }, [semester, academicYear, deptFilter]);
 
   // Auto-load whenever semester or academic year changes
   useEffect(() => { loadStats(); }, [loadStats]);
@@ -566,6 +585,28 @@ export default function SemesterManagementPage() {
           />
         </div>
 
+        {/* College / Faculty selector */}
+        <div>
+          <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 6, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            College / Faculty
+          </label>
+          <select
+            value={selectedCollege}
+            onChange={e => setSelectedCollege(e.target.value)}
+            style={{
+              height: 38, padding: '0 12px',
+              border: '1px solid #d1d5db', borderRadius: 8,
+              background: '#fff', fontSize: 13, fontWeight: 500,
+              color: '#111827', cursor: 'pointer',
+              minWidth: 210,
+            }}
+          >
+            {COLLEGES.map(c => (
+              <option key={c.label} value={c.label}>{c.label}</option>
+            ))}
+          </select>
+        </div>
+
       </div>
 
       {/* ── Error banner ── */}
@@ -620,6 +661,7 @@ export default function SemesterManagementPage() {
         <SectionsTab
           semester={semester}
           academicYear={academicYear}
+          departmentContains={deptFilter}
           onDataChanged={handleSectionDataChanged}
         />
       )}
