@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import {
   userAPI,
@@ -21,6 +21,7 @@ import {
   statusLabel, roomTypeLabel, getErrorMessage, semesterLabel,
 } from '../../utils/helpers';
 import toast from 'react-hot-toast';
+import { RoomAvailabilityMap } from '../../components/map/RoomAvailabilityMap';
 
 
 // ─── Admin Dashboard ──────────────────────────────────────────
@@ -1054,6 +1055,18 @@ const SEMESTER_OPTIONS = [
   { value: 'summer', label: 'Summer' },
 ];
 
+function normalizeFloorKeyFromDb(floor) {
+  const label = String(floor?.floor_label || '').trim().toUpperCase();
+  if (label === 'B2') return 'B2';
+  if (label === 'B1') return 'B1';
+  if (label === 'G')  return 'G';
+  const n = Number(floor?.floor_number);
+  if (n === -2) return 'B2';
+  if (n === -1) return 'B1';
+  if (n === 0)  return 'G';
+  return String(n || label);
+}
+
 const ACADEMIC_YEAR_MIN = 2020;
 const ACADEMIC_YEAR_MAX = 2035;
 
@@ -1444,8 +1457,9 @@ export function SectionFormModal({
   const [rooms, setRooms] = useState([]);
   const [errors, setErrors] = useState({});
 
-  // ── Room availability panel ─────────────────────────────────
+  // ── Room availability (shared by list panel + map modal) ─────
   const [availOpen, setAvailOpen]       = useState(false);
+  const [mapOpen,   setMapOpen]         = useState(false);
   const [availLoading, setAvailLoading] = useState(false);
   const [availRooms, setAvailRooms]     = useState(null);
   const [availError, setAvailError]     = useState('');
@@ -1504,34 +1518,24 @@ export function SectionFormModal({
     externalCourses,
   ]);
 
-  // Reset availability panel whenever the modal closes.
+  // Reset availability state whenever the section modal closes.
   useEffect(() => {
     if (!open) {
       setAvailOpen(false);
+      setMapOpen(false);
       setAvailRooms(null);
       setAvailError('');
       setAvailDay(null);
     }
   }, [open]);
 
-  const handleFindRooms = async (dayOverride) => {
+  // Shared fetch used by both the list panel and the map modal.
+  const fetchAvailability = useCallback(async (checkDay) => {
     const f = formRef.current;
-    const days = Array.isArray(f.day_of_week) ? f.day_of_week : [];
-
-    if (!days.length || !f.start_time || !f.end_time) {
-      setAvailError('Please select at least one day and set start/end time first.');
-      setAvailRooms(null);
-      setAvailOpen(true);
-      return;
-    }
-
-    const checkDay = dayOverride ?? days[0];
     setAvailDay(checkDay);
-    setAvailOpen(true);
     setAvailLoading(true);
     setAvailError('');
     setAvailRooms(null);
-
     try {
       const params = {
         semester:      f.semester,
@@ -1541,7 +1545,6 @@ export function SectionFormModal({
         end_time:      f.end_time,
       };
       if (f.max_capacity) params.expected_capacity = f.max_capacity;
-
       const res = await scheduleAPI.getRoomAvailability(params);
       setAvailRooms(res.data?.data?.rooms || []);
     } catch (err) {
@@ -1549,6 +1552,32 @@ export function SectionFormModal({
     } finally {
       setAvailLoading(false);
     }
+  }, []);
+
+  const validateAvailFields = () => {
+    const f = formRef.current;
+    const days = Array.isArray(f.day_of_week) ? f.day_of_week : [];
+    if (!days.length || !f.start_time || !f.end_time) {
+      setAvailError('Please select at least one day and set start/end time first.');
+      setAvailRooms(null);
+      return null;
+    }
+    return days;
+  };
+
+  const handleFindRooms = (dayOverride) => {
+    const days = validateAvailFields();
+    if (!days) { setAvailOpen(true); return; }
+    setAvailOpen(true);
+    fetchAvailability(dayOverride ?? days[0]);
+  };
+
+  const handleViewOnMap = () => {
+    setMapOpen(true);
+    // Always refetch — form times may have changed since the last fetch.
+    const days = validateAvailFields();
+    if (!days) return;
+    fetchAvailability(availDay ?? days[0]);
   };
 
   const set = key => event => {
@@ -1754,8 +1783,8 @@ export function SectionFormModal({
             />
           </div>
 
-          {/* Find Available Room trigger */}
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: -4 }}>
+          {/* Room availability quick actions */}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: -4 }}>
             <button
               type="button"
               onClick={() => handleFindRooms()}
@@ -1767,9 +1796,20 @@ export function SectionFormModal({
             >
               🔍 Find Available Room
             </button>
+            <button
+              type="button"
+              onClick={handleViewOnMap}
+              style={{
+                background: 'none', border: 'none', cursor: 'pointer',
+                fontSize: 12, color: 'var(--najah-blue)', padding: '2px 4px',
+                display: 'flex', alignItems: 'center', gap: 4,
+              }}
+            >
+              🗺️ View on Map
+            </button>
           </div>
 
-          {/* Availability panel */}
+          {/* Availability list panel */}
           {availOpen && (
             <RoomAvailabilityPanel
               loading={availLoading}
@@ -1783,6 +1823,24 @@ export function SectionFormModal({
                 setAvailOpen(false);
               }}
               onClose={() => setAvailOpen(false)}
+            />
+          )}
+
+          {/* Map assignment modal */}
+          {mapOpen && (
+            <MapAssignmentModal
+              open={mapOpen}
+              availRooms={availRooms}
+              availLoading={availLoading}
+              availError={availError}
+              availDay={availDay}
+              form={form}
+              onSwitchDay={fetchAvailability}
+              onSelectRoom={roomId => {
+                setVal('room_id')(roomId);
+                setMapOpen(false);
+              }}
+              onClose={() => setMapOpen(false)}
             />
           )}
 
@@ -2635,15 +2693,10 @@ function RoomAvailabilityPanel({ loading, error, rooms, form, availDay, onSwitch
                           {room.capacity ? ` · Cap: ${room.capacity}` : ''}
                         </div>
                         {/* Booking details */}
-                        {status === 'booked' && room.booked_section_id && (
+                        {status === 'booked' && room.booking && (
                           <div style={{ fontSize: 11, color: '#dc2626', marginTop: 2 }}>
-                            {room.course_code} — {room.instructor_name || 'No instructor'}
-                            {' · '}{room.booked_start_time?.slice(0,5)}–{room.booked_end_time?.slice(0,5)}
-                          </div>
-                        )}
-                        {status === 'too_small' && room.booked_section_id && (
-                          <div style={{ fontSize: 11, color: '#d97706', marginTop: 2 }}>
-                            Booked: {room.course_code}{room.instructor_name ? ` · ${room.instructor_name}` : ''}
+                            {room.booking.course_code} — {room.booking.instructor_name || 'No instructor'}
+                            {' · '}{room.booking.start_time}–{room.booking.end_time}
                           </div>
                         )}
                       </div>
@@ -2660,6 +2713,327 @@ function RoomAvailabilityPanel({ loading, error, rooms, form, availDay, onSwitch
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// ─── Map Assignment Modal ─────────────────────────────────────
+function MapAssignmentModal({ open, availRooms, availLoading, availError, availDay, form, onSwitchDay, onSelectRoom, onClose }) {
+  const [floors, setFloors]             = useState([]);
+  const [floorsLoading, setFloorsLoading] = useState(false);
+  const [selectedFloorId, setSelectedFloorId] = useState(null);
+  const [clickedRoom, setClickedRoom]   = useState(null); // { block, avail }
+
+  useEffect(() => {
+    if (!open) { setClickedRoom(null); return; }
+    setFloorsLoading(true);
+    floorAPI.getAll()
+      .then(res => {
+        const list = unwrapApiResponse(res).floors || [];
+        setFloors(list);
+      })
+      .catch(() => {})
+      .finally(() => setFloorsLoading(false));
+  }, [open]);
+
+  // floor_id → FLOOR_MAPS key
+  const floorIdToKey = useMemo(() => {
+    const map = {};
+    floors.forEach(f => { map[f.id] = normalizeFloorKeyFromDb(f); });
+    return map;
+  }, [floors]);
+
+  // room_number → availability info
+  const availabilityByRoomNumber = useMemo(() => {
+    const map = {};
+    availRooms?.forEach(r => { map[r.room_number] = r; });
+    return map;
+  }, [availRooms]);
+
+  // Default to the floor that has the most available rooms
+  useEffect(() => {
+    if (!availRooms?.length || !floors.length) return;
+    if (selectedFloorId) return; // already set
+    const count = {};
+    availRooms.forEach(r => {
+      if (r.status === 'available' && r.floor_id) {
+        count[r.floor_id] = (count[r.floor_id] || 0) + 1;
+      }
+    });
+    const best = Object.entries(count).sort((a, b) => b[1] - a[1])[0]?.[0];
+    setSelectedFloorId(best || floors[0]?.id || null);
+  }, [availRooms, floors, selectedFloorId]);
+
+  const selectedFloorKey = floorIdToKey[selectedFloorId];
+  const days = Array.isArray(form?.day_of_week) ? form.day_of_week : [];
+
+  // Group floors by building for the tab bar
+  const buildingGroups = useMemo(() => {
+    const groups = {};
+    floors.forEach(f => {
+      const bid = f.building_id;
+      if (!groups[bid]) groups[bid] = { name: f.building_name || f.building_code || 'Building', floors: [] };
+      groups[bid].floors.push(f);
+    });
+    return Object.values(groups);
+  }, [floors]);
+
+  if (!open) return null;
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 9999,
+      background: 'rgba(0,0,0,0.65)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      padding: 12,
+    }}>
+      <div style={{
+        background: 'var(--surface)', borderRadius: 12,
+        width: '96vw', maxWidth: 1240, height: '90vh',
+        display: 'flex', flexDirection: 'column',
+        overflow: 'hidden',
+        boxShadow: '0 32px 100px rgba(0,0,0,0.45)',
+      }}>
+
+        {/* ── Header ── */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+          <span style={{ fontWeight: 700, fontSize: 15 }}>Choose Room from Map</span>
+          {availRooms && !availLoading && (
+            <span style={{ fontSize: 11, color: '#16a34a', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, padding: '1px 8px' }}>
+              {availRooms.filter(r => r.status === 'available').length} available
+            </span>
+          )}
+
+          {/* Day pills */}
+          {days.length > 1 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginLeft: 4 }}>
+              <span style={{ fontSize: 11, color: '#6b7280' }}>Day:</span>
+              {days.map(d => {
+                const dayMeta = DAY_OPTIONS.find(o => o.value === d || o.value === Number(d));
+                const isActive = String(availDay) === String(d);
+                return (
+                  <button key={d} type="button" onClick={() => { setSelectedFloorId(null); onSwitchDay(d); }}
+                    style={{
+                      padding: '2px 9px', borderRadius: 10, border: '1px solid', fontSize: 11,
+                      cursor: 'pointer', fontWeight: isActive ? 600 : 400,
+                      background: isActive ? 'var(--najah-blue)' : 'transparent',
+                      borderColor: isActive ? 'var(--najah-blue)' : 'var(--border)',
+                      color: isActive ? '#fff' : 'inherit',
+                    }}>
+                    {dayMeta?.label || d}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          <button type="button" onClick={onClose}
+            style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', fontSize: 22, color: '#6b7280', padding: '0 2px', lineHeight: 1 }}>
+            ×
+          </button>
+        </div>
+
+        {/* ── Floor tabs ── */}
+        {!floorsLoading && buildingGroups.length > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 16px', borderBottom: '1px solid var(--border)', flexShrink: 0, overflowX: 'auto' }}>
+            {buildingGroups.map(bg => (
+              bg.floors.map(f => {
+                const key = floorIdToKey[f.id];
+                const isActive = f.id === selectedFloorId;
+                const avCount = availRooms?.filter(r => r.floor_id === f.id && r.status === 'available').length || 0;
+                return (
+                  <button key={f.id} type="button"
+                    onClick={() => { setSelectedFloorId(f.id); setClickedRoom(null); }}
+                    style={{
+                      position: 'relative', padding: '4px 12px', borderRadius: 6,
+                      border: '1px solid', fontSize: 12, fontWeight: isActive ? 700 : 400,
+                      cursor: 'pointer', whiteSpace: 'nowrap',
+                      background: isActive ? 'var(--najah-blue)' : 'transparent',
+                      borderColor: isActive ? 'var(--najah-blue)' : 'var(--border)',
+                      color: isActive ? '#fff' : 'inherit',
+                    }}>
+                    {key || f.floor_label || `F${f.floor_number}`}
+                    {avCount > 0 && (
+                      <span style={{
+                        position: 'absolute', top: -5, right: -5,
+                        background: '#16a34a', color: '#fff', borderRadius: '50%',
+                        width: 15, height: 15, fontSize: 9, fontWeight: 700,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        border: '1.5px solid var(--surface)',
+                      }}>
+                        {avCount}
+                      </span>
+                    )}
+                  </button>
+                );
+              })
+            ))}
+          </div>
+        )}
+
+        {/* ── Main: map + info panel ── */}
+        <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0 }}>
+
+          {/* Map */}
+          <div style={{ flex: 1, padding: 10, overflow: 'hidden', display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+            {availLoading && (
+              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Spinner />
+              </div>
+            )}
+            {!availLoading && availError && (
+              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#dc2626', fontSize: 13, padding: 24, textAlign: 'center' }}>
+                {availError}
+              </div>
+            )}
+            {!availLoading && !availError && !selectedFloorKey && (
+              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 8, color: '#6b7280' }}>
+                <span style={{ fontSize: 32 }}>🗺️</span>
+                <span style={{ fontSize: 13 }}>
+                  {floors.length === 0 && floorsLoading ? 'Loading floors…' : 'Select a floor above to view the map'}
+                </span>
+              </div>
+            )}
+            {!availLoading && !availError && selectedFloorKey && (
+              <RoomAvailabilityMap
+                floorKey={selectedFloorKey}
+                availabilityByRoomNumber={availabilityByRoomNumber}
+                selectedRoomId={form?.room_id}
+                onRoomClick={(block, avail) => setClickedRoom({ block, avail })}
+              />
+            )}
+          </div>
+
+          {/* Room info sidebar */}
+          <div style={{ width: 288, borderLeft: '1px solid var(--border)', display: 'flex', flexDirection: 'column', overflow: 'hidden', flexShrink: 0 }}>
+            {clickedRoom ? (
+              <MapRoomInfoPanel
+                block={clickedRoom.block}
+                avail={clickedRoom.avail}
+                expectedCapacity={form?.max_capacity ? Number(form.max_capacity) : null}
+                onSelect={() => onSelectRoom(clickedRoom.avail.room_id)}
+              />
+            ) : (
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24, gap: 10, color: '#9ca3af', textAlign: 'center' }}>
+                <span style={{ fontSize: 36 }}>👆</span>
+                <span style={{ fontSize: 13 }}>Click a room on the map to see its details</span>
+                <span style={{ fontSize: 11 }}>Green rooms are available to assign</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ── Legend ── */}
+        <div style={{ display: 'flex', gap: 16, padding: '7px 16px', borderTop: '1px solid var(--border)', flexShrink: 0, flexWrap: 'wrap' }}>
+          {[
+            { color: 'rgba(34,197,94,0.65)',  label: 'Available' },
+            { color: 'rgba(239,68,68,0.65)',  label: 'Booked' },
+            { color: 'rgba(245,158,11,0.65)', label: 'Too Small' },
+            { color: 'rgba(209,213,219,0.5)', label: 'Not Teaching Room' },
+          ].map(({ color, label }) => (
+            <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#374151' }}>
+              <div style={{ width: 12, height: 12, borderRadius: 2, background: color, border: '1px solid rgba(0,0,0,0.1)', flexShrink: 0 }} />
+              {label}
+            </div>
+          ))}
+          <span style={{ fontSize: 11, color: '#9ca3af', marginLeft: 'auto' }}>Scroll to zoom · Drag to pan</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MapRoomInfoPanel({ block, avail, expectedCapacity, onSelect }) {
+  const status = avail?.status || 'not_teaching_room';
+  const meta   = STATUS_META[status] || STATUS_META.not_teaching_room;
+
+  return (
+    <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12, overflowY: 'auto', flex: 1 }}>
+      {/* Status badge */}
+      <div style={{
+        display: 'inline-flex', alignItems: 'center', gap: 6,
+        background: meta.bg, color: meta.color,
+        border: `1px solid ${meta.border}`, borderRadius: 6,
+        padding: '4px 10px', alignSelf: 'flex-start',
+      }}>
+        <div style={{ width: 7, height: 7, borderRadius: '50%', background: meta.color }} />
+        <span style={{ fontSize: 12, fontWeight: 600 }}>{meta.label}</span>
+      </div>
+
+      {/* Room identity */}
+      <div>
+        <div style={{ fontWeight: 700, fontSize: 17 }}>{block.roomNumber}</div>
+        {block.name && (
+          <div style={{ fontSize: 13, color: '#374151', marginTop: 3 }}>{block.name}</div>
+        )}
+      </div>
+
+      {/* Basic info rows */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+        <MapInfoRow label="Type"     value={avail?.room_type_label || block.type} />
+        <MapInfoRow label="Capacity" value={avail?.capacity ?? block.capacity ?? '—'} />
+        {avail?.room_type_icon && (
+          <MapInfoRow label="Icon" value={avail.room_type_icon} />
+        )}
+      </div>
+
+      {/* Booking detail (booked) */}
+      {status === 'booked' && avail?.booking && (
+        <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: 10, display: 'flex', flexDirection: 'column', gap: 5 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: '#dc2626', marginBottom: 2, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Current Booking</div>
+          <MapInfoRow label="Course"     value={avail.booking.course_code ? `${avail.booking.course_code}${avail.booking.course_name ? ' — ' + avail.booking.course_name : ''}` : '—'} />
+          <MapInfoRow label="Section"    value={avail.booking.section_number ?? '—'} />
+          <MapInfoRow label="Instructor" value={avail.booking.instructor_name || '—'} />
+          <MapInfoRow label="Time"       value={`${avail.booking.start_time} – ${avail.booking.end_time}`} />
+          {avail.booking.meeting_day != null && (
+            <MapInfoRow label="Day" value={DAY_OPTIONS.find(d => d.value === Number(avail.booking.meeting_day))?.label ?? `Day ${avail.booking.meeting_day}`} />
+          )}
+        </div>
+      )}
+
+      {/* Too small */}
+      {status === 'too_small' && (
+        <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: 10, display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: '#d97706', marginBottom: 2 }}>Capacity Issue</div>
+          <div style={{ fontSize: 12, color: '#374151' }}>Room capacity: <strong>{avail?.capacity ?? block.capacity ?? '—'}</strong></div>
+          {expectedCapacity != null && (
+            <div style={{ fontSize: 12, color: '#374151' }}>Required: <strong>{expectedCapacity}</strong></div>
+          )}
+          <div style={{ fontSize: 12, color: '#d97706', marginTop: 2 }}>Room capacity is too small for this section.</div>
+        </div>
+      )}
+
+      {/* Not teaching room */}
+      {status === 'not_teaching_room' && (
+        <div style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 8, padding: 10 }}>
+          <div style={{ fontSize: 12, color: '#6b7280' }}>This room is not valid for scheduling.</div>
+        </div>
+      )}
+
+      {/* Select button */}
+      {status === 'available' && avail?.room_id && (
+        <button
+          type="button"
+          onClick={onSelect}
+          style={{
+            marginTop: 'auto', padding: '10px 16px',
+            background: 'var(--najah-blue)', color: '#fff',
+            border: 'none', borderRadius: 8, cursor: 'pointer',
+            fontWeight: 600, fontSize: 14, width: '100%',
+          }}
+        >
+          Select This Room
+        </button>
+      )}
+    </div>
+  );
+}
+
+function MapInfoRow({ label, value }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 12 }}>
+      <span style={{ color: '#6b7280', flexShrink: 0 }}>{label}</span>
+      <span style={{ color: '#111827', fontWeight: 500, textAlign: 'right' }}>{String(value ?? '—')}</span>
     </div>
   );
 }

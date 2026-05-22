@@ -50,7 +50,7 @@ async function checkSectionConflicts({
         AND s.room_id = $1
         AND s.semester = $2
         AND s.academic_year = $3
-        AND s.day_of_week && $4::int[]
+        AND s.day_of_week && $4::smallint[]
         AND NOT (s.end_time <= $5 OR s.start_time >= $6)
         ${excludeSql}
       LIMIT 1
@@ -72,7 +72,7 @@ async function checkSectionConflicts({
         AND COALESCE(sm.room_id, s.room_id) = $1
         AND s.semester = $2
         AND s.academic_year = $3
-        AND sm.day_of_week = ANY($4::int[])
+        AND sm.day_of_week = ANY($4::smallint[])
         AND NOT (sm.end_time <= $5 OR sm.start_time >= $6)
         ${excludeSql}
       LIMIT 1
@@ -99,7 +99,7 @@ async function checkSectionConflicts({
         AND s.instructor_id = $1
         AND s.semester = $2
         AND s.academic_year = $3
-        AND s.day_of_week && $4::int[]
+        AND s.day_of_week && $4::smallint[]
         AND NOT (s.end_time <= $5 OR s.start_time >= $6)
         ${excludeSql}
       LIMIT 1
@@ -121,7 +121,7 @@ async function checkSectionConflicts({
         AND s.instructor_id = $1
         AND s.semester = $2
         AND s.academic_year = $3
-        AND sm.day_of_week = ANY($4::int[])
+        AND sm.day_of_week = ANY($4::smallint[])
         AND NOT (sm.end_time <= $5 OR sm.start_time >= $6)
         ${excludeSql}
       LIMIT 1
@@ -1019,6 +1019,7 @@ async function getRoomAvailability(req, res, next) {
           ))                AS instructor_name,
           sm.start_time     AS meeting_start,
           sm.end_time       AS meeting_end,
+          sm.day_of_week    AS conflicting_day,
           s.enrolled,
           s.max_capacity
         FROM   section_meetings sm
@@ -1064,6 +1065,7 @@ async function getRoomAvailability(req, res, next) {
           instructor_name: row.instructor_name,
           start_time:      normalizeTime(row.booked_start_time),
           end_time:        normalizeTime(row.booked_end_time),
+          meeting_day:     row.conflicting_day,
           enrolled:        row.enrolled,
           max_capacity:    row.booked_max_capacity,
         };
