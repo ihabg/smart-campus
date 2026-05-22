@@ -202,6 +202,218 @@ export function Pagination({ pagination, onPageChange }) {
   );
 }
 
+// ─── SearchableSelect ─────────────────────────────────────────
+// Combobox that renders its dropdown via position:fixed so it escapes
+// any overflow:auto scroll container (e.g. modals).
+// onChange(value) — emits the raw value, NOT a DOM event.
+export function SearchableSelect({
+  label, required, value, onChange, options = [],
+  placeholder = 'Select…', error, disabled,
+}) {
+  const [open,        setOpen]        = useState(false);
+  const [query,       setQuery]       = useState('');
+  const [highlighted, setHighlighted] = useState(-1);
+  const [panelStyle,  setPanelStyle]  = useState({});
+  const containerRef = useRef(null);
+  const triggerRef   = useRef(null);
+  const inputRef     = useRef(null);
+  const listRef      = useRef(null);
+
+  // Close on outside click OR any scroll (dropdown stays anchored via fixed pos)
+  useEffect(() => {
+    if (!open) return;
+    function close() { setOpen(false); setQuery(''); }
+    function onMouse(e) {
+      if (containerRef.current && !containerRef.current.contains(e.target)) close();
+    }
+    document.addEventListener('mousedown', onMouse);
+    document.addEventListener('scroll', close, true);
+    return () => {
+      document.removeEventListener('mousedown', onMouse);
+      document.removeEventListener('scroll', close, true);
+    };
+  }, [open]);
+
+  const selectedOption = options.find(o => String(o.value) === String(value ?? ''));
+
+  // Filter + sort: starts-with results come before contains-only
+  const q = query.trim().toLowerCase();
+  const filtered = q
+    ? options
+        .filter(o => o.label.toLowerCase().includes(q))
+        .sort((a, b) => {
+          const aS = a.label.toLowerCase().startsWith(q);
+          const bS = b.label.toLowerCase().startsWith(q);
+          return aS === bS ? 0 : aS ? -1 : 1;
+        })
+    : options;
+
+  function openDropdown() {
+    if (disabled) return;
+    const rect = triggerRef.current?.getBoundingClientRect();
+    if (rect) {
+      // Flip upward if there isn't enough space below
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const panelH = Math.min(filtered.length * 32 + 60, 280);
+      const top = spaceBelow > panelH ? rect.bottom + 2 : rect.top - panelH - 2;
+      setPanelStyle({ position: 'fixed', top, left: rect.left, width: rect.width, zIndex: 9999 });
+    }
+    setOpen(true);
+    setQuery('');
+    setHighlighted(-1);
+    requestAnimationFrame(() => inputRef.current?.focus());
+  }
+
+  function selectOption(val) {
+    onChange(val);
+    setOpen(false);
+    setQuery('');
+    setHighlighted(-1);
+  }
+
+  function handleTriggerKey(e) {
+    if (!open && (e.key === 'Enter' || e.key === 'ArrowDown')) {
+      e.preventDefault();
+      openDropdown();
+    }
+  }
+
+  function handleInputKey(e) {
+    switch (e.key) {
+      case 'Escape':
+        setOpen(false); setQuery(''); return;
+      case 'ArrowDown':
+        e.preventDefault();
+        setHighlighted(h => Math.min(h + 1, filtered.length - 1)); return;
+      case 'ArrowUp':
+        e.preventDefault();
+        setHighlighted(h => Math.max(h - 1, required ? 0 : -1)); return;
+      case 'Enter':
+        e.preventDefault();
+        if (highlighted === -1 && !required) selectOption('');
+        else if (highlighted >= 0 && filtered[highlighted]) selectOption(filtered[highlighted].value);
+        return;
+      default:
+    }
+  }
+
+  // Scroll highlighted row into view
+  useEffect(() => {
+    if (!listRef.current) return;
+    const offset = required ? 0 : 1; // compensate for the "clear" row
+    const el = listRef.current.children[highlighted + offset];
+    el?.scrollIntoView({ block: 'nearest' });
+  }, [highlighted, required]);
+
+  return (
+    <div className="form-group" ref={containerRef} style={{ position: 'relative' }}>
+      {label && (
+        <label className={`form-label ${required ? 'form-label--req' : ''}`}>{label}</label>
+      )}
+
+      {/* Trigger */}
+      <div
+        ref={triggerRef}
+        className={`form-input ${error ? 'form-input--error' : ''}`}
+        style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          cursor: disabled ? 'not-allowed' : 'pointer',
+          userSelect: 'none', opacity: disabled ? 0.6 : 1,
+          padding: '6px 12px', minHeight: 38, boxSizing: 'border-box',
+        }}
+        onClick={openDropdown}
+        onKeyDown={handleTriggerKey}
+        tabIndex={disabled ? -1 : 0}
+        role="combobox"
+        aria-expanded={open}
+      >
+        <span style={{
+          flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          fontSize: 13, color: selectedOption ? 'inherit' : 'var(--text-faint, #9ca3af)',
+        }}>
+          {selectedOption ? selectedOption.label : placeholder}
+        </span>
+        <svg width="10" height="6" viewBox="0 0 10 6" fill="none"
+          stroke="currentColor" strokeWidth="1.5"
+          style={{ flexShrink: 0, marginLeft: 8, color: '#9ca3af',
+            transition: 'transform 0.15s', transform: open ? 'rotate(180deg)' : 'none' }}>
+          <path d="M1 1l4 4 4-4"/>
+        </svg>
+      </div>
+
+      {/* Floating dropdown panel */}
+      {open && (
+        <div style={{
+          ...panelStyle,
+          background: '#fff', border: '1px solid #d1d5db', borderRadius: 8,
+          boxShadow: '0 8px 24px rgba(0,0,0,0.14)',
+        }}>
+          {/* Search input */}
+          <div style={{ padding: '6px 8px', borderBottom: '1px solid #e5e7eb' }}>
+            <input
+              ref={inputRef}
+              value={query}
+              onChange={e => { setQuery(e.target.value); setHighlighted(-1); }}
+              onKeyDown={handleInputKey}
+              placeholder="Search…"
+              style={{
+                width: '100%', border: '1px solid #d1d5db', borderRadius: 6,
+                padding: '5px 10px', fontSize: 13, outline: 'none',
+                background: '#f9fafb', boxSizing: 'border-box', color: '#111827',
+              }}
+            />
+          </div>
+
+          {/* Options list */}
+          <div ref={listRef} style={{ maxHeight: 220, overflowY: 'auto' }}>
+            {/* Clear / placeholder row for optional fields */}
+            {!required && (
+              <div
+                onClick={() => selectOption('')}
+                onMouseEnter={() => setHighlighted(-1)}
+                style={{
+                  padding: '7px 12px', fontSize: 13, cursor: 'pointer', fontStyle: 'italic',
+                  color: '#6b7280',
+                  background: !value ? '#f1f5f9' : 'transparent',
+                  borderLeft: !value ? '3px solid #94a3b8' : '3px solid transparent',
+                }}
+              >
+                {placeholder}
+              </div>
+            )}
+
+            {filtered.length === 0 ? (
+              <div style={{ padding: '12px', textAlign: 'center', fontSize: 13, color: '#94a3b8' }}>
+                No results
+              </div>
+            ) : filtered.map((opt, i) => {
+              const isSel = String(opt.value) === String(value ?? '');
+              const isHi  = i === highlighted;
+              return (
+                <div
+                  key={opt.value}
+                  onClick={() => selectOption(opt.value)}
+                  onMouseEnter={() => setHighlighted(i)}
+                  style={{
+                    padding: '7px 12px', fontSize: 13, cursor: 'pointer',
+                    background: isHi ? '#eff6ff' : isSel ? '#f0fdf4' : 'transparent',
+                    color: isHi ? '#1d4ed8' : '#111827',
+                    borderLeft: isSel ? '3px solid #22c55e' : '3px solid transparent',
+                  }}
+                >
+                  {opt.label}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {error && <span className="form-error">{error}</span>}
+    </div>
+  );
+}
+
 // ─── SearchInput ──────────────────────────────────────────────
 export function SearchInput({ value, onChange, placeholder = 'Search…', onClear }) {
   return (

@@ -4,7 +4,8 @@
       "Bash(grep -n \"^[0-9]:\\\\s*{$\\\\|^[A-Z]\\\\+[0-9]*:\\\\s*{$\" \"c:\\\\Users\\\\Kebab\\\\Desktop\\\\smartwhek\\\\web\\\\src\\\\data\\\\floorMapGeometry.js\")",
       "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\Kebab\\\\Desktop\\\\smartwhek\" -Recurse -Directory)",
       "Bash(Select-Object -ExpandProperty FullName)",
-      "PowerShell(New-Item -ItemType Directory -Force \"c:\\\\Users\\\\Kebab\\\\Desktop\\\\smartwhek\\\\backend\\\\scripts\")"
+      "PowerShell(New-Item -ItemType Directory -Force \"c:\\\\Users\\\\Kebab\\\\Desktop\\\\smartwhek\\\\backend\\\\scripts\")",
+      "Bash(node -e \"const fs = require\\('fs'\\); const code = fs.readFileSync\\('src/components/ui/index.jsx','utf8'\\); console.log\\('Lines:', code.split\\('\\\\n'\\).length, '| SearchableSelect exported:', code.includes\\('export function SearchableSelect'\\)\\)\")"
     ]
   }
 }

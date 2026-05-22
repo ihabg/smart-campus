@@ -14,7 +14,7 @@ import { useAsync, useAllSections } from '../../hooks/index';
 import {
   Table, Pagination, Button, Input, Select, Textarea,
   Modal, ConfirmDialog, Badge, Spinner, SectionHeader,
-  SearchInput, PlusIcon, EditIcon, TrashIcon, EyeIcon,
+  SearchInput, SearchableSelect, PlusIcon, EditIcon, TrashIcon, EyeIcon,
 } from '../../components/ui/index';
 import {
   formatDate, formatTime, daysArrayToString, statusBadgeClass,
@@ -1443,6 +1443,9 @@ export function SectionFormModal({
     }));
   };
 
+  // For SearchableSelect — receives the value directly (not a DOM event)
+  const setVal = key => val => setForm(current => ({ ...current, [key]: val }));
+
   const toggleDay = day => {
     setForm(current => {
       const currentDays = Array.isArray(current.day_of_week)
@@ -1545,24 +1548,25 @@ export function SectionFormModal({
   const activeInstructors = externalInstructors ?? instructors;
   const activeRooms       = externalRooms       ?? rooms;
 
-  const courseOptions = activeCourses.map(course => ({
-    value: course.id,
-    label: `${course.code} — ${course.name}`,
-  }));
+  const courseOptions = activeCourses.map(course => {
+    const parts = [course.code, course.name];
+    if (course.department) parts.push(course.department);
+    return { value: course.id, label: parts.join(' — ') };
+  });
 
-  const instructorOptions = activeInstructors.map(instructor => ({
-    value: instructor.id,
-    label:
-      instructor.instructor_name ||
-      `${instructor.title || ''} ${instructor.first_name || ''} ${
-        instructor.last_name || ''
-      }`.trim() ||
-      instructor.email,
-  }));
+  const instructorOptions = activeInstructors.map(instructor => {
+    const name = instructor.instructor_name ||
+      `${instructor.title || ''} ${instructor.first_name || ''} ${instructor.last_name || ''}`.trim() ||
+      instructor.email;
+    return {
+      value: instructor.id,
+      label: instructor.department ? `${name} — ${instructor.department}` : name,
+    };
+  });
 
   const roomOptions = activeRooms.map(room => {
     const parts = [room.room_number];
-    if (room.type) parts.push((room.type).replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()));
+    if (room.type) parts.push(room.type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()));
     if (room.capacity) parts.push(`Cap: ${room.capacity}`);
     return { value: room.id, label: parts.join(' — ') };
   });
@@ -1595,21 +1599,21 @@ export function SectionFormModal({
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div className="form-row">
-            <Select
+            <SearchableSelect
               label="Course"
               required
               value={form.course_id}
-              onChange={set('course_id')}
+              onChange={setVal('course_id')}
               options={courseOptions}
               placeholder="Select course…"
               error={errors.course_id}
             />
 
-            <Select
+            <SearchableSelect
               label="Doctor"
               required
               value={form.instructor_id}
-              onChange={set('instructor_id')}
+              onChange={setVal('instructor_id')}
               options={instructorOptions}
               placeholder="Select doctor…"
               error={errors.instructor_id}
@@ -1626,10 +1630,10 @@ export function SectionFormModal({
               error={errors.section_number}
             />
 
-            <Select
+            <SearchableSelect
               label="Room"
               value={form.room_id}
-              onChange={set('room_id')}
+              onChange={setVal('room_id')}
               options={roomOptions}
               placeholder="No room yet"
             />
