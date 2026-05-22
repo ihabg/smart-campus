@@ -24,7 +24,32 @@ router.delete('/enroll/:section_id', protect, ctrl.dropEnrollment);
 // Public / shared
 router.get('/', validatePagination, ctrl.getAllSections);
 
-// Admin routes
+// ── Admin-only routes (named, must be before /:id) ────────────
+// Stats for Semester Management dashboard cards
+router.get(
+  '/stats',
+  protect,
+  restrictTo('admin', 'super_admin'),
+  ctrl.getSemesterStats
+);
+
+// All meetings for the Timetable tab
+router.get(
+  '/meetings',
+  protect,
+  restrictTo('admin', 'super_admin'),
+  ctrl.getSemesterMeetings
+);
+
+// Room availability for map-based section assignment
+router.get(
+  '/room-availability',
+  protect,
+  restrictTo('admin', 'super_admin'),
+  ctrl.getRoomAvailability
+);
+
+// Admin CRUD routes
 router.post(
   '/',
   protect,

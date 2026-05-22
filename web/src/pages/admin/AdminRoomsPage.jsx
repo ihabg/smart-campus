@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { roomAPI, floorAPI } from '../../api/index';
-import { useAsync } from '../../hooks/index';
+import { useAsync, useRoomTypes } from '../../hooks/index';
 import {
   Table,
   Button,
@@ -21,32 +21,8 @@ import {
 } from '../../utils/helpers';
 import toast from 'react-hot-toast';
 
-const ROOM_TYPES = [
-  { value: '', label: 'All types' },
-  { value: 'classroom', label: 'Classroom' },
-  { value: 'lecture_hall', label: 'Lecture Hall' },
-  { value: 'lab', label: 'Lab' },
-  { value: 'office', label: 'Office' },
-  { value: 'corridor', label: 'Corridor' },
-  { value: 'restroom', label: 'Restroom' },
-  { value: 'bathroom', label: 'Accessible Restroom' },
-  { value: 'elevator', label: 'Elevator' },
-  { value: 'stairs', label: 'Stairs' },
-  { value: 'emergency_exit', label: 'Emergency Exit / Stairs' },
-  { value: 'storage', label: 'Storage' },
-  { value: 'atrium', label: 'Atrium' },
-  { value: 'meeting_room', label: 'Meeting Room' },
-  { value: 'library', label: 'Library' },
-  { value: 'cafeteria', label: 'Cafeteria' },
-  { value: 'bookstore', label: 'Bookstore' },
-  { value: 'amphitheater', label: 'Amphitheater' },
-  { value: 'professor_lounge', label: 'Professor Lounge' },
-  { value: 'engineering_drawing_room', label: 'Engineering Drawing Room' },
-  { value: 'engineering_drawing_studio', label: 'Engineering Drawing Studio' },
-  { value: 'other', label: 'Other' },
-];
-
 export default function AdminRoomsPage() {
+  const { roomTypes } = useRoomTypes();
   const [floorId, setFloorId] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
   const [showCreate, setShowCreate] = useState(false);
@@ -294,7 +270,10 @@ export default function AdminRoomsPage() {
         <Select
           value={typeFilter}
           onChange={e => setTypeFilter(e.target.value)}
-          options={ROOM_TYPES}
+          options={[
+            { value: '', label: 'All types' },
+            ...roomTypes.map(rt => ({ value: rt.value, label: rt.label_en })),
+          ]}
           style={{ width: 180 }}
         />
 
@@ -375,7 +354,7 @@ function emptyRoomForm() {
     room_number: '',
     lecturer_number: '',
     name: '',
-    type: 'classroom',
+    type: 'lecture_hall',
     department: '',
     capacity: '',
     description: '',
@@ -384,7 +363,7 @@ function emptyRoomForm() {
 }
 
 function cleanRoomType(value) {
-  const type = String(value || 'classroom')
+  const type = String(value || 'lecture_hall')
     .trim()
     .toLowerCase()
     .replace(/\s+/g, '_');
@@ -442,7 +421,7 @@ function RoomFormModal({
         room_number: existingRoom.room_number || '',
         lecturer_number: existingRoom.lecturer_number || '',
         name: existingRoom.name || '',
-        type: cleanRoomType(existingRoom.type || 'classroom'),
+        type: cleanRoomType(existingRoom.type || 'lecture_hall'),
         department: existingRoom.department || '',
         capacity:
           existingRoom.capacity !== null && existingRoom.capacity !== undefined
@@ -585,7 +564,7 @@ if (
             required
             value={form.type}
             onChange={set('type')}
-            options={ROOM_TYPES.slice(1)}
+            options={roomTypes.map(rt => ({ value: rt.value, label: rt.label_en }))}
             error={errors.type}
           />
         </div>

@@ -85,7 +85,10 @@ export const scheduleAPI = {
 
   enroll: (section_id) => api.post('/schedule/enroll', { section_id }),
 
-  drop: (section_id) => api.delete(`/schedule/enroll/${section_id}`)
+  drop: (section_id) => api.delete(`/schedule/enroll/${section_id}`),
+
+  getRoomAvailability: (params = {}) =>
+    api.get('/schedule/room-availability', { params }),
 };
 
 // ─── searchAPI ───────────────────────────────────────────────
@@ -209,6 +212,20 @@ export const mapEditorAPI = {
   saveRoomPosition: (room_id, data) =>
     api.patch(`/map-editor/rooms/${room_id}/position`, data)
 };
+// ─── roomTypeAPI ─────────────────────────────────────────────
+export const roomTypeAPI = {
+  getAll: () => api.get('/room-types'),
+};
+
+// ─── semesterAPI ─────────────────────────────────────────────
+export const semesterAPI = {
+  getSemesterStats: (semester, academic_year, extra = {}) =>
+    api.get('/schedule/stats', { params: { semester, academic_year, ...extra } }),
+
+  getSemesterMeetings: (semester, academic_year, extra = {}) =>
+    api.get('/schedule/meetings', { params: { semester, academic_year, ...extra } }),
+};
+
 // ─── courseAPI ────────────────────────────────────────────────
 export const courseAPI = {
   getAll: (params = {}) => api.get('/courses', { params }),

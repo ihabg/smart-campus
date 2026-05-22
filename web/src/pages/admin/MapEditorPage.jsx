@@ -2,53 +2,14 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom';
 import { floorAPI, mapEditorAPI, roomAPI } from '../../api/index';
 import { Button, Input, Select, Modal, ConfirmDialog, Spinner } from '../../components/ui/index';
-import { getErrorMessage, roomTypeLabel } from '../../utils/helpers';
+import { getErrorMessage } from '../../utils/helpers';
+import { useRoomTypes } from '../../hooks/index';
 import toast from 'react-hot-toast';
 import './MapEditor.css';
 import { FLOOR_MAPS } from '../../data/floorMapGeometry';
 
-const ROOM_TYPES = [
-  'classroom',
-  'lecture_hall',
-  'lab',
-  'office',
-  'corridor',
-  'restroom',
-  'bathroom',
-  'elevator',
-  'stairs',
-  'storage',
-  'atrium',
-  'meeting_room',
-  'library',
-  'cafeteria',
-  'amphitheater',
-  'professor_lounge',
-  'emergency_exit',
-  'bookstore',
-  'engineering_drawing_room',
-  'engineering_drawing_studio',
-  'other',
-];
-
 const FLOOR_ORDER = ['B2', 'B1', 'G', '1', '2', '3', '4'];
 const MAIN_BUILDING_CODE = 'ENG';
-
-const TYPE_STROKES = {
-  classroom: '#7c3aed',
-  lecture_hall: '#1d4ed8',
-  lab: '#22a060',
-  office: '#b45309',
-  corridor: '#b0bcd0',
-  restroom: '#2563eb',
-  bathroom: '#7c3aed',
-  elevator: '#8b5cf6',
-  stairs: '#ef4444',
-  emergency_exit: '#ef4444',
-  emergency_stairs: '#ef4444',
-  storage: '#64748b',
-  default: '#b0bcd0',
-};
 
 function normalizeRoomSearch(value) {
   return String(value || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
@@ -227,7 +188,7 @@ function getBlockCssClass(block, selected, connecting) {
   if (type === 'lecture_hall') classes.push('mec-design-block--lecture');
   if (type === 'office') classes.push('mec-design-block--office');
   if (type === 'restroom') classes.push('mec-design-block--restroom');
-  if (type === 'bathroom') classes.push('mec-design-block--bathroom');
+  if (type === 'accessible_restroom') classes.push('mec-design-block--accessible-restroom');
   if (type === 'elevator') classes.push('mec-design-block--elevator');
   if (type === 'stairs' || type === 'emergency_stairs') classes.push('mec-design-block--stairs');
 
@@ -237,6 +198,8 @@ function getBlockCssClass(block, selected, connecting) {
 export default function MapEditorPage() {
   const [searchParams] = useSearchParams();
   const initialFloorId = searchParams.get('floor');
+
+  const { roomTypes } = useRoomTypes();
 
   const [buildings, setBuildings] = useState([]);
   const [floors, setFloors] = useState([]);
@@ -255,7 +218,7 @@ export default function MapEditorPage() {
   const [newRoomForm, setNewRoomForm] = useState({
     room_number: '',
     name: '',
-    type: 'classroom',
+    type: 'lecture_hall',
     department: '',
     capacity: '',
   });
@@ -994,7 +957,7 @@ export default function MapEditorPage() {
       setShowAddModal(false);
       setAddWizardStep(1);
       setAddWizardShape('rect');
-      setNewRoomForm({ room_number: '', name: '', type: 'classroom', department: '', capacity: '' });
+      setNewRoomForm({ room_number: '', name: '', type: 'lecture_hall', department: '', capacity: '' });
 
       toast.success(`Room ${saved.room_number} added`);
     } catch (err) {
@@ -1439,8 +1402,8 @@ export default function MapEditorPage() {
                       )
                     }
                   >
-                    {ROOM_TYPES.map(type => (
-                      <option key={type} value={type}>{roomTypeLabel(type)}</option>
+                    {roomTypes.map(rt => (
+                      <option key={rt.value} value={rt.value}>{rt.label_en}</option>
                     ))}
                   </select>
                 </div>
@@ -1658,7 +1621,7 @@ export default function MapEditorPage() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <Input label="Room Number *" required value={newRoomForm.room_number} onChange={e => setNewRoomForm(f => ({ ...f, room_number: e.target.value }))} placeholder="e.g. 2590" />
             <Input label="Room Name *" required value={newRoomForm.name} onChange={e => setNewRoomForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. Computer Lab" />
-            <Select label="Type *" value={newRoomForm.type} onChange={e => setNewRoomForm(f => ({ ...f, type: e.target.value }))} options={ROOM_TYPES.map(t => ({ value: t, label: roomTypeLabel(t) }))} />
+            <Select label="Type *" value={newRoomForm.type} onChange={e => setNewRoomForm(f => ({ ...f, type: e.target.value }))} options={roomTypes.map(rt => ({ value: rt.value, label: rt.label_en }))} />
             <div className="form-row">
               <Input label="Department" value={newRoomForm.department} onChange={e => setNewRoomForm(f => ({ ...f, department: e.target.value }))} placeholder="Optional" />
               <Input label="Capacity" type="number" value={newRoomForm.capacity} onChange={e => setNewRoomForm(f => ({ ...f, capacity: e.target.value }))} placeholder="Optional" />
