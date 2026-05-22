@@ -219,18 +219,25 @@ export function SearchableSelect({
   const inputRef     = useRef(null);
   const listRef      = useRef(null);
 
-  // Close on outside click OR any scroll (dropdown stays anchored via fixed pos)
+  // Close on outside click or external scroll (but NOT when scrolling inside the list).
   useEffect(() => {
     if (!open) return;
     function close() { setOpen(false); setQuery(''); }
     function onMouse(e) {
       if (containerRef.current && !containerRef.current.contains(e.target)) close();
     }
+    function onScroll(e) {
+      // Scrolling inside the dropdown list — keep it open.
+      if (listRef.current && listRef.current.contains(e.target)) return;
+      // Scrolling anywhere else (modal body, page) — close so the fixed panel
+      // doesn't float at the wrong position.
+      close();
+    }
     document.addEventListener('mousedown', onMouse);
-    document.addEventListener('scroll', close, true);
+    document.addEventListener('scroll', onScroll, true);
     return () => {
       document.removeEventListener('mousedown', onMouse);
-      document.removeEventListener('scroll', close, true);
+      document.removeEventListener('scroll', onScroll, true);
     };
   }, [open]);
 

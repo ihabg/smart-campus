@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { semesterAPI, scheduleAPI, roomAPI } from '../../api';
 import { SectionFormModal } from './AdminPages';
 import { ConfirmDialog } from '../../components/ui/index';
-import { useCourses, useInstructors } from '../../hooks/index';
+import { useCourses, useInstructors, useRoomTypes } from '../../hooks/index';
 import { daysArrayToString, formatTime, getErrorMessage } from '../../utils/helpers';
 import toast from 'react-hot-toast';
 
@@ -146,33 +146,32 @@ function PlaceholderTab({ name }) {
 // ─── Sections tab ─────────────────────────────────────────────
 const SECTIONS_LIMIT = 50;
 
-// Room types that are valid teaching/learning spaces.
-// Offices, corridors, bathrooms, storage, etc. are excluded.
-const TEACHING_ROOM_TYPES = new Set([
-  'classroom',
-  'lecture_hall',
-  'lab',
-  'engineering_drawing_room',
-  'engineering_drawing_studio',
-  'amphitheater',
-]);
-
 function SectionsTab({ semester, academicYear, onDataChanged }) {
   // ── Lookup data for the form modal ─────────────────────────
   const { courses: allCourses }         = useCourses({ limit: 1000 });
   const { instructors: allInstructors } = useInstructors({ limit: 1000, active_only: 'true' });
-  const [lookupRooms, setLookupRooms]   = useState([]);
+  const { roomTypes }                   = useRoomTypes();
+  const [allRooms, setAllRooms]         = useState([]);
 
   // Filter to Faculty of Engineering: any department containing "Engineering" (case-insensitive)
   const lookupCourses     = (allCourses     || []).filter(c => (c.department || '').toLowerCase().includes('engineering'));
   const lookupInstructors = (allInstructors || []).filter(i => (i.department || '').toLowerCase().includes('engineering'));
 
+  // Teaching room types come from the DB metadata — no hardcoding.
+  // If a type is later marked is_teaching=true in room_types, it appears here automatically.
+  const teachingTypeValues = useMemo(
+    () => new Set(roomTypes.filter(rt => rt.is_teaching).map(rt => rt.value)),
+    [roomTypes]
+  );
+
+  const lookupRooms = useMemo(
+    () => allRooms.filter(r => teachingTypeValues.has((r.type || '').toLowerCase())),
+    [allRooms, teachingTypeValues]
+  );
+
   useEffect(() => {
     roomAPI.getAll({ active_only: 'true' })
-      .then(res => {
-        const all = res.data?.data?.rooms || [];
-        setLookupRooms(all.filter(r => TEACHING_ROOM_TYPES.has((r.type || '').toLowerCase())));
-      })
+      .then(res => setAllRooms(res.data?.data?.rooms || []))
       .catch(() => {});
   }, []);
 

@@ -198,6 +198,11 @@ export const mapEditorAPI = {
   saveRoomPosition: (room_id, data) =>
     api.patch(`/map-editor/rooms/${room_id}/position`, data)
 };
+// ─── roomTypeAPI ─────────────────────────────────────────────
+export const roomTypeAPI = {
+  getAll: () => api.get('/room-types'),
+};
+
 // ─── semesterAPI ─────────────────────────────────────────────
 export const semesterAPI = {
   getSemesterStats: (semester, academic_year, extra = {}) =>

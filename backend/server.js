@@ -30,6 +30,7 @@ const facultyRoutes      = require('./routes/faculty');
 const officeHoursRoutes  = require('./routes/officeHours');
 const courseRoutes       = require('./routes/courses');
 const instructorRoutes   = require('./routes/instructors');
+const roomTypeRoutes     = require('./routes/roomTypes');
 
 const app  = express();
 const PORT = process.env.PORT || 5000;
@@ -102,6 +103,7 @@ app.use('/api/rooms',         roomRoutes);
 app.use('/api/schedule',      scheduleRoutes);
 app.use('/api/courses',       courseRoutes);
 app.use('/api/instructors',   instructorRoutes);
+app.use('/api/room-types',    roomTypeRoutes);
 app.use('/api/search',        searchRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/map-editor',    mapEditorRoutes);

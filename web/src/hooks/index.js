@@ -318,3 +318,5 @@ export function useNotifications() {
 
   return { notifications, unreadCount, loading, pagination, refetch: fetch, markRead, markAllRead };
 }
+
+export { useRoomTypes } from './useRoomTypes';
