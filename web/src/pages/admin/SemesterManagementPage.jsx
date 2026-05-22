@@ -1,5 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { semesterAPI } from '../../api';
+import { semesterAPI, scheduleAPI, roomAPI } from '../../api';
+import { SectionFormModal } from './AdminPages';
+import { ConfirmDialog } from '../../components/ui/index';
+import { useCourses, useInstructors } from '../../hooks/index';
+import { daysArrayToString, formatTime, getErrorMessage } from '../../utils/helpers';
+import toast from 'react-hot-toast';
 
 const SEMESTERS = [
   { value: 'fall',   label: 'Fall'   },
@@ -10,6 +15,10 @@ const NOW = new Date().getFullYear();
 const YEAR_MIN = 2020;
 const YEAR_MAX = 2035;
 const TABS = ['Sections', 'Timetable', 'Enrollments', 'Doctors', 'Rooms', 'Validation'];
+
+// Faculty filter: show only Engineering departments (case-insensitive contains match).
+// Mathematics, Physics, Chemistry, Statistics, Geology, etc. are excluded automatically.
+const DEPT_FILTER = 'Engineering';
 
 const DAY_MAP = {
   0: 'Sun', 1: 'Mon', 2: 'Tue', 3: 'Wed', 4: 'Thu', 5: 'Fri', 6: 'Sat',
@@ -134,6 +143,287 @@ function PlaceholderTab({ name }) {
   );
 }
 
+// ─── Sections tab ─────────────────────────────────────────────
+const SECTIONS_LIMIT = 50;
+
+// Room types that are valid teaching/learning spaces.
+// Offices, corridors, bathrooms, storage, etc. are excluded.
+const TEACHING_ROOM_TYPES = new Set([
+  'classroom',
+  'lecture_hall',
+  'lab',
+  'engineering_drawing_room',
+  'engineering_drawing_studio',
+  'amphitheater',
+]);
+
+function SectionsTab({ semester, academicYear, onDataChanged }) {
+  // ── Lookup data for the form modal ─────────────────────────
+  const { courses: allCourses }         = useCourses({ limit: 1000 });
+  const { instructors: allInstructors } = useInstructors({ limit: 1000, active_only: 'true' });
+  const [lookupRooms, setLookupRooms]   = useState([]);
+
+  // Filter to Faculty of Engineering: any department containing "Engineering" (case-insensitive)
+  const lookupCourses     = (allCourses     || []).filter(c => (c.department || '').toLowerCase().includes('engineering'));
+  const lookupInstructors = (allInstructors || []).filter(i => (i.department || '').toLowerCase().includes('engineering'));
+
+  useEffect(() => {
+    roomAPI.getAll({ active_only: 'true' })
+      .then(res => {
+        const all = res.data?.data?.rooms || [];
+        setLookupRooms(all.filter(r => TEACHING_ROOM_TYPES.has((r.type || '').toLowerCase())));
+      })
+      .catch(() => {});
+  }, []);
+
+  // ── Sections table state ────────────────────────────────────
+  const [sections, setSections] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(false);
+  const [showCreate, setShowCreate] = useState(false);
+  const [editSection, setEditSection] = useState(null);
+  const [deactivateTarget, setDeactivateTarget] = useState(null);
+  const [deactivateLoading, setDeactivateLoading] = useState(false);
+
+  const loadSections = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await scheduleAPI.getAll({
+        semester,
+        academic_year: academicYear,
+        page,
+        limit: SECTIONS_LIMIT,
+        department_contains: DEPT_FILTER,
+      });
+      const d = res.data?.data || {};
+      setSections(d.sections || []);
+      setTotal(d.pagination?.total || 0);
+    } catch {
+      setSections([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [semester, academicYear, page]);
+
+  useEffect(() => { loadSections(); }, [loadSections]);
+
+  // Reset to page 1 when semester/year changes
+  useEffect(() => { setPage(1); }, [semester, academicYear]);
+
+  const handleSaved = () => {
+    setShowCreate(false);
+    setEditSection(null);
+    loadSections();
+    onDataChanged();
+  };
+
+  const handleDeactivate = async () => {
+    if (!deactivateTarget?.id) return;
+    setDeactivateLoading(true);
+    try {
+      await scheduleAPI.update(deactivateTarget.id, { is_active: false });
+      toast.success('Section deactivated');
+      setDeactivateTarget(null);
+      loadSections();
+      onDataChanged();
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setDeactivateLoading(false);
+    }
+  };
+
+  const totalPages = Math.ceil(total / SECTIONS_LIMIT);
+
+  return (
+    <div>
+      {/* Top bar */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+        <div style={{ fontSize: 13, color: '#64748b' }}>
+          {loading ? 'Loading…' : `${total} section${total !== 1 ? 's' : ''} · ${cap(semester)} ${academicYear}`}
+        </div>
+        <button
+          onClick={() => setShowCreate(true)}
+          style={{
+            padding: '8px 16px', borderRadius: 8, background: '#2563eb',
+            color: '#fff', border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600,
+          }}
+        >
+          + Add Section
+        </button>
+      </div>
+
+      {/* Empty state */}
+      {!loading && sections.length === 0 && (
+        <div style={{ padding: 48, textAlign: 'center', color: '#94a3b8', border: '2px dashed #e2e8f0', borderRadius: 12 }}>
+          <div style={{ fontSize: 28, marginBottom: 8 }}>📋</div>
+          <div style={{ fontSize: 14, fontWeight: 600, color: '#374151', marginBottom: 4 }}>No sections found</div>
+          <div style={{ fontSize: 13 }}>Add the first section for this semester using the button above.</div>
+        </div>
+      )}
+
+      {/* Loading skeleton */}
+      {loading && sections.length === 0 && (
+        <div style={{ padding: 48, textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>Loading sections…</div>
+      )}
+
+      {/* Table */}
+      {sections.length > 0 && (
+        <div style={{ border: '1px solid #e2e8f0', borderRadius: 10, overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr style={{ background: '#f1f5f9' }}>
+                {['Course', 'Sec #', 'Doctor', 'Days', 'Time', 'Room', 'Enrolled / Cap', 'Actions'].map(h => (
+                  <th key={h} style={{
+                    padding: '10px 12px', textAlign: 'left', color: '#64748b',
+                    fontWeight: 600, fontSize: 11, textTransform: 'uppercase',
+                    whiteSpace: 'nowrap', borderBottom: '1px solid #e2e8f0',
+                  }}>
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {sections.map((s, i) => (
+                <tr key={s.id} style={{
+                  background: i % 2 === 0 ? '#fff' : '#f8fafc',
+                  borderBottom: '1px solid #e2e8f0',
+                }}>
+                  <td style={{ padding: '9px 12px' }}>
+                    <div style={{ fontWeight: 600, color: '#111827' }}>{s.course_code}</div>
+                    <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>{s.course_name}</div>
+                  </td>
+                  <td style={{ padding: '9px 12px', color: '#374151', fontFamily: 'monospace', fontWeight: 600 }}>
+                    {s.section_number}
+                  </td>
+                  <td style={{ padding: '9px 12px', color: '#374151' }}>
+                    {s.instructor_name || <span style={{ color: '#94a3b8' }}>—</span>}
+                  </td>
+                  <td style={{ padding: '9px 12px', color: '#374151', whiteSpace: 'nowrap' }}>
+                    {daysArrayToString(s.day_of_week) || <span style={{ color: '#94a3b8' }}>—</span>}
+                  </td>
+                  <td style={{ padding: '9px 12px', color: '#374151', whiteSpace: 'nowrap' }}>
+                    {formatTime(s.start_time)} – {formatTime(s.end_time)}
+                  </td>
+                  <td style={{ padding: '9px 12px' }}>
+                    {s.room_number ? (
+                      <span style={{
+                        fontSize: 12, padding: '2px 8px', borderRadius: 6,
+                        background: '#f1f5f9', color: '#374151', border: '1px solid #e2e8f0',
+                      }}>
+                        {s.room_number}
+                      </span>
+                    ) : <span style={{ color: '#94a3b8' }}>—</span>}
+                  </td>
+                  <td style={{ padding: '9px 12px' }}>
+                    <span style={{ color: s.max_capacity && s.enrolled >= s.max_capacity ? '#dc2626' : '#111827' }}>
+                      {s.enrolled ?? 0}
+                    </span>
+                    <span style={{ color: '#94a3b8' }}> / {s.max_capacity ?? '—'}</span>
+                  </td>
+                  <td style={{ padding: '9px 12px' }}>
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      <button
+                        onClick={() => setEditSection(s)}
+                        title="Edit section"
+                        style={{
+                          padding: '4px 8px', borderRadius: 6, border: '1px solid #e2e8f0',
+                          background: '#fff', cursor: 'pointer', color: '#2563eb', fontSize: 13,
+                        }}
+                      >
+                        ✏️
+                      </button>
+                      <button
+                        onClick={() => setDeactivateTarget(s)}
+                        title="Deactivate section"
+                        style={{
+                          padding: '4px 8px', borderRadius: 6, border: '1px solid #fecaca',
+                          background: '#fff', cursor: 'pointer', color: '#dc2626', fontSize: 13,
+                        }}
+                      >
+                        🗑
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'center', alignItems: 'center', marginTop: 16 }}>
+          <button
+            disabled={page <= 1}
+            onClick={() => setPage(p => p - 1)}
+            style={{
+              padding: '6px 14px', borderRadius: 6, border: '1px solid #e2e8f0', fontSize: 13,
+              background: page <= 1 ? '#f8fafc' : '#fff', cursor: page <= 1 ? 'not-allowed' : 'pointer',
+              color: page <= 1 ? '#94a3b8' : '#374151',
+            }}
+          >
+            ← Prev
+          </button>
+          <span style={{ fontSize: 13, color: '#64748b' }}>Page {page} of {totalPages}</span>
+          <button
+            disabled={page >= totalPages}
+            onClick={() => setPage(p => p + 1)}
+            style={{
+              padding: '6px 14px', borderRadius: 6, border: '1px solid #e2e8f0', fontSize: 13,
+              background: page >= totalPages ? '#f8fafc' : '#fff', cursor: page >= totalPages ? 'not-allowed' : 'pointer',
+              color: page >= totalPages ? '#94a3b8' : '#374151',
+            }}
+          >
+            Next →
+          </button>
+        </div>
+      )}
+
+      {/* Create modal */}
+      <SectionFormModal
+        open={showCreate}
+        onClose={() => setShowCreate(false)}
+        onSaved={handleSaved}
+        defaultSemester={semester}
+        defaultAcademicYear={academicYear}
+        title="Add Section"
+        externalCourses={lookupCourses}
+        externalInstructors={lookupInstructors}
+        externalRooms={lookupRooms}
+      />
+
+      {/* Edit modal */}
+      <SectionFormModal
+        open={!!editSection}
+        onClose={() => setEditSection(null)}
+        existingSection={editSection}
+        onSaved={handleSaved}
+        defaultSemester={semester}
+        defaultAcademicYear={academicYear}
+        title="Edit Section"
+        externalCourses={lookupCourses}
+        externalInstructors={lookupInstructors}
+        externalRooms={lookupRooms}
+      />
+
+      {/* Deactivate confirmation */}
+      <ConfirmDialog
+        open={!!deactivateTarget}
+        onClose={() => setDeactivateTarget(null)}
+        onConfirm={handleDeactivate}
+        loading={deactivateLoading}
+        danger
+        title="Deactivate Section"
+        message={`Deactivate "${deactivateTarget?.course_code} — Section ${deactivateTarget?.section_number}"? The section will be hidden from the schedule but not permanently deleted.`}
+      />
+    </div>
+  );
+}
+
 // ─── Main page ────────────────────────────────────────────────
 export default function SemesterManagementPage() {
   const [semester, setSemester] = useState('fall');
@@ -152,7 +442,7 @@ export default function SemesterManagementPage() {
     setStatsLoading(true);
     setError(null);
     try {
-      const res = await semesterAPI.getSemesterStats(semester, academicYear);
+      const res = await semesterAPI.getSemesterStats(semester, academicYear, { department_contains: DEPT_FILTER });
       setStats(res.data.data);
     } catch {
       setError('Failed to load stats — check semester and year values.');
@@ -165,7 +455,7 @@ export default function SemesterManagementPage() {
     if (!semester || !academicYear) return;
     setMeetingsLoading(true);
     try {
-      const res = await semesterAPI.getSemesterMeetings(semester, academicYear);
+      const res = await semesterAPI.getSemesterMeetings(semester, academicYear, { department_contains: DEPT_FILTER });
       setMeetings(res.data.data.meetings || []);
     } catch {
       setMeetings([]);
@@ -177,6 +467,12 @@ export default function SemesterManagementPage() {
   // Auto-load whenever semester or academic year changes
   useEffect(() => { loadStats(); }, [loadStats]);
   useEffect(() => { if (activeTab === 'Timetable') loadMeetings(); }, [activeTab, loadMeetings]);
+
+  // Called by SectionsTab after any create/edit/deactivate
+  const handleSectionDataChanged = useCallback(() => {
+    loadStats();
+    loadMeetings();
+  }, [loadStats, loadMeetings]);
 
   const statCards = stats ? [
     { label: 'Total Sections',          value: stats.total_sections,              icon: '📋' },
@@ -346,10 +642,19 @@ export default function SemesterManagementPage() {
       </div>
 
       {/* ── Tab panels ── */}
-      {activeTab === 'Timetable'
-        ? <TimetableTab meetings={meetings} loading={meetingsLoading} />
-        : <PlaceholderTab name={activeTab} />
-      }
+      {activeTab === 'Sections' && (
+        <SectionsTab
+          semester={semester}
+          academicYear={academicYear}
+          onDataChanged={handleSectionDataChanged}
+        />
+      )}
+      {activeTab === 'Timetable' && (
+        <TimetableTab meetings={meetings} loading={meetingsLoading} />
+      )}
+      {activeTab !== 'Sections' && activeTab !== 'Timetable' && (
+        <PlaceholderTab name={activeTab} />
+      )}
     </div>
   );
 }

@@ -454,6 +454,7 @@ async function getAllSections(req, res, next) {
     const {
       room_id, floor_id, course_id, instructor_id,
       semester, academic_year, day,
+      department_contains,
       page = 1, limit = 50,
     } = req.query;
 
@@ -485,6 +486,10 @@ async function getAllSections(req, res, next) {
     if (floor_id) {
       sql += ` AND s.room_id IN (SELECT id FROM rooms WHERE floor_id = $${idx++})`;
       params.push(floor_id);
+    }
+    if (department_contains) {
+      params.push(`%${department_contains}%`);
+      sql += ` AND c.department ILIKE $${idx++}`;
     }
 
     const countResult = await query(`SELECT COUNT(*) FROM (${sql}) t`, params);
@@ -779,7 +784,7 @@ async function dropEnrollment(req, res, next) {
 // Returns summary counts for the Semester Management dashboard cards.
 async function getSemesterStats(req, res, next) {
   try {
-    const { semester, academic_year } = req.query;
+    const { semester, academic_year, department_contains } = req.query;
 
     if (!semester || !academic_year) {
       return res.status(400).json({
@@ -788,36 +793,45 @@ async function getSemesterStats(req, res, next) {
       });
     }
 
+    const params = [semester, academic_year];
+    let deptClause = '';
+    if (department_contains) {
+      params.push(`%${department_contains}%`);
+      deptClause = ` AND c.department ILIKE $3`;
+    }
+
     // Run the section-level aggregates and the meetings count in parallel.
     const [sectionsRes, meetingsRes] = await Promise.all([
 
       query(
         `SELECT
-           COUNT(*)::int                                                    AS total_sections,
-           COUNT(DISTINCT course_id)::int                                   AS total_courses,
-           COUNT(DISTINCT instructor_id)
-             FILTER (WHERE instructor_id IS NOT NULL)::int                  AS instructors_assigned,
-           COUNT(*) FILTER (WHERE instructor_id IS NULL)::int               AS sections_without_instructor,
-           COUNT(DISTINCT room_id)
-             FILTER (WHERE room_id IS NOT NULL)::int                        AS rooms_assigned,
-           COUNT(*) FILTER (WHERE room_id IS NULL)::int                     AS sections_without_room,
-           COALESCE(SUM(enrolled), 0)::int                                  AS total_enrolled,
-           COALESCE(SUM(max_capacity), 0)::int                              AS total_capacity
-         FROM sections
-         WHERE is_active = TRUE
-           AND semester     = $1
-           AND academic_year = $2`,
-        [semester, academic_year]
+           COUNT(*)::int                                                         AS total_sections,
+           COUNT(DISTINCT s.course_id)::int                                      AS total_courses,
+           COUNT(DISTINCT s.instructor_id)
+             FILTER (WHERE s.instructor_id IS NOT NULL)::int                     AS instructors_assigned,
+           COUNT(*) FILTER (WHERE s.instructor_id IS NULL)::int                  AS sections_without_instructor,
+           COUNT(DISTINCT s.room_id)
+             FILTER (WHERE s.room_id IS NOT NULL)::int                           AS rooms_assigned,
+           COUNT(*) FILTER (WHERE s.room_id IS NULL)::int                        AS sections_without_room,
+           COALESCE(SUM(s.enrolled), 0)::int                                     AS total_enrolled,
+           COALESCE(SUM(s.max_capacity), 0)::int                                 AS total_capacity
+         FROM sections s
+         JOIN courses c ON c.id = s.course_id
+         WHERE s.is_active = TRUE
+           AND s.semester     = $1
+           AND s.academic_year = $2${deptClause}`,
+        params
       ),
 
       query(
         `SELECT COUNT(*)::int AS total_meetings
          FROM section_meetings sm
          JOIN sections s ON s.id = sm.section_id
+         JOIN courses  c ON c.id = s.course_id
          WHERE s.is_active    = TRUE
            AND s.semester     = $1
-           AND s.academic_year = $2`,
-        [semester, academic_year]
+           AND s.academic_year = $2${deptClause}`,
+        params
       ),
 
     ]);
@@ -857,13 +871,20 @@ async function getSemesterStats(req, res, next) {
 // section, course, instructor, and room data for the Timetable tab.
 async function getSemesterMeetings(req, res, next) {
   try {
-    const { semester, academic_year } = req.query;
+    const { semester, academic_year, department_contains } = req.query;
 
     if (!semester || !academic_year) {
       return res.status(400).json({
         success: false,
         message: 'semester and academic_year query parameters are required.',
       });
+    }
+
+    const params = [semester, academic_year];
+    let deptClause = '';
+    if (department_contains) {
+      params.push(`%${department_contains}%`);
+      deptClause = ` AND c.department ILIKE $3`;
     }
 
     const result = await query(
@@ -908,9 +929,9 @@ async function getSemesterMeetings(req, res, next) {
        LEFT JOIN buildings b ON b.id = f.building_id
        WHERE s.is_active    = TRUE
          AND s.semester     = $1
-         AND s.academic_year = $2
+         AND s.academic_year = $2${deptClause}
        ORDER BY sm.day_of_week, sm.start_time, c.code`,
-      [semester, academic_year]
+      params
     );
 
     res.json({

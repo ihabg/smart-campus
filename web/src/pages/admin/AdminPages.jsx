@@ -1361,7 +1361,7 @@ export function AdminSchedule() {
   );
 }
 
-function SectionFormModal({
+export function SectionFormModal({
   open,
   onClose,
   existingSection,
@@ -1369,6 +1369,11 @@ function SectionFormModal({
   defaultSemester,
   defaultAcademicYear,
   title,
+  // Optional pre-loaded lookup data. When provided the modal skips its
+  // internal fetch and uses these arrays directly.
+  externalCourses,
+  externalInstructors,
+  externalRooms,
 }) {
   const isEdit = Boolean(existingSection?.id);
 
@@ -1408,7 +1413,8 @@ function SectionFormModal({
   useEffect(() => {
     if (!open) return;
 
-    loadLookups();
+    // Skip internal fetch when the caller already supplies the data.
+    if (!externalCourses) loadLookups();
 
     if (existingSection) {
       setForm(sectionToForm(existingSection));
@@ -1427,6 +1433,7 @@ function SectionFormModal({
     defaultSemester,
     defaultAcademicYear,
     loadLookups,
+    externalCourses,
   ]);
 
   const set = key => event => {
@@ -1533,12 +1540,17 @@ function SectionFormModal({
     }
   };
 
-  const courseOptions = courses.map(course => ({
+  // Prefer external data when supplied by the parent.
+  const activeCourses     = externalCourses     ?? courses;
+  const activeInstructors = externalInstructors ?? instructors;
+  const activeRooms       = externalRooms       ?? rooms;
+
+  const courseOptions = activeCourses.map(course => ({
     value: course.id,
     label: `${course.code} — ${course.name}`,
   }));
 
-  const instructorOptions = instructors.map(instructor => ({
+  const instructorOptions = activeInstructors.map(instructor => ({
     value: instructor.id,
     label:
       instructor.instructor_name ||
@@ -1548,10 +1560,12 @@ function SectionFormModal({
       instructor.email,
   }));
 
-  const roomOptions = rooms.map(room => ({
-    value: room.id,
-    label: `${room.room_number} — ${room.name || 'Room'}`,
-  }));
+  const roomOptions = activeRooms.map(room => {
+    const parts = [room.room_number];
+    if (room.type) parts.push((room.type).replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()));
+    if (room.capacity) parts.push(`Cap: ${room.capacity}`);
+    return { value: room.id, label: parts.join(' — ') };
+  });
 
   return (
     <Modal
@@ -1576,7 +1590,7 @@ function SectionFormModal({
         </>
       }
     >
-      {lookupsLoading ? (
+      {lookupsLoading && !externalCourses ? (
         <Spinner center />
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>

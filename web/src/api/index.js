@@ -200,11 +200,11 @@ export const mapEditorAPI = {
 };
 // ─── semesterAPI ─────────────────────────────────────────────
 export const semesterAPI = {
-  getSemesterStats: (semester, academic_year) =>
-    api.get('/schedule/stats', { params: { semester, academic_year } }),
+  getSemesterStats: (semester, academic_year, extra = {}) =>
+    api.get('/schedule/stats', { params: { semester, academic_year, ...extra } }),
 
-  getSemesterMeetings: (semester, academic_year) =>
-    api.get('/schedule/meetings', { params: { semester, academic_year } }),
+  getSemesterMeetings: (semester, academic_year, extra = {}) =>
+    api.get('/schedule/meetings', { params: { semester, academic_year, ...extra } }),
 };
 
 // ─── courseAPI ────────────────────────────────────────────────
