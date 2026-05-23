@@ -1765,7 +1765,7 @@ async function adminSearchStudents(req, res, next) {
 // Body: { section_id, student_id }
 async function adminEnrollStudent(req, res, next) {
   try {
-    const { section_id, student_id } = req.body;
+    const { section_id, student_id, force } = req.body;
 
     if (!section_id || !student_id) {
       return res.status(400).json({
@@ -1786,6 +1786,8 @@ async function adminEnrollStudent(req, res, next) {
     if (!userRes.rows.length) {
       return res.status(404).json({ success: false, message: 'Student not found.' });
     }
+
+    // Duplicate check always runs first — force cannot bypass this
     if (existingRes.rows.length && existingRes.rows[0].status === 'enrolled') {
       return res.status(409).json({
         success: false,
@@ -1795,11 +1797,14 @@ async function adminEnrollStudent(req, res, next) {
     }
 
     const { max_capacity, enrolled } = secRes.rows[0];
-    if (max_capacity !== null && enrolled >= max_capacity) {
+
+    // Capacity check — only bypassed when force === true
+    if (max_capacity !== null && enrolled >= max_capacity && !force) {
       return res.status(409).json({
         success: false,
-        message: 'Section is at full capacity.',
+        message: 'Section is full. Force enrollment required.',
         at_capacity: true,
+        can_force: true,
       });
     }
 
@@ -1824,7 +1829,8 @@ async function adminEnrollStudent(req, res, next) {
 
     res.status(201).json({
       success: true,
-      message: 'Student enrolled successfully.',
+      message: force ? 'Student force enrolled successfully.' : 'Student enrolled successfully.',
+      forced: !!force,
       data: updatedSec.rows[0],
     });
   } catch (error) {

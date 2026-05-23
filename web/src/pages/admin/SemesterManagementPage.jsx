@@ -607,14 +607,16 @@ function EnrolledStudentsPanel({
 }
 
 function AddStudentPanel({ sectionId, sectionDetail, defaultDept, departments, onEnrolled }) {
-  const [search,      setSearch]      = useState('');
-  const [dept,        setDept]        = useState('');
-  const [year,        setYear]        = useState('');
-  const [results,     setResults]     = useState([]);
-  const [searching,   setSearching]   = useState(false);
-  const [searchError, setSearchError] = useState('');
-  const [searched,    setSearched]    = useState(false);
-  const [enrollingId, setEnrollingId] = useState(null);
+  const [search,       setSearch]       = useState('');
+  const [dept,         setDept]         = useState('');
+  const [year,         setYear]         = useState('');
+  const [results,      setResults]      = useState([]);
+  const [searching,    setSearching]    = useState(false);
+  const [searchError,  setSearchError]  = useState('');
+  const [searched,     setSearched]     = useState(false);
+  const [enrollingId,  setEnrollingId]  = useState(null);
+  const [forceTarget,  setForceTarget]  = useState(null);
+  const [forceLoading, setForceLoading] = useState(false);
   const timerRef = useRef(null);
 
   // Reset when section or college changes
@@ -625,6 +627,7 @@ function AddStudentPanel({ sectionId, sectionDetail, defaultDept, departments, o
     setResults([]);
     setSearchError('');
     setSearched(false);
+    setForceTarget(null);
   }, [sectionId, defaultDept]);
 
   useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); }, []);
@@ -658,8 +661,6 @@ function AddStudentPanel({ sectionId, sectionDetail, defaultDept, departments, o
   };
 
   const handleEnroll = async (student) => {
-    const full = sectionDetail?.max_capacity != null && sectionDetail.enrolled >= sectionDetail.max_capacity;
-    if (full) { toast.error('Section is at full capacity.'); return; }
     setEnrollingId(student.user_id);
     try {
       await enrollmentAPI.enrollStudent({ section_id: sectionId, student_id: student.user_id });
@@ -671,13 +672,37 @@ function AddStudentPanel({ sectionId, sectionDetail, defaultDept, departments, o
       if (data?.already_enrolled) {
         toast.error('Student is already enrolled.');
         setResults(prev => prev.map(r => r.user_id === student.user_id ? { ...r, already_enrolled: true } : r));
-      } else if (data?.at_capacity) {
-        toast.error('Section is at full capacity.');
+      } else if (data?.at_capacity && data?.can_force) {
+        // Show force enroll confirmation instead of a dead-end error
+        setForceTarget(student);
       } else {
         toast.error(getErrorMessage(err));
       }
     } finally {
       setEnrollingId(null);
+    }
+  };
+
+  const handleForceEnroll = async () => {
+    if (!forceTarget) return;
+    setForceLoading(true);
+    try {
+      await enrollmentAPI.enrollStudent({ section_id: sectionId, student_id: forceTarget.user_id, force: true });
+      toast.success(`${forceTarget.first_name} ${forceTarget.last_name} force enrolled successfully.`);
+      setResults(prev => prev.map(r => r.user_id === forceTarget.user_id ? { ...r, already_enrolled: true } : r));
+      setForceTarget(null);
+      onEnrolled();
+    } catch (err) {
+      const data = err.response?.data;
+      if (data?.already_enrolled) {
+        toast.error('Student is already enrolled.');
+        setResults(prev => prev.map(r => r.user_id === forceTarget.user_id ? { ...r, already_enrolled: true } : r));
+        setForceTarget(null);
+      } else {
+        toast.error(getErrorMessage(err));
+      }
+    } finally {
+      setForceLoading(false);
     }
   };
 
@@ -688,8 +713,8 @@ function AddStudentPanel({ sectionId, sectionDetail, defaultDept, departments, o
       <div style={{ fontSize: 14, fontWeight: 600, color: '#111827', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
         Add Student
         {isFull && (
-          <span style={{ fontSize: 11, color: '#dc2626', fontWeight: 600, padding: '2px 8px', background: '#fef2f2', borderRadius: 10, border: '1px solid #fecaca' }}>
-            Section Full
+          <span style={{ fontSize: 11, color: '#c2410c', fontWeight: 600, padding: '2px 8px', background: '#fff7ed', borderRadius: 10, border: '1px solid #fed7aa' }}>
+            Section Full — Force Enroll Available
           </span>
         )}
       </div>
@@ -761,10 +786,16 @@ function AddStudentPanel({ sectionId, sectionDetail, defaultDept, departments, o
                       ) : (
                         <button
                           onClick={() => handleEnroll(s)}
-                          disabled={enrollingId === s.user_id || isFull}
-                          style={{ padding: '3px 10px', borderRadius: 6, border: '1px solid #bfdbfe', background: (enrollingId === s.user_id || isFull) ? '#f8fafc' : '#eff6ff', cursor: (enrollingId === s.user_id || isFull) ? 'not-allowed' : 'pointer', color: '#2563eb', fontSize: 12, fontWeight: 500, whiteSpace: 'nowrap' }}
+                          disabled={enrollingId === s.user_id}
+                          style={
+                            enrollingId === s.user_id
+                              ? { padding: '3px 10px', borderRadius: 6, border: '1px solid #e2e8f0', background: '#f8fafc', cursor: 'not-allowed', color: '#94a3b8', fontSize: 12, fontWeight: 500, whiteSpace: 'nowrap' }
+                              : isFull
+                                ? { padding: '3px 10px', borderRadius: 6, border: '1px solid #fed7aa', background: '#fff7ed', cursor: 'pointer', color: '#c2410c', fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap' }
+                                : { padding: '3px 10px', borderRadius: 6, border: '1px solid #bfdbfe', background: '#eff6ff', cursor: 'pointer', color: '#2563eb', fontSize: 12, fontWeight: 500, whiteSpace: 'nowrap' }
+                          }
                         >
-                          {enrollingId === s.user_id ? 'Enrolling…' : 'Enroll'}
+                          {enrollingId === s.user_id ? 'Enrolling…' : isFull ? 'Force Enroll' : 'Enroll'}
                         </button>
                       )}
                     </td>
@@ -779,6 +810,64 @@ function AddStudentPanel({ sectionId, sectionDetail, defaultDept, departments, o
             </div>
           )}
         </>
+      )}
+
+      {/* Force enroll confirmation dialog */}
+      {forceTarget && (
+        <div
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+          onClick={e => { if (e.target === e.currentTarget && !forceLoading) setForceTarget(null); }}
+        >
+          <div style={{ background: '#fff', borderRadius: 14, padding: '24px 28px', maxWidth: 440, width: '100%', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+              <span style={{ fontSize: 22 }}>⚠️</span>
+              <div style={{ fontSize: 16, fontWeight: 700, color: '#92400e' }}>Section Full — Force Enroll?</div>
+            </div>
+
+            <div style={{ background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 8, padding: '12px 14px', marginBottom: 16, fontSize: 13 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, gap: 12 }}>
+                <span style={{ color: '#64748b', fontWeight: 500, whiteSpace: 'nowrap' }}>Section</span>
+                <span style={{ color: '#111827', fontWeight: 600, textAlign: 'right' }}>
+                  {sectionDetail?.course_code || '—'} — Sec {sectionDetail?.section_number || '—'}
+                </span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, gap: 12 }}>
+                <span style={{ color: '#64748b', fontWeight: 500, whiteSpace: 'nowrap' }}>Capacity</span>
+                <span style={{ color: '#dc2626', fontWeight: 700 }}>
+                  {sectionDetail?.enrolled ?? '—'} / {sectionDetail?.max_capacity ?? '∞'} (Full)
+                </span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+                <span style={{ color: '#64748b', fontWeight: 500, whiteSpace: 'nowrap' }}>Student</span>
+                <span style={{ color: '#111827', fontWeight: 600, textAlign: 'right' }}>
+                  {forceTarget.first_name} {forceTarget.last_name}
+                  {forceTarget.registration_number ? ` (${forceTarget.registration_number})` : ''}
+                </span>
+              </div>
+            </div>
+
+            <p style={{ fontSize: 13, color: '#374151', marginBottom: 20, lineHeight: 1.55 }}>
+              This section has reached its maximum capacity. Force enrolling will exceed the limit. This is an exceptional administrative action.
+            </p>
+
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+              <button
+                onClick={() => setForceTarget(null)}
+                disabled={forceLoading}
+                style={{ padding: '8px 18px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', cursor: forceLoading ? 'not-allowed' : 'pointer', color: '#374151', fontSize: 13, fontWeight: 500 }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleForceEnroll}
+                disabled={forceLoading}
+                style={{ padding: '8px 20px', borderRadius: 8, border: 'none', background: forceLoading ? '#fde68a' : '#f59e0b', cursor: forceLoading ? 'not-allowed' : 'pointer', color: '#fff', fontSize: 13, fontWeight: 700 }}
+              >
+                {forceLoading ? 'Enrolling…' : 'Force Enroll'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
