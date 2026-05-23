@@ -11,6 +11,7 @@ const {
 } = require('../middleware/validate');
 
 // Student routes
+router.get('/my/terms', protect, ctrl.getMyTerms);
 router.get('/my', protect, ctrl.getMySchedule);
 router.get('/today', protect, ctrl.getTodaySchedule);
 router.get('/materials', protect, ctrl.getStudentMaterials);
@@ -97,6 +98,35 @@ router.delete(
   protect,
   restrictTo('admin', 'super_admin'),
   ctrl.adminRemoveAllEnrollments
+);
+
+// ── Semester publish routes (static — must be before /:id) ───
+router.get(
+  '/semesters',
+  protect,
+  restrictTo('admin', 'super_admin'),
+  ctrl.listSemesters
+);
+
+router.post(
+  '/semesters/ensure',
+  protect,
+  restrictTo('admin', 'super_admin'),
+  ctrl.ensureSemesterRow
+);
+
+router.patch(
+  '/semesters/publish',
+  protect,
+  restrictTo('admin', 'super_admin'),
+  ctrl.publishSemester
+);
+
+router.patch(
+  '/semesters/unpublish',
+  protect,
+  restrictTo('admin', 'super_admin'),
+  ctrl.unpublishSemester
 );
 
 // Admin CRUD routes

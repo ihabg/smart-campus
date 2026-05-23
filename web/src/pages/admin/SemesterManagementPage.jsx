@@ -1257,6 +1257,17 @@ export default function SemesterManagementPage() {
   const [meetingsLoading, setMeetingsLoading] = useState(false);
   const [error, setError] = useState(null);
 
+  const [allSemesterStatuses, setAllSemesterStatuses] = useState([]);
+  const [statusLoading, setStatusLoading] = useState(false);
+  const [publishLoading, setPublishLoading] = useState(false);
+  const [publishConfirm, setPublishConfirm] = useState(false);
+  const [unpublishConfirm, setUnpublishConfirm] = useState(false);
+
+  const currentSemData = allSemesterStatuses.find(
+    s => s.semester === semester && s.academic_year === academicYear
+  );
+  const semesterStatus = currentSemData?.status || null;
+
   const loadStats = useCallback(async () => {
     if (!semester || !academicYear) return;
     setStatsLoading(true);
@@ -1298,6 +1309,55 @@ export default function SemesterManagementPage() {
     loadMeetings();
   }, [loadStats, loadMeetings]);
 
+  const loadSemesterStatuses = useCallback(async () => {
+    setStatusLoading(true);
+    try {
+      const res = await semesterAPI.list();
+      setAllSemesterStatuses(res.data?.data?.semesters || []);
+    } catch {
+      setAllSemesterStatuses([]);
+    } finally {
+      setStatusLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { loadSemesterStatuses(); }, [loadSemesterStatuses]);
+
+  useEffect(() => {
+    if (!semester || !academicYear) return;
+    semesterAPI.ensure({ semester, academic_year: academicYear })
+      .then(() => loadSemesterStatuses())
+      .catch(() => {});
+  }, [semester, academicYear]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handlePublish = async () => {
+    setPublishLoading(true);
+    try {
+      await semesterAPI.publish({ semester, academic_year: academicYear });
+      toast.success(`${cap(semester)} ${academicYear} published — students can now see their schedule.`);
+      setPublishConfirm(false);
+      await loadSemesterStatuses();
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setPublishLoading(false);
+    }
+  };
+
+  const handleUnpublish = async () => {
+    setPublishLoading(true);
+    try {
+      await semesterAPI.unpublish({ semester, academic_year: academicYear });
+      toast.success(`${cap(semester)} ${academicYear} set to draft — hidden from students.`);
+      setUnpublishConfirm(false);
+      await loadSemesterStatuses();
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setPublishLoading(false);
+    }
+  };
+
   const statCards = stats ? [
     { label: 'Total Sections',          value: stats.total_sections,              icon: '📋' },
     { label: 'Total Courses',           value: stats.total_courses,               icon: '📚' },
@@ -1323,28 +1383,60 @@ export default function SemesterManagementPage() {
           </p>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          <span style={{
-            fontSize: 11, padding: '3px 10px', borderRadius: 20, fontWeight: 600,
-            background: 'rgba(59,130,246,0.15)', color: '#60a5fa',
-            border: '1px solid rgba(59,130,246,0.3)',
-          }}>
-            Working Draft
-          </span>
-          <button disabled title="Coming in a future update" style={{
-            padding: '8px 14px', borderRadius: 8, background: '#f1f5f9',
-            color: '#94a3b8', border: '1px solid #e2e8f0',
-            cursor: 'not-allowed', fontSize: 13,
-          }}>
-            Generate Draft&nbsp;<span style={{ fontSize: 10, opacity: 0.7 }}>Coming Soon</span>
-          </button>
-          <button disabled title="Requires academic terms — Phase 2" style={{
-            padding: '8px 14px', borderRadius: 8, background: '#f1f5f9',
-            color: '#94a3b8', border: '1px solid #e2e8f0',
-            cursor: 'not-allowed', fontSize: 13,
-          }}>
-            Publish Semester&nbsp;<span style={{ fontSize: 10, opacity: 0.7 }}>Phase 2</span>
-          </button>
+          {statusLoading ? (
+            <span style={{ fontSize: 11, padding: '3px 10px', borderRadius: 20, fontWeight: 600, background: '#f1f5f9', color: '#94a3b8', border: '1px solid #e2e8f0' }}>
+              …
+            </span>
+          ) : semesterStatus === 'published' ? (
+            <span style={{ fontSize: 11, padding: '3px 10px', borderRadius: 20, fontWeight: 600, background: 'rgba(16,185,129,0.15)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)' }}>
+              Published
+            </span>
+          ) : (
+            <span style={{ fontSize: 11, padding: '3px 10px', borderRadius: 20, fontWeight: 600, background: 'rgba(59,130,246,0.15)', color: '#60a5fa', border: '1px solid rgba(59,130,246,0.3)' }}>
+              Draft
+            </span>
+          )}
+
+          {semesterStatus === 'published' ? (
+            <button
+              onClick={() => setUnpublishConfirm(true)}
+              disabled={publishLoading}
+              style={{ padding: '8px 14px', borderRadius: 8, background: '#fef3c7', color: '#92400e', border: '1px solid #fde68a', cursor: publishLoading ? 'not-allowed' : 'pointer', fontSize: 13, fontWeight: 600 }}
+            >
+              Set to Draft
+            </button>
+          ) : (
+            <button
+              onClick={() => setPublishConfirm(true)}
+              disabled={publishLoading || statusLoading}
+              style={{ padding: '8px 14px', borderRadius: 8, background: publishLoading || statusLoading ? '#f1f5f9' : '#2563eb', color: publishLoading || statusLoading ? '#94a3b8' : '#fff', border: 'none', cursor: publishLoading || statusLoading ? 'not-allowed' : 'pointer', fontSize: 13, fontWeight: 600 }}
+            >
+              {publishLoading ? 'Publishing…' : 'Publish Semester'}
+            </button>
+          )}
         </div>
+
+        {publishConfirm && (
+          <ConfirmDialog
+            open={true}
+            onClose={() => setPublishConfirm(false)}
+            onConfirm={handlePublish}
+            loading={publishLoading}
+            title="Publish Semester"
+            message={`Publish ${cap(semester)} ${academicYear}? Students will be able to see their schedule for this semester.`}
+          />
+        )}
+        {unpublishConfirm && (
+          <ConfirmDialog
+            open={true}
+            onClose={() => setUnpublishConfirm(false)}
+            onConfirm={handleUnpublish}
+            loading={publishLoading}
+            danger
+            title="Set to Draft"
+            message={`Set ${cap(semester)} ${academicYear} back to draft? Students will no longer see their schedule for this semester.`}
+          />
+        )}
       </div>
 
       {/* ── Controls ── */}

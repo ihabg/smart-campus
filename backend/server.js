@@ -7,6 +7,7 @@ const path         = require('path');
 const rateLimit    = require('express-rate-limit');
 
 const { testConnection } = require('./config/db');
+const { runSemesterMigration } = require('./controllers/scheduleController');
 const errorHandler       = require('./middleware/errorHandler');
 
 // ─── Route imports ───────────────────────────────────────────
@@ -167,6 +168,8 @@ app.use(errorHandler);
 async function startServer() {
   try {
     await testConnection();
+    await runSemesterMigration();
+    console.log('✅ Semester migration applied');
    app.listen(PORT, HOST, () => {
   console.log(`\n🚀 Smart Campus API running on ${HOST}:${PORT}`);
   console.log(`📡 Environment: ${process.env.NODE_ENV}`);

@@ -1,7 +1,8 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import axios from 'axios';
 
 import { useMySchedule } from '../hooks/index';
+import { scheduleAPI } from '../api/index';
 import { Spinner } from '../components/ui/index';
 import './SchedulePage.css';
 import { Link } from 'react-router-dom';
@@ -37,16 +38,33 @@ const TIME_SLOTS = [
 
 export default function SchedulePage() {
   const [view, setView] = useState('table');
-  const [semester, setSemester] = useState('spring');
-  const [year, setYear] = useState('2025/2026');
   const [officeHoursModal, setOfficeHoursModal] = useState(false);
   const [officeHours, setOfficeHours] = useState([]);
   const [selectedInstructor, setSelectedInstructor] = useState(null);
 
-  const { schedule, loading, error } = useMySchedule({
-    semester,
-    academic_year: year
-  });
+  const [terms, setTerms] = useState([]);
+  const [termsLoading, setTermsLoading] = useState(true);
+  const [selectedTermIdx, setSelectedTermIdx] = useState(0);
+
+  useEffect(() => {
+    setTermsLoading(true);
+    scheduleAPI.getMyTerms()
+      .then(res => {
+        const t = res.data?.data?.terms || [];
+        setTerms(t);
+        setSelectedTermIdx(0);
+      })
+      .catch(() => setTerms([]))
+      .finally(() => setTermsLoading(false));
+  }, []);
+
+  const selectedTerm = terms[selectedTermIdx] || null;
+  const semester = selectedTerm?.semester || '';
+  const year = selectedTerm?.academic_year || '';
+
+  const { schedule, loading, error } = useMySchedule(
+    selectedTerm ? { semester, academic_year: year } : {}
+  );
 const openOfficeHours = async (instructor) => {
   if (!instructor?.email) return;
 
@@ -86,6 +104,16 @@ const openOfficeHours = async (instructor) => {
     return sections.reduce((sum, sec) => sum + Number(sec.credit_hours || 0), 0);
   }, [sections]);
 
+  if (termsLoading) return <Spinner center />;
+
+  if (!termsLoading && terms.length === 0) {
+    return (
+      <div className="sc-page">
+        <div className="sc-empty">No active schedule is available yet.</div>
+      </div>
+    );
+  }
+
   if (loading) return <Spinner center />;
 
   if (error) {
@@ -105,16 +133,15 @@ const openOfficeHours = async (instructor) => {
         </div>
 
         <div className="sc-controls">
-          <select value={year} onChange={(e) => setYear(e.target.value)}>
-            <option value="2025/2026">2025/2026</option>
-            <option value="2024/2025">2024/2025</option>
-            <option value="2023/2024">2023/2024</option>
-          </select>
-
-          <select value={semester} onChange={(e) => setSemester(e.target.value)}>
-            <option value="fall">First Semester</option>
-            <option value="spring">Second Semester</option>
-            <option value="summer">Summer Semester</option>
+          <select
+            value={selectedTermIdx}
+            onChange={(e) => setSelectedTermIdx(Number(e.target.value))}
+          >
+            {terms.map((t, i) => (
+              <option key={`${t.semester}-${t.academic_year}`} value={i}>
+                {t.label || `${semesterName(t.semester)} ${t.academic_year}`}
+              </option>
+            ))}
           </select>
 
           <button

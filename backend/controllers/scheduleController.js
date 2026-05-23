@@ -316,9 +316,13 @@ async function getMySchedule(req, res, next) {
         GROUP BY section_id
       ) materials ON materials.section_id = s.id
 
+      LEFT JOIN semesters sem
+        ON sem.semester = s.semester::text AND sem.academic_year = s.academic_year
+
       WHERE e.student_id = $1
         AND e.status = 'enrolled'
         AND s.is_active = TRUE
+        AND sem.status = 'published'
     `;
 
     const params = [req.user.id];
@@ -2042,7 +2046,161 @@ async function adminRemoveAllEnrollments(req, res, next) {
   }
 }
 
+// ── Semester publish workflow ─────────────────────────────────
+
+async function runSemesterMigration() {
+  await query(`
+    CREATE TABLE IF NOT EXISTS semesters (
+      id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      semester      VARCHAR(20) NOT NULL
+                     CHECK (semester IN ('fall', 'spring', 'summer')),
+      academic_year VARCHAR(20) NOT NULL,
+      label         VARCHAR(50),
+      status        VARCHAR(10) NOT NULL DEFAULT 'draft'
+                     CHECK (status IN ('draft', 'published')),
+      created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (semester, academic_year)
+    )
+  `);
+
+  await query(`
+    INSERT INTO semesters (semester, academic_year, label, status)
+    SELECT DISTINCT
+      semester::text,
+      academic_year,
+      CASE semester::text
+        WHEN 'fall'   THEN 'Fall '
+        WHEN 'spring' THEN 'Spring '
+        WHEN 'summer' THEN 'Summer '
+        ELSE semester || ' '
+      END || academic_year,
+      'draft'
+    FROM sections
+    WHERE semester IS NOT NULL AND academic_year IS NOT NULL
+    ON CONFLICT (semester, academic_year) DO NOTHING
+  `);
+}
+
+async function getMyTerms(req, res, next) {
+  try {
+    const result = await query(
+      `SELECT
+         sm.semester,
+         sm.academic_year,
+         sm.label,
+         sm.status
+       FROM enrollments e
+       JOIN sections s ON s.id = e.section_id
+       JOIN semesters sm
+         ON sm.semester = s.semester::text AND sm.academic_year = s.academic_year
+       WHERE e.student_id = $1
+         AND e.status = 'enrolled'
+         AND COALESCE(s.is_active, true) = true
+         AND sm.status = 'published'
+       GROUP BY sm.semester, sm.academic_year, sm.label, sm.status
+       ORDER BY sm.academic_year DESC,
+         CASE sm.semester
+           WHEN 'summer' THEN 3
+           WHEN 'spring' THEN 2
+           WHEN 'fall'   THEN 1
+           ELSE 0
+         END DESC`,
+      [req.user.id]
+    );
+    res.json({ success: true, data: { terms: result.rows } });
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function listSemesters(req, res, next) {
+  try {
+    const result = await query(
+      `SELECT id, semester, academic_year, label, status, created_at, updated_at
+       FROM semesters
+       ORDER BY academic_year DESC,
+         CASE semester
+           WHEN 'summer' THEN 3
+           WHEN 'spring' THEN 2
+           WHEN 'fall'   THEN 1
+           ELSE 0
+         END DESC`
+    );
+    res.json({ success: true, data: { semesters: result.rows } });
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function ensureSemesterRow(req, res, next) {
+  try {
+    const { semester, academic_year } = req.body;
+    if (!semester || !academic_year) {
+      return res.status(400).json({ success: false, message: 'semester and academic_year are required' });
+    }
+    const label = `${semester.charAt(0).toUpperCase() + semester.slice(1)} ${academic_year}`;
+    const result = await query(
+      `INSERT INTO semesters (semester, academic_year, label, status)
+       VALUES ($1, $2, $3, 'draft')
+       ON CONFLICT (semester, academic_year) DO UPDATE SET updated_at = NOW()
+       RETURNING *`,
+      [semester, academic_year, label]
+    );
+    res.json({ success: true, data: { semester: result.rows[0] } });
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function publishSemester(req, res, next) {
+  try {
+    const { semester, academic_year } = req.body;
+    if (!semester || !academic_year) {
+      return res.status(400).json({ success: false, message: 'semester and academic_year are required' });
+    }
+    const label = `${semester.charAt(0).toUpperCase() + semester.slice(1)} ${academic_year}`;
+    await query(
+      `INSERT INTO semesters (semester, academic_year, label, status)
+       VALUES ($1, $2, $3, 'draft')
+       ON CONFLICT (semester, academic_year) DO NOTHING`,
+      [semester, academic_year, label]
+    );
+    const result = await query(
+      `UPDATE semesters SET status = 'published', updated_at = NOW()
+       WHERE semester = $1 AND academic_year = $2
+       RETURNING *`,
+      [semester, academic_year]
+    );
+    res.json({ success: true, data: { semester: result.rows[0] } });
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function unpublishSemester(req, res, next) {
+  try {
+    const { semester, academic_year } = req.body;
+    if (!semester || !academic_year) {
+      return res.status(400).json({ success: false, message: 'semester and academic_year are required' });
+    }
+    const result = await query(
+      `UPDATE semesters SET status = 'draft', updated_at = NOW()
+       WHERE semester = $1 AND academic_year = $2
+       RETURNING *`,
+      [semester, academic_year]
+    );
+    if (!result.rows.length) {
+      return res.status(404).json({ success: false, message: 'Semester not found' });
+    }
+    res.json({ success: true, data: { semester: result.rows[0] } });
+  } catch (error) {
+    next(error);
+  }
+}
+
 module.exports = {
+  runSemesterMigration,
   getMySchedule,
   getTodaySchedule,
   getStudentMaterials,
@@ -2066,4 +2224,9 @@ module.exports = {
   adminBulkEnroll,
   adminGetStudentDepartments,
   adminRemoveAllEnrollments,
+  getMyTerms,
+  listSemesters,
+  ensureSemesterRow,
+  publishSemester,
+  unpublishSemester,
 };

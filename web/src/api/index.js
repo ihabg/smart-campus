@@ -89,6 +89,9 @@ export const scheduleAPI = {
 
   getRoomAvailability: (params = {}) =>
     api.get('/schedule/room-availability', { params }),
+
+  getMyTerms: () =>
+    api.get('/schedule/my/terms'),
 };
 
 // ─── searchAPI ───────────────────────────────────────────────
@@ -248,6 +251,18 @@ export const semesterAPI = {
 
   getSemesterMeetings: (semester, academic_year, extra = {}) =>
     api.get('/schedule/meetings', { params: { semester, academic_year, ...extra } }),
+
+  list: () =>
+    api.get('/schedule/semesters'),
+
+  ensure: ({ semester, academic_year }) =>
+    api.post('/schedule/semesters/ensure', { semester, academic_year }),
+
+  publish: ({ semester, academic_year }) =>
+    api.patch('/schedule/semesters/publish', { semester, academic_year }),
+
+  unpublish: ({ semester, academic_year }) =>
+    api.patch('/schedule/semesters/unpublish', { semester, academic_year }),
 };
 
 // ─── courseAPI ────────────────────────────────────────────────
