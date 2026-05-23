@@ -574,14 +574,13 @@ function getPointerCenter(a, b) {
 export default function MapPage() {
   const location = useLocation();
 
-  const scheduleTargetRoom =
-    location.state?.targetRoomNumber ||
-    location.state?.roomNumber ||
-    null;
   const mapViewportRef = useRef(null);
 const activePointersRef = useRef(new Map());
 const panStartRef = useRef(null);
 const pinchStartRef = useRef(null);
+// Tracks the last room target already handled so that periodic mapFloors
+// refreshes (every 5 s) do not re-trigger the highlight or reopen the panel.
+const scheduleTargetHandledRef = useRef('');
 const [scheduleHighlightedBlock, setScheduleHighlightedBlock] = useState(null);
 
 const [mapZoom, setMapZoom] = useState(1);
@@ -744,17 +743,25 @@ useEffect(() => {
 
   if (!roomFromUrl) return;
 
+  // Guard against the auto-refresh loop: mapFloors rebuilds every 5 s, which
+  // re-fires this effect. Once we've handled a given target we skip all future
+  // re-fires for that same target, so closing the panel keeps it closed.
+  if (scheduleTargetHandledRef.current === roomFromUrl) return;
+
   const result = findBlockByRoomSearch(roomFromUrl);
 
   if (!result) {
-    // Only show "not found" after DB rooms have finished loading — avoids a
+    // Wait until DB rooms have loaded before showing "not found" to avoid a
     // false-error flash while the async fetch is still in flight.
     if (dbRoomsLoaded) {
       setRoomSearch(roomFromUrl);
       setRoomSearchError(`Room "${roomFromUrl}" was not found on the map.`);
+      scheduleTargetHandledRef.current = roomFromUrl;
     }
     return;
   }
+
+  scheduleTargetHandledRef.current = roomFromUrl;
 
   setActiveFloor(result.floorKey);
   setSelectedNeed('all');
@@ -763,10 +770,10 @@ useEffect(() => {
   setRoomSearchError('');
   resetMapView();
 
-  // Open the room info panel regardless of whether we came from the schedule
-  // or from a direct URL — the panel is the primary way to see room details.
-  setScheduleHighlightedBlock(null);
-  setSelectedBlock(result.block);
+  // Highlight the target room without auto-opening the info panel.
+  // The student can click the highlighted block manually to open details.
+  setScheduleHighlightedBlock(result.block);
+  setSelectedBlock(null);
 
   if (result.floorKey === 'G') {
     setStartNodeId('G_NORTH_ENTRANCE_NODE');
@@ -775,7 +782,7 @@ useEffect(() => {
   if (result.floorKey === 'B2') {
     setStartNodeId('B2_LEFT_STAIRS');
   }
-}, [location.search, location.state, mapFloors, dbRoomsLoaded]);
+}, [location.search, mapFloors, dbRoomsLoaded]);
 
   function clearRoute() {
     setRoutePath([]);
@@ -800,52 +807,56 @@ useEffect(() => {
 }
 
 function findBlockByRoomSearch(value) {
-  const raw = normalizeRoomSearch(value);
+  const raw = normalizeRoomSearch(value); // uppercased, "ROOM " stripped, whitespace collapsed
   if (!raw) return null;
-  const candidates = new Set();
-  candidates.add(raw);
+
+  // ── Phase 1: exact match (highest priority, prefix-preserving) ──────────
+  // "B2080" must hit block.roomNumber "B2080" — never "2080".
+  for (const [floorKey, floor] of Object.entries(mapFloors)) {
+    const block = floor.blocks.find(item =>
+      [item.id, item.roomNumber, item.room_number, item.lecturerNumber, item.lecturer_number]
+        .filter(Boolean)
+        .some(v => normalizeRoomSearch(v) === raw)
+    );
+    if (block) return { floorKey, block };
+  }
+
+  // ── Phase 2: digit-variant fallback ─────────────────────────────────────
+  // Only strip non-digits when the ORIGINAL input was already purely numeric.
+  // "2080" → also try "B2080"/"G2080".
+  // "B2080" → do NOT produce "2080" — that would wrongly match a different room.
   const digitsOnly = raw.replace(/\D/g, '');
+  const inputWasPureDigits = !!digitsOnly && digitsOnly === raw;
+  const fallback = new Set([raw]);
 
-  if (digitsOnly) {
-    candidates.add(digitsOnly);
+  if (inputWasPureDigits) {
+    if (/^\d{6}$/.test(digitsOnly)) fallback.add(digitsOnly.slice(2));
+    if (/^\d{4}$/.test(digitsOnly)) {
+      fallback.add(`G${digitsOnly}`);
+      fallback.add(`B${digitsOnly}`);
+    }
   }
-  if (/^\d{6}$/.test(digitsOnly)) {
-    candidates.add(digitsOnly.slice(2));
-  }
-  if (/^\d{4}$/.test(digitsOnly)) {
-    candidates.add(`G${digitsOnly}`);
-    candidates.add(`B${digitsOnly}`);
-  }
-
-  if (typeof getPossibleMapRoomIds === 'function') {
-    getPossibleMapRoomIds(raw).forEach(item => {
-      candidates.add(String(item).toUpperCase());
-    });
-  }
+  // Include schedule-normalizer variants (handles 6-digit codes like "102080")
+  getPossibleMapRoomIds(raw).forEach(id => fallback.add(String(id).toUpperCase()));
 
   for (const [floorKey, floor] of Object.entries(mapFloors)) {
-    const block = floor.blocks.find(item => {
-const values = [
-  item.id,
-  item.roomNumber,
-  item.room_number,
-  item.lecturerNumber,
-  item.lecturer_number,
-  item.lecturerName,
-  item.name,
-]
+    const block = floor.blocks.find(item =>
+      [item.id, item.roomNumber, item.room_number, item.lecturerNumber, item.lecturer_number, item.lecturerName, item.name]
         .filter(Boolean)
-        .map(v => normalizeRoomSearch(v));
+        .some(v => fallback.has(normalizeRoomSearch(v)))
+    );
+    if (block) return { floorKey, block };
+  }
 
-      return values.some(v => candidates.has(v));
-    });
-
-    if (block) {
-      return {
-        floorKey,
-        block,
-      };
-    }
+  // ── Phase 3: partial/contains match (lowest priority) ───────────────────
+  // "B20" can still find "B2080". Prefix is preserved: "B20" won't match "2080".
+  for (const [floorKey, floor] of Object.entries(mapFloors)) {
+    const block = floor.blocks.find(item =>
+      [item.id, item.roomNumber, item.room_number]
+        .filter(Boolean)
+        .some(v => normalizeRoomSearch(v).includes(raw))
+    );
+    if (block) return { floorKey, block };
   }
 
   return null;
