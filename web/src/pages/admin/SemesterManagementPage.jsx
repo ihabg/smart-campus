@@ -1240,6 +1240,180 @@ function EnrollmentsTab({ semester, academicYear, departmentContains, onDataChan
   );
 }
 
+// ─── Validation tab ───────────────────────────────────────────
+const SEVERITY_CONFIG = {
+  critical: { color: '#dc2626', bg: '#fef2f2', border: '#fecaca', icon: '🔴', label: 'Critical' },
+  warning:  { color: '#d97706', bg: '#fffbeb', border: '#fde68a', icon: '⚠️', label: 'Warning'  },
+  info:     { color: '#2563eb', bg: '#eff6ff', border: '#bfdbfe', icon: 'ℹ️', label: 'Info'     },
+};
+
+const DAY_SHORT = { 0: 'Sun', 1: 'Mon', 2: 'Tue', 3: 'Wed', 4: 'Thu', 5: 'Fri', 6: 'Sat' };
+
+function fmtT(t) { return t ? String(t).slice(0, 5) : '—'; }
+
+function IssueCard({ issue }) {
+  const [expanded, setExpanded] = useState(true);
+  const cfg = SEVERITY_CONFIG[issue.severity] || SEVERITY_CONFIG.info;
+  const items = issue.sections || issue.conflicts || [];
+
+  const sectionColumns = ['Course Code', 'Section #',
+    ...(issue.type === 'over_capacity' ? ['Enrolled', 'Capacity'] : []),
+    ...(issue.type === 'count_mismatch' ? ['Stored', 'Real'] : []),
+  ];
+  const conflictColumns = issue.type === 'room_conflict'
+    ? ['Room', 'Section A', 'Section B', 'Day', 'Time A', 'Time B']
+    : ['Instructor', 'Section A', 'Section B', 'Day', 'Time A', 'Time B'];
+
+  return (
+    <div style={{ border: `1px solid ${cfg.border}`, borderRadius: 10, overflow: 'hidden', marginBottom: 10 }}>
+      <div
+        onClick={() => setExpanded(e => !e)}
+        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: cfg.bg, cursor: 'pointer', userSelect: 'none' }}
+      >
+        <span>{cfg.icon}</span>
+        <span style={{ fontWeight: 600, color: cfg.color, fontSize: 13, flex: 1 }}>{issue.message}</span>
+        <span style={{ fontSize: 11, color: cfg.color, fontWeight: 700, padding: '2px 8px', background: 'rgba(255,255,255,0.6)', border: `1px solid ${cfg.border}`, borderRadius: 10 }}>{cfg.label}</span>
+        <span style={{ fontSize: 10, color: '#94a3b8', marginLeft: 4 }}>{expanded ? '▲' : '▼'}</span>
+      </div>
+      {expanded && items.length > 0 && (
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+            <thead>
+              <tr style={{ background: '#f8fafc' }}>
+                {(issue.conflicts ? conflictColumns : sectionColumns).map(h => (
+                  <th key={h} style={{ padding: '7px 10px', textAlign: 'left', color: '#64748b', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {issue.conflicts ? items.map((c, i) => (
+                <tr key={i} style={{ background: i % 2 === 0 ? '#fff' : '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                  <td style={{ padding: '7px 10px', fontWeight: 600, color: '#374151', whiteSpace: 'nowrap' }}>
+                    {issue.type === 'room_conflict' ? c.room_number : c.instructor_name}
+                  </td>
+                  <td style={{ padding: '7px 10px', color: '#374151', whiteSpace: 'nowrap', fontFamily: 'monospace' }}>{c.course_a}/{c.section_a_number}</td>
+                  <td style={{ padding: '7px 10px', color: '#374151', whiteSpace: 'nowrap', fontFamily: 'monospace' }}>{c.course_b}/{c.section_b_number}</td>
+                  <td style={{ padding: '7px 10px', color: '#374151', whiteSpace: 'nowrap' }}>{DAY_SHORT[c.conflict_day] ?? c.conflict_day}</td>
+                  <td style={{ padding: '7px 10px', color: '#374151', whiteSpace: 'nowrap' }}>{fmtT(c.a_start)}–{fmtT(c.a_end)}</td>
+                  <td style={{ padding: '7px 10px', color: '#374151', whiteSpace: 'nowrap' }}>{fmtT(c.b_start)}–{fmtT(c.b_end)}</td>
+                </tr>
+              )) : items.map((s, i) => (
+                <tr key={s.section_id} style={{ background: i % 2 === 0 ? '#fff' : '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                  <td style={{ padding: '7px 10px', fontFamily: 'monospace', fontWeight: 600, color: '#374151' }}>{s.course_code}</td>
+                  <td style={{ padding: '7px 10px', color: '#374151' }}>{s.section_number}</td>
+                  {issue.type === 'over_capacity' && (
+                    <>
+                      <td style={{ padding: '7px 10px', color: '#dc2626', fontWeight: 700 }}>{s.enrolled}</td>
+                      <td style={{ padding: '7px 10px', color: '#374151' }}>{s.max_capacity}</td>
+                    </>
+                  )}
+                  {issue.type === 'count_mismatch' && (
+                    <>
+                      <td style={{ padding: '7px 10px', color: '#374151' }}>{s.stored_count}</td>
+                      <td style={{ padding: '7px 10px', color: '#dc2626', fontWeight: 700 }}>{s.real_count}</td>
+                    </>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ValidationTab({ semester, academicYear, departmentContains }) {
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState(null);
+  const [ran, setRan] = useState(false);
+
+  const runValidation = useCallback(async () => {
+    if (!semester || !academicYear) return;
+    setLoading(true);
+    try {
+      const res = await semesterAPI.validate({
+        semester,
+        academic_year: academicYear,
+        department_contains: departmentContains || undefined,
+      });
+      setResult(res.data?.data || null);
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setLoading(false);
+      setRan(true);
+    }
+  }, [semester, academicYear, departmentContains]);
+
+  useEffect(() => { runValidation(); }, [runValidation]);
+
+  if (loading) {
+    return (
+      <div style={{ padding: 48, textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>
+        <Spinner />
+        <div style={{ marginTop: 12 }}>Running validation checks…</div>
+      </div>
+    );
+  }
+
+  if (!ran) {
+    return (
+      <div style={{ padding: 48, textAlign: 'center' }}>
+        <button onClick={runValidation} style={{ padding: '10px 20px', borderRadius: 8, background: '#2563eb', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
+          Run Validation
+        </button>
+      </div>
+    );
+  }
+
+  const { issues = [], summary = {}, total_sections = 0 } = result || {};
+  const hasIssues = issues.length > 0;
+
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 20, flexWrap: 'wrap' }}>
+        <div style={{ fontSize: 13, color: '#64748b' }}>
+          {total_sections} section{total_sections !== 1 ? 's' : ''} checked · {cap(semester)} {academicYear}
+        </div>
+        <div style={{ display: 'flex', gap: 8, marginLeft: 'auto', alignItems: 'center', flexWrap: 'wrap' }}>
+          {['critical', 'warning', 'info'].map(sev => {
+            const cfg = SEVERITY_CONFIG[sev];
+            const count = summary[sev] || 0;
+            return (
+              <span key={sev} style={{ fontSize: 12, fontWeight: 600, padding: '3px 10px', borderRadius: 20, background: count > 0 ? cfg.bg : '#f8fafc', color: count > 0 ? cfg.color : '#94a3b8', border: `1px solid ${count > 0 ? cfg.border : '#e2e8f0'}` }}>
+                {cfg.icon} {count} {cfg.label}
+              </span>
+            );
+          })}
+          <button
+            onClick={runValidation}
+            style={{ padding: '5px 12px', borderRadius: 6, border: '1px solid #e2e8f0', background: '#fff', cursor: 'pointer', fontSize: 12, color: '#374151', fontWeight: 500 }}
+          >
+            Re-run
+          </button>
+        </div>
+      </div>
+
+      {!hasIssues ? (
+        <div style={{ padding: 48, textAlign: 'center', border: '2px solid #bbf7d0', borderRadius: 12, background: '#f0fdf4' }}>
+          <div style={{ fontSize: 28, marginBottom: 8 }}>✅</div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: '#166534', marginBottom: 4 }}>All checks passed</div>
+          <div style={{ fontSize: 13, color: '#166534' }}>No issues found for {cap(semester)} {academicYear}. Safe to publish.</div>
+        </div>
+      ) : (
+        <div>
+          {['critical', 'warning', 'info'].flatMap(sev =>
+            issues.filter(i => i.severity === sev).map(issue => (
+              <IssueCard key={issue.type} issue={issue} />
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main page ────────────────────────────────────────────────
 export default function SemesterManagementPage() {
   const [semester, setSemester] = useState('fall');
@@ -1262,6 +1436,8 @@ export default function SemesterManagementPage() {
   const [publishLoading, setPublishLoading] = useState(false);
   const [publishConfirm, setPublishConfirm] = useState(false);
   const [unpublishConfirm, setUnpublishConfirm] = useState(false);
+  const [publishBlockedResult, setPublishBlockedResult] = useState(null);
+  const [publishWarnings, setPublishWarnings] = useState(null);
 
   const currentSemData = allSemesterStatuses.find(
     s => s.semester === semester && s.academic_year === academicYear
@@ -1330,15 +1506,39 @@ export default function SemesterManagementPage() {
       .catch(() => {});
   }, [semester, academicYear]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handlePublish = async () => {
+  const doPublish = async () => {
     setPublishLoading(true);
     try {
       await semesterAPI.publish({ semester, academic_year: academicYear });
       toast.success(`${cap(semester)} ${academicYear} published — students can now see their schedule.`);
       setPublishConfirm(false);
+      setPublishWarnings(null);
       await loadSemesterStatuses();
     } catch (err) {
       toast.error(getErrorMessage(err));
+    } finally {
+      setPublishLoading(false);
+    }
+  };
+
+  const handlePublishClick = async () => {
+    setPublishLoading(true);
+    try {
+      const res = await semesterAPI.validate({
+        semester,
+        academic_year: academicYear,
+        department_contains: deptFilter || undefined,
+      });
+      const validation = res.data?.data;
+      if (validation?.summary?.critical > 0) {
+        setPublishBlockedResult(validation);
+        return;
+      }
+      setPublishWarnings(validation?.summary?.warning > 0 ? validation : null);
+      setPublishConfirm(true);
+    } catch {
+      setPublishWarnings(null);
+      setPublishConfirm(true);
     } finally {
       setPublishLoading(false);
     }
@@ -1407,11 +1607,11 @@ export default function SemesterManagementPage() {
             </button>
           ) : (
             <button
-              onClick={() => setPublishConfirm(true)}
+              onClick={handlePublishClick}
               disabled={publishLoading || statusLoading}
               style={{ padding: '8px 14px', borderRadius: 8, background: publishLoading || statusLoading ? '#f1f5f9' : '#2563eb', color: publishLoading || statusLoading ? '#94a3b8' : '#fff', border: 'none', cursor: publishLoading || statusLoading ? 'not-allowed' : 'pointer', fontSize: 13, fontWeight: 600 }}
             >
-              {publishLoading ? 'Publishing…' : 'Publish Semester'}
+              {publishLoading ? 'Validating…' : 'Publish Semester'}
             </button>
           )}
         </div>
@@ -1419,12 +1619,59 @@ export default function SemesterManagementPage() {
         {publishConfirm && (
           <ConfirmDialog
             open={true}
-            onClose={() => setPublishConfirm(false)}
-            onConfirm={handlePublish}
+            onClose={() => { setPublishConfirm(false); setPublishWarnings(null); }}
+            onConfirm={doPublish}
             loading={publishLoading}
             title="Publish Semester"
-            message={`Publish ${cap(semester)} ${academicYear}? Students will be able to see their schedule for this semester.`}
+            message={
+              <>
+                {publishWarnings && (
+                  <span style={{ display: 'block', marginBottom: 10, padding: '8px 12px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 6, color: '#92400e', fontWeight: 600, fontSize: 13 }}>
+                    ⚠️ {publishWarnings.summary.warning} warning{publishWarnings.summary.warning !== 1 ? 's' : ''} found — review the Validation tab after publishing.
+                  </span>
+                )}
+                {`Publish ${cap(semester)} ${academicYear}? Students will be able to see their schedule for this semester.`}
+              </>
+            }
           />
+        )}
+
+        {publishBlockedResult && (
+          <div
+            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+            onClick={e => { if (e.target === e.currentTarget) setPublishBlockedResult(null); }}
+          >
+            <div style={{ background: '#fff', borderRadius: 14, padding: '24px 28px', maxWidth: 520, width: '100%', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                <span style={{ fontSize: 22 }}>🚫</span>
+                <div style={{ fontSize: 16, fontWeight: 700, color: '#dc2626' }}>Cannot Publish — Critical Issues Found</div>
+              </div>
+              <p style={{ fontSize: 13, color: '#374151', marginBottom: 14 }}>
+                Fix the following issues before publishing <strong>{cap(semester)} {academicYear}</strong>:
+              </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 20, maxHeight: 260, overflowY: 'auto' }}>
+                {(publishBlockedResult.issues || []).filter(i => i.severity === 'critical').map(issue => (
+                  <div key={issue.type} style={{ padding: '10px 12px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, fontSize: 13, color: '#dc2626', fontWeight: 600 }}>
+                    🔴 {issue.message}
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                <button
+                  onClick={() => setPublishBlockedResult(null)}
+                  style={{ padding: '8px 18px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', cursor: 'pointer', color: '#374151', fontSize: 13, fontWeight: 500 }}
+                >
+                  Close
+                </button>
+                <button
+                  onClick={() => { setPublishBlockedResult(null); setActiveTab('Validation'); }}
+                  style={{ padding: '8px 18px', borderRadius: 8, border: 'none', background: '#2563eb', color: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}
+                >
+                  Go to Validation
+                </button>
+              </div>
+            </div>
+          </div>
         )}
         {unpublishConfirm && (
           <ConfirmDialog
@@ -1575,7 +1822,14 @@ export default function SemesterManagementPage() {
           onDataChanged={handleSectionDataChanged}
         />
       )}
-      {activeTab !== 'Sections' && activeTab !== 'Timetable' && activeTab !== 'Enrollments' && (
+      {activeTab === 'Validation' && (
+        <ValidationTab
+          semester={semester}
+          academicYear={academicYear}
+          departmentContains={deptFilter}
+        />
+      )}
+      {activeTab !== 'Sections' && activeTab !== 'Timetable' && activeTab !== 'Enrollments' && activeTab !== 'Validation' && (
         <PlaceholderTab name={activeTab} />
       )}
     </div>

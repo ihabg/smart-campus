@@ -263,6 +263,9 @@ export const semesterAPI = {
 
   unpublish: ({ semester, academic_year }) =>
     api.patch('/schedule/semesters/unpublish', { semester, academic_year }),
+
+  validate: ({ semester, academic_year, department_contains } = {}) =>
+    api.get('/schedule/validate', { params: { semester, academic_year, department_contains } }),
 };
 
 // ─── courseAPI ────────────────────────────────────────────────

@@ -100,6 +100,14 @@ router.delete(
   ctrl.adminRemoveAllEnrollments
 );
 
+// ── Semester validation (static — must be before /:id) ───────
+router.get(
+  '/validate',
+  protect,
+  restrictTo('admin', 'super_admin'),
+  ctrl.validateSemester
+);
+
 // ── Semester publish routes (static — must be before /:id) ───
 router.get(
   '/semesters',

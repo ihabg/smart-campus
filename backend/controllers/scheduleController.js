@@ -2199,6 +2199,275 @@ async function unpublishSemester(req, res, next) {
   }
 }
 
+// ── Semester validation ───────────────────────────────────────
+
+function dedupeConflicts(rows) {
+  const seen = new Set();
+  return rows.filter(row => {
+    const ids = [row.section_a_id, row.section_b_id].sort();
+    const times = [
+      `${row.a_start}-${row.a_end}`,
+      `${row.b_start}-${row.b_end}`,
+    ].sort().join('|');
+    const key = `${ids[0]}|${ids[1]}|${row.conflict_day}|${times}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+async function validateSemester(req, res, next) {
+  try {
+    const { semester, academic_year, department_contains } = req.query;
+
+    if (!semester || !academic_year) {
+      return res.status(400).json({
+        success: false,
+        message: 'semester and academic_year are required',
+      });
+    }
+
+    const dept = department_contains ? String(department_contains).trim() : null;
+    const deptParams   = dept ? [semester, academic_year, `%${dept}%`] : [semester, academic_year];
+    const deptClause   = dept ? `AND c.department ILIKE $3`  : '';
+    const deptClauseC1 = dept ? `AND c1.department ILIKE $3` : '';
+
+    const [
+      totalResult,
+      noInstructorResult,
+      noRoomResult,
+      noMeetingsResult,
+      roomConflictResult,
+      instructorConflictResult,
+      overCapacityResult,
+      zeroEnrolledResult,
+      countMismatchResult,
+    ] = await Promise.all([
+
+      query(`
+        SELECT COUNT(*)::int AS total
+        FROM sections s
+        JOIN courses c ON c.id = s.course_id
+        WHERE s.semester::text = $1 AND s.academic_year = $2 AND s.is_active = TRUE
+        ${deptClause}
+      `, deptParams),
+
+      query(`
+        SELECT s.id AS section_id, c.code AS course_code, s.section_number
+        FROM sections s
+        JOIN courses c ON c.id = s.course_id
+        WHERE s.semester::text = $1 AND s.academic_year = $2
+          AND s.is_active = TRUE AND s.instructor_id IS NULL
+        ${deptClause}
+        ORDER BY c.code, s.section_number
+      `, deptParams),
+
+      query(`
+        SELECT s.id AS section_id, c.code AS course_code, s.section_number
+        FROM sections s
+        JOIN courses c ON c.id = s.course_id
+        WHERE s.semester::text = $1 AND s.academic_year = $2
+          AND s.is_active = TRUE
+          AND s.room_id IS NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM section_meetings sm
+            WHERE sm.section_id = s.id AND sm.room_id IS NOT NULL
+          )
+        ${deptClause}
+        ORDER BY c.code, s.section_number
+      `, deptParams),
+
+      query(`
+        SELECT s.id AS section_id, c.code AS course_code, s.section_number
+        FROM sections s
+        JOIN courses c ON c.id = s.course_id
+        LEFT JOIN section_meetings sm ON sm.section_id = s.id
+        WHERE s.semester::text = $1 AND s.academic_year = $2
+          AND s.is_active = TRUE
+        ${deptClause}
+        GROUP BY s.id, c.code, s.section_number
+        HAVING COUNT(sm.id) = 0
+        ORDER BY c.code, s.section_number
+      `, deptParams),
+
+      query(`
+        SELECT DISTINCT
+          s1.id AS section_a_id, c1.code AS course_a, s1.section_number AS section_a_number,
+          s2.id AS section_b_id, c2.code AS course_b, s2.section_number AS section_b_number,
+          r.room_number,
+          sm1.day_of_week AS conflict_day,
+          sm1.start_time::text AS a_start, sm1.end_time::text AS a_end,
+          sm2.start_time::text AS b_start, sm2.end_time::text AS b_end
+        FROM sections s1
+        JOIN courses c1 ON c1.id = s1.course_id
+        JOIN section_meetings sm1 ON sm1.section_id = s1.id
+        JOIN sections s2 ON s2.id != s1.id
+          AND s2.semester::text = $1 AND s2.academic_year = $2
+          AND s2.is_active = TRUE
+        JOIN courses c2 ON c2.id = s2.course_id
+        JOIN section_meetings sm2 ON sm2.section_id = s2.id
+          AND sm2.day_of_week = sm1.day_of_week
+          AND COALESCE(sm2.room_id, s2.room_id) = COALESCE(sm1.room_id, s1.room_id)
+          AND sm1.start_time < sm2.end_time AND sm1.end_time > sm2.start_time
+        JOIN rooms r ON r.id = COALESCE(sm1.room_id, s1.room_id)
+        WHERE s1.semester::text = $1 AND s1.academic_year = $2
+          AND s1.is_active = TRUE
+          AND COALESCE(sm1.room_id, s1.room_id) IS NOT NULL
+          AND COALESCE(sm2.room_id, s2.room_id) IS NOT NULL
+        ${deptClauseC1}
+        ORDER BY r.room_number, conflict_day, a_start
+      `, deptParams),
+
+      query(`
+        SELECT DISTINCT
+          s1.id AS section_a_id, c1.code AS course_a, s1.section_number AS section_a_number,
+          s2.id AS section_b_id, c2.code AS course_b, s2.section_number AS section_b_number,
+          CONCAT(COALESCE(i.title, ''), ' ', i.first_name, ' ', i.last_name) AS instructor_name,
+          sm1.day_of_week AS conflict_day,
+          sm1.start_time::text AS a_start, sm1.end_time::text AS a_end,
+          sm2.start_time::text AS b_start, sm2.end_time::text AS b_end
+        FROM sections s1
+        JOIN courses c1 ON c1.id = s1.course_id
+        JOIN instructors i ON i.id = s1.instructor_id
+        JOIN section_meetings sm1 ON sm1.section_id = s1.id
+        JOIN sections s2 ON s2.instructor_id = s1.instructor_id
+          AND s2.id != s1.id
+          AND s2.semester::text = $1 AND s2.academic_year = $2
+          AND s2.is_active = TRUE
+        JOIN courses c2 ON c2.id = s2.course_id
+        JOIN section_meetings sm2 ON sm2.section_id = s2.id
+          AND sm2.day_of_week = sm1.day_of_week
+          AND sm1.start_time < sm2.end_time AND sm1.end_time > sm2.start_time
+        WHERE s1.semester::text = $1 AND s1.academic_year = $2
+          AND s1.is_active = TRUE AND s1.instructor_id IS NOT NULL
+        ${deptClauseC1}
+        ORDER BY instructor_name, conflict_day, a_start
+      `, deptParams),
+
+      query(`
+        SELECT s.id AS section_id, c.code AS course_code, s.section_number,
+               s.enrolled, s.max_capacity
+        FROM sections s
+        JOIN courses c ON c.id = s.course_id
+        WHERE s.semester::text = $1 AND s.academic_year = $2
+          AND s.is_active = TRUE
+          AND s.max_capacity IS NOT NULL AND s.enrolled > s.max_capacity
+        ${deptClause}
+        ORDER BY c.code, s.section_number
+      `, deptParams),
+
+      query(`
+        SELECT s.id AS section_id, c.code AS course_code, s.section_number
+        FROM sections s
+        JOIN courses c ON c.id = s.course_id
+        WHERE s.semester::text = $1 AND s.academic_year = $2
+          AND s.is_active = TRUE AND s.enrolled = 0
+        ${deptClause}
+        ORDER BY c.code, s.section_number
+      `, deptParams),
+
+      query(`
+        SELECT s.id AS section_id, c.code AS course_code, s.section_number,
+               s.enrolled AS stored_count, COUNT(e.id)::int AS real_count
+        FROM sections s
+        JOIN courses c ON c.id = s.course_id
+        LEFT JOIN enrollments e ON e.section_id = s.id AND e.status = 'enrolled'
+        WHERE s.semester::text = $1 AND s.academic_year = $2 AND s.is_active = TRUE
+        ${deptClause}
+        GROUP BY s.id, c.code, s.section_number
+        HAVING s.enrolled != COUNT(e.id)
+        ORDER BY c.code, s.section_number
+      `, deptParams),
+    ]);
+
+    const roomConflicts       = dedupeConflicts(roomConflictResult.rows);
+    const instructorConflicts = dedupeConflicts(instructorConflictResult.rows);
+
+    const issues = [];
+
+    if (noInstructorResult.rows.length > 0) {
+      issues.push({
+        severity: 'critical',
+        type: 'no_instructor',
+        message: `${noInstructorResult.rows.length} section${noInstructorResult.rows.length !== 1 ? 's have' : ' has'} no instructor assigned`,
+        sections: noInstructorResult.rows,
+      });
+    }
+    if (noRoomResult.rows.length > 0) {
+      issues.push({
+        severity: 'critical',
+        type: 'no_room',
+        message: `${noRoomResult.rows.length} section${noRoomResult.rows.length !== 1 ? 's have' : ' has'} no room assigned`,
+        sections: noRoomResult.rows,
+      });
+    }
+    if (noMeetingsResult.rows.length > 0) {
+      issues.push({
+        severity: 'critical',
+        type: 'no_meetings',
+        message: `${noMeetingsResult.rows.length} section${noMeetingsResult.rows.length !== 1 ? 's have' : ' has'} no meeting times`,
+        sections: noMeetingsResult.rows,
+      });
+    }
+    if (roomConflicts.length > 0) {
+      issues.push({
+        severity: 'critical',
+        type: 'room_conflict',
+        message: `${roomConflicts.length} room time conflict${roomConflicts.length !== 1 ? 's' : ''} found`,
+        conflicts: roomConflicts,
+      });
+    }
+    if (instructorConflicts.length > 0) {
+      issues.push({
+        severity: 'critical',
+        type: 'instructor_conflict',
+        message: `${instructorConflicts.length} instructor time conflict${instructorConflicts.length !== 1 ? 's' : ''} found`,
+        conflicts: instructorConflicts,
+      });
+    }
+    if (countMismatchResult.rows.length > 0) {
+      issues.push({
+        severity: 'critical',
+        type: 'count_mismatch',
+        message: `${countMismatchResult.rows.length} section${countMismatchResult.rows.length !== 1 ? 's have' : ' has'} mismatched enrollment counts`,
+        sections: countMismatchResult.rows,
+      });
+    }
+    if (overCapacityResult.rows.length > 0) {
+      issues.push({
+        severity: 'warning',
+        type: 'over_capacity',
+        message: `${overCapacityResult.rows.length} section${overCapacityResult.rows.length !== 1 ? 's are' : ' is'} over maximum capacity`,
+        sections: overCapacityResult.rows,
+      });
+    }
+    if (zeroEnrolledResult.rows.length > 0) {
+      issues.push({
+        severity: 'info',
+        type: 'zero_enrolled',
+        message: `${zeroEnrolledResult.rows.length} section${zeroEnrolledResult.rows.length !== 1 ? 's have' : ' has'} no enrolled students`,
+        sections: zeroEnrolledResult.rows,
+      });
+    }
+
+    const summary = { critical: 0, warning: 0, info: 0 };
+    issues.forEach(issue => { summary[issue.severity] += 1; });
+
+    res.json({
+      success: true,
+      data: {
+        semester,
+        academic_year,
+        total_sections: totalResult.rows[0]?.total || 0,
+        summary,
+        issues,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
 module.exports = {
   runSemesterMigration,
   getMySchedule,
@@ -2229,4 +2498,5 @@ module.exports = {
   ensureSemesterRow,
   publishSemester,
   unpublishSemester,
+  validateSemester,
 };
