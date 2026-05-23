@@ -154,7 +154,7 @@ function PlaceholderTab({ name }) {
 // ─── Sections tab ─────────────────────────────────────────────
 const SECTIONS_LIMIT = 50;
 
-function SectionsTab({ semester, academicYear, departmentContains, onDataChanged }) {
+function SectionsTab({ semester, academicYear, departmentContains, collegeName, onDataChanged }) {
   // ── Lookup data for the form modal ─────────────────────────
   const { courses: allCourses }         = useCourses({ limit: 1000 });
   const { instructors: allInstructors } = useInstructors({ limit: 1000, active_only: 'true' });
@@ -400,6 +400,7 @@ function SectionsTab({ semester, academicYear, departmentContains, onDataChanged
         onSaved={handleSaved}
         defaultSemester={semester}
         defaultAcademicYear={academicYear}
+        readOnlyContext={{ semester, academicYear, collegeName }}
         title="Add Section"
         externalCourses={lookupCourses}
         externalInstructors={lookupInstructors}
@@ -414,6 +415,7 @@ function SectionsTab({ semester, academicYear, departmentContains, onDataChanged
         onSaved={handleSaved}
         defaultSemester={semester}
         defaultAcademicYear={academicYear}
+        readOnlyContext={{ semester, academicYear, collegeName }}
         title="Edit Section"
         externalCourses={lookupCourses}
         externalInstructors={lookupInstructors}
@@ -662,6 +664,7 @@ export default function SemesterManagementPage() {
           semester={semester}
           academicYear={academicYear}
           departmentContains={deptFilter}
+          collegeName={selectedCollege}
           onDataChanged={handleSectionDataChanged}
         />
       )}

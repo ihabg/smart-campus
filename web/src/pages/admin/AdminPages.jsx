@@ -1441,6 +1441,9 @@ export function SectionFormModal({
   defaultSemester,
   defaultAcademicYear,
   title,
+  // When provided the modal hides the Semester/AcademicYear inputs and
+  // shows a read-only context summary instead.
+  readOnlyContext,
   // Optional pre-loaded lookup data. When provided the modal skips its
   // internal fetch and uses these arrays directly.
   externalCourses,
@@ -1844,25 +1847,41 @@ export function SectionFormModal({
             />
           )}
 
-          <div className="form-row">
-            <Select
-              label="Semester"
-              required
-              value={form.semester}
-              onChange={set('semester')}
-              options={SEMESTER_OPTIONS}
-              error={errors.semester}
-            />
-
-            <div className="form-group">
-              <label className="form-label">Academic Year *</label>
-              <AcademicYearStepper
-                value={form.academic_year}
-                onChange={v => setForm(f => ({ ...f, academic_year: v }))}
-              />
-              {errors.academic_year && <p className="form-error">{errors.academic_year}</p>}
+          {readOnlyContext ? (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              padding: '7px 12px', borderRadius: 8,
+              background: 'var(--najah-blue-50, rgba(37,99,235,0.07))',
+              border: '1px solid rgba(37,99,235,0.18)',
+              fontSize: 13, color: '#1e40af', fontWeight: 500,
+            }}>
+              <span style={{ fontSize: 15 }}>📅</span>
+              <span>
+                {semesterLabel(form.semester)} {form.academic_year}
+                {readOnlyContext.collegeName ? ` — ${readOnlyContext.collegeName}` : ''}
+              </span>
             </div>
-          </div>
+          ) : (
+            <div className="form-row">
+              <Select
+                label="Semester"
+                required
+                value={form.semester}
+                onChange={set('semester')}
+                options={SEMESTER_OPTIONS}
+                error={errors.semester}
+              />
+
+              <div className="form-group">
+                <label className="form-label">Academic Year *</label>
+                <AcademicYearStepper
+                  value={form.academic_year}
+                  onChange={v => setForm(f => ({ ...f, academic_year: v }))}
+                />
+                {errors.academic_year && <p className="form-error">{errors.academic_year}</p>}
+              </div>
+            </div>
+          )}
 
           <div className="form-group">
             <label className="form-label">Days *</label>
