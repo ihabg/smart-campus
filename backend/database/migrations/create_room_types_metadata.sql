@@ -42,7 +42,7 @@
 
 
 -- ── Step 1: Create the table ──────────────────────────────────
-
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE TABLE IF NOT EXISTS room_types (
   id            UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
 

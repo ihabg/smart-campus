@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { semesterAPI, scheduleAPI, roomAPI } from '../../api';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { semesterAPI, scheduleAPI, roomAPI, enrollmentAPI } from '../../api';
 import { SectionFormModal, AcademicYearStepper } from './AdminPages';
-import { ConfirmDialog } from '../../components/ui/index';
+import { ConfirmDialog, Spinner } from '../../components/ui/index';
 import { useCourses, useInstructors, useRoomTypes } from '../../hooks/index';
 import { daysArrayToString, formatTime, getErrorMessage } from '../../utils/helpers';
 import toast from 'react-hot-toast';
@@ -436,6 +436,721 @@ function SectionsTab({ semester, academicYear, departmentContains, collegeName, 
   );
 }
 
+// ─── Enrollments tab — shared helpers ────────────────────────
+
+const YEAR_OPTIONS = [1, 2, 3, 4, 5, 6];
+
+function InfoRow({ label, value }) {
+  return (
+    <div style={{ display: 'flex', gap: 8, fontSize: 12, marginBottom: 3 }}>
+      <span style={{ color: '#64748b', minWidth: 46, flexShrink: 0 }}>{label}:</span>
+      <span style={{ color: '#374151', fontWeight: 500 }}>{value}</span>
+    </div>
+  );
+}
+
+function SectionDetailCard({ section, loading }) {
+  if (loading && !section) return (
+    <div style={{ padding: 24, textAlign: 'center' }}><Spinner /></div>
+  );
+  if (!section) return null;
+
+  const isFull = section.max_capacity !== null && section.enrolled >= section.max_capacity;
+  const pct    = section.max_capacity ? Math.round((section.enrolled / section.max_capacity) * 100) : null;
+
+  return (
+    <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: '14px 18px' }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 20, alignItems: 'flex-start' }}>
+        <div style={{ flex: '2 1 170px' }}>
+          <div style={{ fontSize: 15, fontWeight: 700, color: '#111827' }}>{section.course_code}</div>
+          <div style={{ fontSize: 13, color: '#374151', marginTop: 2 }}>{section.course_name}</div>
+          <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 3 }}>Section {section.section_number}</div>
+        </div>
+        <div style={{ flex: '2 1 170px' }}>
+          <InfoRow label="Doctor" value={section.instructor_name || '—'} />
+          <InfoRow label="Room"   value={section.room_number    || '—'} />
+          <InfoRow label="Days"   value={daysArrayToString(section.day_of_week) || '—'} />
+          <InfoRow label="Time"   value={section.start_time ? `${formatTime(section.start_time)} – ${formatTime(section.end_time)}` : '—'} />
+        </div>
+        <div style={{ flex: '0 0 auto', textAlign: 'center', minWidth: 80 }}>
+          <div style={{ fontSize: 22, fontWeight: 700, color: isFull ? '#dc2626' : '#111827', lineHeight: 1 }}>
+            {section.enrolled}
+          </div>
+          <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>/ {section.max_capacity ?? '∞'} seats</div>
+          {pct !== null && (
+            <div style={{ marginTop: 6, width: 72, height: 5, background: '#e2e8f0', borderRadius: 3, overflow: 'hidden', margin: '6px auto 0' }}>
+              <div style={{ width: `${Math.min(pct, 100)}%`, height: '100%', borderRadius: 3, transition: 'width 0.3s',
+                background: isFull ? '#dc2626' : pct > 80 ? '#f59e0b' : '#2563eb' }} />
+            </div>
+          )}
+          {isFull && <div style={{ fontSize: 10, color: '#dc2626', fontWeight: 700, marginTop: 4, letterSpacing: '0.05em' }}>FULL</div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EnrolledStudentsPanel({
+  students, loading, total, page, totalPages,
+  onPageChange, search, department, year,
+  onSearchChange, onDepartmentChange, onYearChange, onRemove,
+  departments, onRemoveAll,
+}) {
+  const [confirmRemoveAll, setConfirmRemoveAll] = useState(false);
+
+  return (
+    <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: '14px 18px' }}>
+      <div style={{ fontSize: 14, fontWeight: 600, color: '#111827', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <span>Enrolled Students</span>
+        {!loading && total > 0 && <span style={{ fontSize: 12, color: '#94a3b8', fontWeight: 400 }}>({total})</span>}
+        {!loading && total > 0 && (
+          <button
+            onClick={() => setConfirmRemoveAll(true)}
+            style={{ marginLeft: 'auto', padding: '4px 12px', borderRadius: 6, border: '1px solid #fecaca', background: '#fff', cursor: 'pointer', color: '#dc2626', fontSize: 12, fontWeight: 500, whiteSpace: 'nowrap' }}
+          >
+            Remove All ({total})
+          </button>
+        )}
+      </div>
+
+      {/* Filter bar */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+        <input
+          placeholder="Name, email, or reg. number…"
+          value={search}
+          onChange={e => onSearchChange(e.target.value)}
+          style={{ flex: '2 1 160px', padding: '6px 10px', borderRadius: 6, border: '1px solid #e2e8f0', fontSize: 13 }}
+        />
+        <select
+          value={department}
+          onChange={e => onDepartmentChange(e.target.value)}
+          style={{ flex: '1 1 140px', padding: '6px 10px', borderRadius: 6, border: '1px solid #e2e8f0', fontSize: 13, color: '#0f172a', background: '#ffffff' }}
+        >
+          <option value="">All departments</option>
+          {(departments || []).map(d => <option key={d} value={d}>{d}</option>)}
+        </select>
+        <select
+          value={year}
+          onChange={e => onYearChange(e.target.value)}
+          style={{ flex: '0 0 auto', padding: '6px 10px', borderRadius: 6, border: '1px solid #e2e8f0', fontSize: 13, color: '#374151' }}
+        >
+          <option value="">All years</option>
+          {YEAR_OPTIONS.map(y => <option key={y} value={y}>Year {y}</option>)}
+        </select>
+      </div>
+
+      {loading && <div style={{ padding: 32, textAlign: 'center' }}><Spinner /></div>}
+
+      {!loading && students.length === 0 && (
+        <div style={{ padding: 32, textAlign: 'center', color: '#94a3b8', fontSize: 13 }}>
+          {(search || department || year)
+            ? 'No students match the current filters.'
+            : 'No students are enrolled in this section yet.'}
+        </div>
+      )}
+
+      {!loading && students.length > 0 && (
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 520 }}>
+            <thead>
+              <tr style={{ background: '#f1f5f9' }}>
+                {['Reg. #', 'Name', 'Email', 'Department', 'Year', 'Action'].map(h => (
+                  <th key={h} style={{ padding: '8px 10px', textAlign: 'left', color: '#64748b', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #e2e8f0' }}>
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {students.map((s, i) => (
+                <tr key={s.user_id} style={{ background: i % 2 === 0 ? '#fff' : '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                  <td style={{ padding: '8px 10px', fontFamily: 'monospace', color: '#374151', whiteSpace: 'nowrap' }}>{s.registration_number || '—'}</td>
+                  <td style={{ padding: '8px 10px', color: '#111827', fontWeight: 500, whiteSpace: 'nowrap' }}>{s.first_name} {s.last_name}</td>
+                  <td style={{ padding: '8px 10px', color: '#374151' }}>{s.email}</td>
+                  <td style={{ padding: '8px 10px', color: '#374151' }}>{s.department || '—'}</td>
+                  <td style={{ padding: '8px 10px', color: '#374151', textAlign: 'center' }}>{s.year_of_study ?? '—'}</td>
+                  <td style={{ padding: '8px 10px' }}>
+                    <button
+                      onClick={() => onRemove(s)}
+                      style={{ padding: '3px 10px', borderRadius: 6, border: '1px solid #fecaca', background: '#fff', cursor: 'pointer', color: '#dc2626', fontSize: 12, fontWeight: 500, whiteSpace: 'nowrap' }}
+                    >
+                      Remove
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {totalPages > 1 && (
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'center', alignItems: 'center', marginTop: 12 }}>
+          <button disabled={page <= 1} onClick={() => onPageChange(p => p - 1)} style={{ padding: '4px 12px', borderRadius: 6, border: '1px solid #e2e8f0', fontSize: 12, background: page <= 1 ? '#f8fafc' : '#fff', cursor: page <= 1 ? 'not-allowed' : 'pointer', color: page <= 1 ? '#94a3b8' : '#374151' }}>← Prev</button>
+          <span style={{ fontSize: 12, color: '#64748b' }}>Page {page} of {totalPages}</span>
+          <button disabled={page >= totalPages} onClick={() => onPageChange(p => p + 1)} style={{ padding: '4px 12px', borderRadius: 6, border: '1px solid #e2e8f0', fontSize: 12, background: page >= totalPages ? '#f8fafc' : '#fff', cursor: page >= totalPages ? 'not-allowed' : 'pointer', color: page >= totalPages ? '#94a3b8' : '#374151' }}>Next →</button>
+        </div>
+      )}
+
+      {confirmRemoveAll && (
+        <ConfirmDialog
+          open={true}
+          onClose={() => setConfirmRemoveAll(false)}
+          onConfirm={() => { setConfirmRemoveAll(false); onRemoveAll(); }}
+          danger
+          title="Remove All Students"
+          message={`Remove all ${total} enrolled student${total !== 1 ? 's' : ''} from this section? They can be re-enrolled later.`}
+        />
+      )}
+    </div>
+  );
+}
+
+function AddStudentPanel({ sectionId, sectionDetail, defaultDept, departments, onEnrolled }) {
+  const [search,      setSearch]      = useState('');
+  const [dept,        setDept]        = useState('');
+  const [year,        setYear]        = useState('');
+  const [results,     setResults]     = useState([]);
+  const [searching,   setSearching]   = useState(false);
+  const [searchError, setSearchError] = useState('');
+  const [searched,    setSearched]    = useState(false);
+  const [enrollingId, setEnrollingId] = useState(null);
+  const timerRef = useRef(null);
+
+  // Reset when section or college changes
+  useEffect(() => {
+    setSearch('');
+    setDept('');
+    setYear('');
+    setResults([]);
+    setSearchError('');
+    setSearched(false);
+  }, [sectionId, defaultDept]);
+
+  useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); }, []);
+
+  const runSearch = useCallback(async (s, d, y) => {
+    if (!s && !d && !y) { setResults([]); setSearched(false); return; }
+    setSearching(true);
+    setSearchError('');
+    setSearched(true);
+    try {
+      const res = await enrollmentAPI.searchStudents({
+        search:             s || undefined,
+        department:         d || undefined,
+        year_of_study:      y ? parseInt(y, 10) : undefined,
+        exclude_section_id: sectionId,
+        limit: 50,
+      });
+      setResults(res.data?.data?.students || []);
+    } catch (err) {
+      setSearchError(getErrorMessage(err));
+      setResults([]);
+    } finally {
+      setSearching(false);
+    }
+  }, [sectionId]);
+
+  const schedule = (s, d, y, immediate) => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    if (immediate) { runSearch(s, d, y); return; }
+    timerRef.current = setTimeout(() => runSearch(s, d, y), 300);
+  };
+
+  const handleEnroll = async (student) => {
+    const full = sectionDetail?.max_capacity != null && sectionDetail.enrolled >= sectionDetail.max_capacity;
+    if (full) { toast.error('Section is at full capacity.'); return; }
+    setEnrollingId(student.user_id);
+    try {
+      await enrollmentAPI.enrollStudent({ section_id: sectionId, student_id: student.user_id });
+      toast.success(`${student.first_name} ${student.last_name} enrolled.`);
+      setResults(prev => prev.map(r => r.user_id === student.user_id ? { ...r, already_enrolled: true } : r));
+      onEnrolled();
+    } catch (err) {
+      const data = err.response?.data;
+      if (data?.already_enrolled) {
+        toast.error('Student is already enrolled.');
+        setResults(prev => prev.map(r => r.user_id === student.user_id ? { ...r, already_enrolled: true } : r));
+      } else if (data?.at_capacity) {
+        toast.error('Section is at full capacity.');
+      } else {
+        toast.error(getErrorMessage(err));
+      }
+    } finally {
+      setEnrollingId(null);
+    }
+  };
+
+  const isFull = sectionDetail?.max_capacity != null && sectionDetail.enrolled >= sectionDetail.max_capacity;
+
+  return (
+    <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: '14px 18px' }}>
+      <div style={{ fontSize: 14, fontWeight: 600, color: '#111827', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+        Add Student
+        {isFull && (
+          <span style={{ fontSize: 11, color: '#dc2626', fontWeight: 600, padding: '2px 8px', background: '#fef2f2', borderRadius: 10, border: '1px solid #fecaca' }}>
+            Section Full
+          </span>
+        )}
+      </div>
+
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+        <input
+          placeholder="Name, email, or registration number…"
+          value={search}
+          onChange={e => { setSearch(e.target.value); schedule(e.target.value, dept, year, false); }}
+          style={{ flex: '2 1 190px', padding: '7px 10px', borderRadius: 6, border: '1px solid #e2e8f0', fontSize: 13 }}
+        />
+        <select
+          value={dept}
+          onChange={e => { setDept(e.target.value); schedule(search, e.target.value, year, true); }}
+          style={{ flex: '1 1 140px', padding: '7px 10px', borderRadius: 6, border: '1px solid #e2e8f0', fontSize: 13, color: '#0f172a', background: '#ffffff' }}
+        >
+          <option value="">All departments</option>
+          {(departments || []).map(d => <option key={d} value={d}>{d}</option>)}
+        </select>
+        <select
+          value={year}
+          onChange={e => { setYear(e.target.value); schedule(search, dept, e.target.value, true); }}
+          style={{ flex: '0 0 auto', padding: '7px 10px', borderRadius: 6, border: '1px solid #e2e8f0', fontSize: 13, color: '#374151' }}
+        >
+          <option value="">All years</option>
+          {YEAR_OPTIONS.map(y => <option key={y} value={y}>Year {y}</option>)}
+        </select>
+      </div>
+
+      {searching && <div style={{ padding: 24, textAlign: 'center' }}><Spinner /></div>}
+
+      {searchError && (
+        <div style={{ padding: '10px 12px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, color: '#dc2626', fontSize: 13, marginBottom: 8 }}>
+          {searchError}
+        </div>
+      )}
+
+      {!searching && !searched && !searchError && (
+        <div style={{ fontSize: 13, color: '#94a3b8', padding: '6px 0' }}>
+          Enter a name, email, registration number, or department to search for students.
+        </div>
+      )}
+
+      {!searching && searched && results.length === 0 && !searchError && (
+        <div style={{ fontSize: 13, color: '#94a3b8', padding: '6px 0' }}>No students found matching your search.</div>
+      )}
+
+      {!searching && results.length > 0 && (
+        <>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 460 }}>
+              <thead>
+                <tr style={{ background: '#f1f5f9' }}>
+                  {['Reg. #', 'Name', 'Department', 'Year', 'Action'].map(h => (
+                    <th key={h} style={{ padding: '7px 10px', textAlign: 'left', color: '#64748b', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #e2e8f0' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {results.map((s, i) => (
+                  <tr key={s.user_id} style={{ background: s.already_enrolled ? '#f8fafc' : (i % 2 === 0 ? '#fff' : '#f8fafc'), borderBottom: '1px solid #e2e8f0' }}>
+                    <td style={{ padding: '7px 10px', fontFamily: 'monospace', color: '#374151', whiteSpace: 'nowrap' }}>{s.registration_number || '—'}</td>
+                    <td style={{ padding: '7px 10px', color: s.already_enrolled ? '#94a3b8' : '#111827', fontWeight: 500, whiteSpace: 'nowrap' }}>{s.first_name} {s.last_name}</td>
+                    <td style={{ padding: '7px 10px', color: '#374151' }}>{s.department || '—'}</td>
+                    <td style={{ padding: '7px 10px', color: '#374151', textAlign: 'center' }}>{s.year_of_study ?? '—'}</td>
+                    <td style={{ padding: '7px 10px' }}>
+                      {s.already_enrolled ? (
+                        <span style={{ fontSize: 11, color: '#94a3b8', fontStyle: 'italic' }}>Already enrolled</span>
+                      ) : (
+                        <button
+                          onClick={() => handleEnroll(s)}
+                          disabled={enrollingId === s.user_id || isFull}
+                          style={{ padding: '3px 10px', borderRadius: 6, border: '1px solid #bfdbfe', background: (enrollingId === s.user_id || isFull) ? '#f8fafc' : '#eff6ff', cursor: (enrollingId === s.user_id || isFull) ? 'not-allowed' : 'pointer', color: '#2563eb', fontSize: 12, fontWeight: 500, whiteSpace: 'nowrap' }}
+                        >
+                          {enrollingId === s.user_id ? 'Enrolling…' : 'Enroll'}
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {results.length >= 50 && (
+            <div style={{ fontSize: 11, color: '#94a3b8', textAlign: 'center', paddingTop: 6 }}>
+              Showing first 50 results — narrow your search for more precise results.
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function BulkEnrollPanel({ sectionId, sectionDetail, defaultDept, departments, onEnrolled }) {
+  const [open,    setOpen]    = useState(false);
+  const [dept,    setDept]    = useState('');
+  const [year,    setYear]    = useState('');
+  const [loading, setLoading] = useState(false);
+  const [result,  setResult]  = useState(null);
+  const [confirm, setConfirm] = useState(false);
+
+  useEffect(() => {
+    setDept('');
+    setYear('');
+    setResult(null);
+    setConfirm(false);
+  }, [sectionId, defaultDept]);
+
+  const isFull    = sectionDetail?.max_capacity != null && sectionDetail.enrolled >= sectionDetail.max_capacity;
+  const canSubmit = (dept.trim() || year) && !isFull;
+
+  const handleBulkEnroll = async () => {
+    setLoading(true);
+    setResult(null);
+    try {
+      const res = await enrollmentAPI.bulkEnroll({
+        section_id:          sectionId,
+        department_contains: dept || undefined,
+        year_of_study:       year ? parseInt(year, 10) : undefined,
+      });
+      const d = res.data?.data;
+      setResult(d);
+      if (d.inserted > 0) {
+        toast.success(`Enrolled ${d.inserted} student${d.inserted !== 1 ? 's' : ''}.`);
+        onEnrolled();
+      } else {
+        toast('No new students enrolled — all matched are already enrolled or section is full.', { icon: 'ℹ️' });
+      }
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setLoading(false);
+      setConfirm(false);
+    }
+  };
+
+  return (
+    <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: '14px 18px' }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 600, color: '#111827', display: 'flex', alignItems: 'center', gap: 6, padding: 0, width: '100%' }}
+      >
+        <span style={{ fontSize: 10, color: '#64748b', fontFamily: 'monospace' }}>{open ? '▲' : '▼'}</span>
+        Bulk Enroll by Department / Year
+        {isFull && <span style={{ fontSize: 11, color: '#dc2626', marginLeft: 4, fontWeight: 500 }}>— Section full</span>}
+      </button>
+
+      {open && (
+        <div style={{ marginTop: 14 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 12 }}>
+            <div style={{ flex: '2 1 170px' }}>
+              <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>Department</label>
+              <select
+                value={dept}
+                onChange={e => setDept(e.target.value)}
+                style={{ width: '100%', padding: '7px 10px', borderRadius: 6, border: '1px solid #e2e8f0', fontSize: 13, boxSizing: 'border-box', color: '#0f172a', background: '#ffffff' }}
+              >
+                <option value="">All departments</option>
+                {(departments || []).map(d => <option key={d} value={d}>{d}</option>)}
+              </select>
+            </div>
+            <div style={{ flex: '1 1 110px' }}>
+              <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>Year of study</label>
+              <select
+                value={year}
+                onChange={e => setYear(e.target.value)}
+                style={{ width: '100%', padding: '7px 10px', borderRadius: 6, border: '1px solid #e2e8f0', fontSize: 13 }}
+              >
+                <option value="">All years</option>
+                {YEAR_OPTIONS.map(y => <option key={y} value={y}>Year {y}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div style={{ fontSize: 12, color: '#64748b', padding: '8px 10px', background: '#f8fafc', borderRadius: 6, marginBottom: 12 }}>
+            All active students matching the filters will be enrolled. Already-enrolled students are skipped. Enrollment stops if the section reaches capacity.
+          </div>
+
+          {result && (
+            <div style={{ marginBottom: 12, padding: '10px 14px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, fontSize: 13 }}>
+              <div style={{ fontWeight: 600, color: '#166534', marginBottom: 6 }}>Bulk Enrollment Result</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 20px' }}>
+                <span style={{ color: '#166534' }}>✓ Enrolled: <strong>{result.inserted}</strong></span>
+                {result.skipped_duplicates > 0 && (
+                  <span style={{ color: '#92400e' }}>↩ Already enrolled (skipped): <strong>{result.skipped_duplicates}</strong></span>
+                )}
+                {result.skipped_capacity > 0 && (
+                  <span style={{ color: '#dc2626' }}>⚠ Skipped (section full): <strong>{result.skipped_capacity}</strong></span>
+                )}
+                <span style={{ color: '#64748b' }}>Total enrolled now: <strong>{result.enrolled} / {result.max_capacity ?? '∞'}</strong></span>
+              </div>
+            </div>
+          )}
+
+          <button
+            onClick={() => setConfirm(true)}
+            disabled={!canSubmit || loading}
+            style={{ padding: '8px 20px', borderRadius: 8, border: 'none', fontSize: 13, fontWeight: 600, cursor: canSubmit && !loading ? 'pointer' : 'not-allowed', background: canSubmit && !loading ? '#2563eb' : '#f1f5f9', color: canSubmit && !loading ? '#fff' : '#94a3b8' }}
+          >
+            {loading ? 'Enrolling…' : 'Bulk Enroll'}
+          </button>
+
+          {confirm && (
+            <ConfirmDialog
+              open={true}
+              onClose={() => setConfirm(false)}
+              onConfirm={handleBulkEnroll}
+              loading={loading}
+              title="Confirm Bulk Enrollment"
+              message={`Enroll all active students${dept ? ` from "${dept}"` : ''}${year ? ` in Year ${year}` : ''} into this section? Already-enrolled students will be skipped.`}
+            />
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Enrollments tab ─────────────────────────────────────────
+const ENROLLED_LIMIT = 20;
+
+function EnrollmentsTab({ semester, academicYear, departmentContains, onDataChanged }) {
+  const [sections,        setSections]        = useState([]);
+  const [sectionsLoading, setSectionsLoading] = useState(false);
+  const [selectedId,      setSelectedId]      = useState('');
+
+  const [sectionDetail,   setSectionDetail]   = useState(null);
+  const [students,        setStudents]        = useState([]);
+  const [studentsTotal,   setStudentsTotal]   = useState(0);
+  const [studentsLoading, setStudentsLoading] = useState(false);
+  const [studentsPage,    setStudentsPage]    = useState(1);
+
+  const [enrolledSearch, setEnrolledSearch] = useState('');
+  const [enrolledDept,   setEnrolledDept]   = useState('');
+  const [enrolledYear,   setEnrolledYear]   = useState('');
+
+  const [removeTarget,    setRemoveTarget]    = useState(null);
+  const [removeLoading,   setRemoveLoading]   = useState(false);
+  const [removeAllLoading, setRemoveAllLoading] = useState(false);
+
+  const [departments, setDepartments] = useState([]);
+
+  // Load section list for the dropdown
+  const loadSections = useCallback(async () => {
+    setSectionsLoading(true);
+    try {
+      const res = await scheduleAPI.getAll({
+        semester,
+        academic_year:      academicYear,
+        department_contains: departmentContains || undefined,
+        limit: 1000,
+      });
+      setSections(res.data?.data?.sections || []);
+    } catch {
+      setSections([]);
+    } finally {
+      setSectionsLoading(false);
+    }
+  }, [semester, academicYear, departmentContains]);
+
+  useEffect(() => { loadSections(); }, [loadSections]);
+
+  // Load distinct departments for filter selects
+  useEffect(() => {
+    enrollmentAPI.getStudentDepartments(
+      departmentContains ? { department_contains: departmentContains } : {}
+    )
+      .then(res => setDepartments(res.data?.data?.departments || []))
+      .catch(() => setDepartments([]));
+  }, [departmentContains]);
+
+  // Reset when page-level filters change
+  useEffect(() => {
+    setSelectedId('');
+    setSectionDetail(null);
+    setStudents([]);
+    setStudentsTotal(0);
+    setStudentsPage(1);
+    setEnrolledSearch('');
+    setEnrolledDept('');
+    setEnrolledYear('');
+  }, [semester, academicYear, departmentContains]);
+
+  // Load enrolled students + section detail
+  const loadEnrolled = useCallback(async () => {
+    if (!selectedId) return;
+    setStudentsLoading(true);
+    try {
+      const res = await enrollmentAPI.getEnrollments(selectedId, {
+        search:       enrolledSearch || undefined,
+        department:   enrolledDept   || undefined,
+        year_of_study: enrolledYear  || undefined,
+        page:  studentsPage,
+        limit: ENROLLED_LIMIT,
+      });
+      const d = res.data?.data || {};
+      setSectionDetail(d.section   || null);
+      setStudents(d.students       || []);
+      setStudentsTotal(d.pagination?.total || 0);
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setStudentsLoading(false);
+    }
+  }, [selectedId, enrolledSearch, enrolledDept, enrolledYear, studentsPage]);
+
+  useEffect(() => { loadEnrolled(); }, [loadEnrolled]);
+
+  const handleSectionChange = e => {
+    setSelectedId(e.target.value);
+    setSectionDetail(null);
+    setStudents([]);
+    setStudentsPage(1);
+    setEnrolledSearch('');
+    setEnrolledDept('');
+    setEnrolledYear('');
+  };
+
+  const handleEnrolled = useCallback(() => {
+    loadEnrolled();
+    onDataChanged();
+  }, [loadEnrolled, onDataChanged]);
+
+  const handleRemove = async () => {
+    if (!removeTarget) return;
+    setRemoveLoading(true);
+    try {
+      await enrollmentAPI.removeEnrollment(selectedId, removeTarget.user_id);
+      toast.success(`${removeTarget.first_name} ${removeTarget.last_name} removed.`);
+      setRemoveTarget(null);
+      loadEnrolled();
+      onDataChanged();
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setRemoveLoading(false);
+    }
+  };
+
+  const handleRemoveAll = async () => {
+    setRemoveAllLoading(true);
+    try {
+      const res = await enrollmentAPI.removeAllEnrollments(selectedId);
+      const { removed } = res.data?.data || {};
+      toast.success(`Removed ${removed} student${removed !== 1 ? 's' : ''} from the section.`);
+      setStudentsPage(1);
+      loadEnrolled();
+      onDataChanged();
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setRemoveAllLoading(false);
+    }
+  };
+
+  const totalPages = Math.ceil(studentsTotal / ENROLLED_LIMIT);
+
+  const sectionLabel = s => {
+    const days = daysArrayToString(s.day_of_week) || '';
+    const time = s.start_time ? `${formatTime(s.start_time)}–${formatTime(s.end_time)}` : '';
+    return [
+      `${s.course_code} — Sec ${s.section_number}`,
+      days, time,
+      s.instructor_name,
+    ].filter(Boolean).join(' · ');
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+      {/* Section picker */}
+      <div>
+        <label style={{ fontSize: 13, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 6 }}>
+          Select Section
+        </label>
+        <select
+          value={selectedId}
+          onChange={handleSectionChange}
+          disabled={sectionsLoading}
+          style={{ width: '100%', maxWidth: 700, padding: '8px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: 13, color: '#374151', background: '#fff' }}
+        >
+          <option value="">
+            {sectionsLoading
+              ? 'Loading sections…'
+              : sections.length === 0
+                ? 'No sections found for this semester / college'
+                : `— Select a section (${sections.length} available) —`}
+          </option>
+          {sections.map(s => (
+            <option key={s.id} value={s.id}>{sectionLabel(s)}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* Empty placeholder */}
+      {!selectedId && (
+        <div style={{ padding: 48, textAlign: 'center', color: '#94a3b8', border: '2px dashed #e2e8f0', borderRadius: 12 }}>
+          <div style={{ fontSize: 28, marginBottom: 8 }}>👥</div>
+          <div style={{ fontSize: 14, fontWeight: 600, color: '#374151', marginBottom: 4 }}>No section selected</div>
+          <div style={{ fontSize: 13 }}>Select a section above to view and manage enrollments.</div>
+        </div>
+      )}
+
+      {/* Content */}
+      {selectedId && (
+        <>
+          <SectionDetailCard section={sectionDetail} loading={studentsLoading && !sectionDetail} />
+
+          <EnrolledStudentsPanel
+            students={students}
+            loading={studentsLoading}
+            total={studentsTotal}
+            page={studentsPage}
+            totalPages={totalPages}
+            onPageChange={setStudentsPage}
+            search={enrolledSearch}
+            department={enrolledDept}
+            year={enrolledYear}
+            onSearchChange={v => { setEnrolledSearch(v); setStudentsPage(1); }}
+            onDepartmentChange={v => { setEnrolledDept(v); setStudentsPage(1); }}
+            onYearChange={v => { setEnrolledYear(v); setStudentsPage(1); }}
+            onRemove={setRemoveTarget}
+            departments={departments}
+            onRemoveAll={handleRemoveAll}
+          />
+
+          <AddStudentPanel
+            sectionId={selectedId}
+            sectionDetail={sectionDetail}
+            defaultDept={departmentContains}
+            departments={departments}
+            onEnrolled={handleEnrolled}
+          />
+
+          <BulkEnrollPanel
+            sectionId={selectedId}
+            sectionDetail={sectionDetail}
+            defaultDept={departmentContains}
+            departments={departments}
+            onEnrolled={handleEnrolled}
+          />
+        </>
+      )}
+
+      {/* Remove confirmation */}
+      {removeTarget && (
+        <ConfirmDialog
+          open={true}
+          onClose={() => setRemoveTarget(null)}
+          onConfirm={handleRemove}
+          loading={removeLoading}
+          danger
+          title="Remove Student"
+          message={`Remove ${removeTarget.first_name} ${removeTarget.last_name} (${removeTarget.registration_number || removeTarget.email}) from this section? They can be re-enrolled later.`}
+        />
+      )}
+    </div>
+  );
+}
+
 // ─── Main page ────────────────────────────────────────────────
 export default function SemesterManagementPage() {
   const [semester, setSemester] = useState('fall');
@@ -671,7 +1386,15 @@ export default function SemesterManagementPage() {
       {activeTab === 'Timetable' && (
         <TimetableTab meetings={meetings} loading={meetingsLoading} />
       )}
-      {activeTab !== 'Sections' && activeTab !== 'Timetable' && (
+      {activeTab === 'Enrollments' && (
+        <EnrollmentsTab
+          semester={semester}
+          academicYear={academicYear}
+          departmentContains={deptFilter}
+          onDataChanged={handleSectionDataChanged}
+        />
+      )}
+      {activeTab !== 'Sections' && activeTab !== 'Timetable' && activeTab !== 'Enrollments' && (
         <PlaceholderTab name={activeTab} />
       )}
     </div>

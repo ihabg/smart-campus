@@ -217,6 +217,30 @@ export const roomTypeAPI = {
   getAll: () => api.get('/room-types'),
 };
 
+// ─── enrollmentAPI ────────────────────────────────────────────
+export const enrollmentAPI = {
+  getEnrollments: (sectionId, params = {}) =>
+    api.get(`/schedule/admin/sections/${sectionId}/enrollments`, { params }),
+
+  searchStudents: (params = {}) =>
+    api.get('/schedule/admin/students/search', { params }),
+
+  enrollStudent: (data) =>
+    api.post('/schedule/admin/enroll', data),
+
+  removeEnrollment: (sectionId, studentId) =>
+    api.delete(`/schedule/admin/enroll/${sectionId}/${studentId}`),
+
+  bulkEnroll: (data) =>
+    api.post('/schedule/admin/bulk-enroll', data),
+
+  getStudentDepartments: (params = {}) =>
+    api.get('/schedule/admin/student-departments', { params }),
+
+  removeAllEnrollments: (sectionId) =>
+    api.delete(`/schedule/admin/sections/${sectionId}/enrollments`),
+};
+
 // ─── semesterAPI ─────────────────────────────────────────────
 export const semesterAPI = {
   getSemesterStats: (semester, academic_year, extra = {}) =>

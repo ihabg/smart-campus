@@ -1602,6 +1602,440 @@ async function getSemesterMeetings(req, res, next) {
   }
 }
 
+// ─── Admin enrollment management ─────────────────────────────
+
+// GET /schedule/admin/sections/:sectionId/enrollments
+// Returns section details + paginated list of enrolled students.
+// Optional query filters: search, department, year_of_study, page, limit.
+async function adminGetEnrollments(req, res, next) {
+  try {
+    const { sectionId } = req.params;
+    const { search, department, year_of_study, page = 1, limit = 20 } = req.query;
+
+    const sectionRes = await query(
+      `SELECT
+         s.id, s.section_number, s.semester, s.academic_year,
+         s.enrolled, s.max_capacity, s.day_of_week, s.start_time, s.end_time,
+         c.code AS course_code, c.name AS course_name, c.department,
+         TRIM(CONCAT_WS(' ',
+           NULLIF(TRIM(COALESCE(i.title,'')), ''), i.first_name, i.last_name
+         )) AS instructor_name,
+         r.room_number
+       FROM sections s
+       JOIN courses c ON c.id = s.course_id
+       LEFT JOIN instructors i ON i.id = s.instructor_id
+       LEFT JOIN rooms r ON r.id = s.room_id
+       WHERE s.id = $1 AND s.is_active = TRUE`,
+      [sectionId]
+    );
+
+    if (!sectionRes.rows.length) {
+      return res.status(404).json({ success: false, message: 'Section not found.' });
+    }
+
+    let sql = `
+      SELECT
+        u.id           AS user_id,
+        u.student_id   AS registration_number,
+        u.first_name,
+        u.last_name,
+        u.email,
+        u.department,
+        u.year_of_study,
+        e.updated_at   AS enrolled_at
+      FROM enrollments e
+      JOIN users u ON u.id = e.student_id
+      WHERE e.section_id = $1
+        AND e.status = 'enrolled'
+    `;
+    const params = [sectionId];
+    let idx = 2;
+
+    if (search) {
+      params.push(`%${search}%`);
+      sql += ` AND (u.first_name ILIKE $${idx} OR u.last_name ILIKE $${idx}
+                    OR u.email ILIKE $${idx} OR u.student_id ILIKE $${idx})`;
+      idx++;
+    }
+    if (department) {
+      params.push(`%${department}%`);
+      sql += ` AND u.department ILIKE $${idx++}`;
+    }
+    if (year_of_study) {
+      params.push(parseInt(year_of_study, 10));
+      sql += ` AND u.year_of_study = $${idx++}`;
+    }
+
+    const countRes = await query(`SELECT COUNT(*) FROM (${sql}) t`, params);
+    const total    = parseInt(countRes.rows[0].count, 10);
+
+    sql += ` ORDER BY u.last_name, u.first_name LIMIT $${idx++} OFFSET $${idx++}`;
+    params.push(parseInt(limit, 10), (parseInt(page, 10) - 1) * parseInt(limit, 10));
+
+    const studentsRes = await query(sql, params);
+
+    res.json({
+      success: true,
+      data: {
+        section: sectionRes.rows[0],
+        students: studentsRes.rows,
+        pagination: {
+          total,
+          page:       parseInt(page, 10),
+          limit:      parseInt(limit, 10),
+          totalPages: Math.ceil(total / parseInt(limit, 10)),
+        },
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+// GET /schedule/admin/students/search
+// Searches active students. Requires at least one filter (returns [] otherwise).
+// Optional: exclude_section_id marks already-enrolled students.
+async function adminSearchStudents(req, res, next) {
+  try {
+    const { search, department, year_of_study, exclude_section_id } = req.query;
+    const limit = Math.min(parseInt(req.query.limit || '50', 10), 100);
+
+    if (!search && !department && !year_of_study) {
+      return res.json({ success: true, data: { students: [] } });
+    }
+
+    const params = [];
+    let idx = 1;
+
+    let exclJoin = '';
+    if (exclude_section_id) {
+      params.push(exclude_section_id);
+      exclJoin = `
+        LEFT JOIN enrollments excl_e
+          ON excl_e.student_id = u.id
+         AND excl_e.section_id = $${idx++}
+         AND excl_e.status = 'enrolled'
+      `;
+    }
+
+    let conditions = `WHERE u.role = 'student' AND u.status = 'active'`;
+
+    if (search) {
+      params.push(`%${search}%`);
+      conditions += ` AND (u.first_name ILIKE $${idx} OR u.last_name ILIKE $${idx}
+                          OR u.email ILIKE $${idx} OR u.student_id ILIKE $${idx})`;
+      idx++;
+    }
+    if (department) {
+      params.push(`%${department}%`);
+      conditions += ` AND u.department ILIKE $${idx++}`;
+    }
+    if (year_of_study) {
+      params.push(parseInt(year_of_study, 10));
+      conditions += ` AND u.year_of_study = $${idx++}`;
+    }
+
+    params.push(limit);
+
+    const sql = `
+      SELECT
+        u.id           AS user_id,
+        u.student_id   AS registration_number,
+        u.first_name,
+        u.last_name,
+        u.email,
+        u.department,
+        u.year_of_study
+        ${exclude_section_id ? ', (excl_e.student_id IS NOT NULL) AS already_enrolled' : ''}
+      FROM users u
+      ${exclJoin}
+      ${conditions}
+      ORDER BY u.last_name, u.first_name
+      LIMIT $${idx}
+    `;
+
+    const result = await query(sql, params);
+    res.json({ success: true, data: { students: result.rows } });
+  } catch (error) {
+    next(error);
+  }
+}
+
+// POST /schedule/admin/enroll
+// Body: { section_id, student_id }
+async function adminEnrollStudent(req, res, next) {
+  try {
+    const { section_id, student_id } = req.body;
+
+    if (!section_id || !student_id) {
+      return res.status(400).json({
+        success: false,
+        message: 'section_id and student_id are required.',
+      });
+    }
+
+    const [secRes, userRes, existingRes] = await Promise.all([
+      query('SELECT id, max_capacity, enrolled FROM sections WHERE id = $1 AND is_active = TRUE', [section_id]),
+      query("SELECT id FROM users WHERE id = $1 AND role = 'student'", [student_id]),
+      query('SELECT status FROM enrollments WHERE student_id = $1 AND section_id = $2', [student_id, section_id]),
+    ]);
+
+    if (!secRes.rows.length) {
+      return res.status(404).json({ success: false, message: 'Section not found.' });
+    }
+    if (!userRes.rows.length) {
+      return res.status(404).json({ success: false, message: 'Student not found.' });
+    }
+    if (existingRes.rows.length && existingRes.rows[0].status === 'enrolled') {
+      return res.status(409).json({
+        success: false,
+        message: 'Student is already enrolled in this section.',
+        already_enrolled: true,
+      });
+    }
+
+    const { max_capacity, enrolled } = secRes.rows[0];
+    if (max_capacity !== null && enrolled >= max_capacity) {
+      return res.status(409).json({
+        success: false,
+        message: 'Section is at full capacity.',
+        at_capacity: true,
+      });
+    }
+
+    await withTransaction(async client => {
+      await client.query(
+        `INSERT INTO enrollments (student_id, section_id)
+         VALUES ($1, $2)
+         ON CONFLICT (student_id, section_id)
+           DO UPDATE SET status = 'enrolled', updated_at = NOW()`,
+        [student_id, section_id]
+      );
+      await client.query(
+        'UPDATE sections SET enrolled = enrolled + 1 WHERE id = $1',
+        [section_id]
+      );
+    });
+
+    const updatedSec = await query(
+      'SELECT enrolled, max_capacity FROM sections WHERE id = $1',
+      [section_id]
+    );
+
+    res.status(201).json({
+      success: true,
+      message: 'Student enrolled successfully.',
+      data: updatedSec.rows[0],
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+// DELETE /schedule/admin/enroll/:sectionId/:studentId
+async function adminRemoveEnrollment(req, res, next) {
+  try {
+    const { sectionId, studentId } = req.params;
+
+    await withTransaction(async client => {
+      const result = await client.query(
+        `UPDATE enrollments SET status = 'dropped', updated_at = NOW()
+         WHERE student_id = $1 AND section_id = $2 AND status = 'enrolled'
+         RETURNING id`,
+        [studentId, sectionId]
+      );
+
+      if (!result.rows.length) {
+        throw Object.assign(
+          new Error('Enrollment not found or already removed.'),
+          { statusCode: 404 }
+        );
+      }
+
+      await client.query(
+        'UPDATE sections SET enrolled = GREATEST(enrolled - 1, 0) WHERE id = $1',
+        [sectionId]
+      );
+    });
+
+    const updatedSec = await query(
+      'SELECT enrolled, max_capacity FROM sections WHERE id = $1',
+      [sectionId]
+    );
+
+    res.json({
+      success: true,
+      message: 'Student removed from section.',
+      data: updatedSec.rows[0],
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+// POST /schedule/admin/bulk-enroll
+// Body: { section_id, department_contains?, year_of_study? }
+// Returns: { inserted, skipped_duplicates, skipped_capacity, enrolled, max_capacity }
+async function adminBulkEnroll(req, res, next) {
+  try {
+    const { section_id, department_contains, year_of_study } = req.body;
+
+    if (!section_id) {
+      return res.status(400).json({ success: false, message: 'section_id is required.' });
+    }
+    if (!department_contains && !year_of_study) {
+      return res.status(400).json({
+        success: false,
+        message: 'At least one of department_contains or year_of_study is required.',
+      });
+    }
+
+    const secRes = await query(
+      'SELECT id, max_capacity, enrolled FROM sections WHERE id = $1 AND is_active = TRUE',
+      [section_id]
+    );
+    if (!secRes.rows.length) {
+      return res.status(404).json({ success: false, message: 'Section not found.' });
+    }
+    const section = secRes.rows[0];
+
+    // Find all active matching students
+    const sParams = [];
+    let sidx = 1;
+    let cond = "WHERE u.role = 'student' AND u.status = 'active'";
+
+    if (department_contains) {
+      sParams.push(`%${department_contains}%`);
+      cond += ` AND u.department ILIKE $${sidx++}`;
+    }
+    if (year_of_study) {
+      sParams.push(parseInt(year_of_study, 10));
+      cond += ` AND u.year_of_study = $${sidx++}`;
+    }
+
+    const allRes = await query(
+      `SELECT u.id AS user_id FROM users u ${cond} ORDER BY u.last_name, u.first_name`,
+      sParams
+    );
+
+    // Already-enrolled set
+    const enrolledRes = await query(
+      "SELECT student_id FROM enrollments WHERE section_id = $1 AND status = 'enrolled'",
+      [section_id]
+    );
+    const enrolledSet = new Set(enrolledRes.rows.map(r => r.student_id));
+
+    const toEnroll        = allRes.rows.filter(s => !enrolledSet.has(s.user_id));
+    const skipped_duplicates = allRes.rows.length - toEnroll.length;
+
+    // Respect capacity
+    const remaining    = section.max_capacity !== null
+      ? Math.max(0, section.max_capacity - section.enrolled)
+      : toEnroll.length;
+    const canInsert    = Math.min(toEnroll.length, remaining);
+    const skipped_capacity = Math.max(0, toEnroll.length - canInsert);
+    const batch        = toEnroll.slice(0, canInsert);
+
+    let inserted = 0;
+    if (batch.length > 0) {
+      await withTransaction(async client => {
+        for (const s of batch) {
+          await client.query(
+            `INSERT INTO enrollments (student_id, section_id)
+             VALUES ($1, $2)
+             ON CONFLICT (student_id, section_id)
+               DO UPDATE SET status = 'enrolled', updated_at = NOW()`,
+            [s.user_id, section_id]
+          );
+          inserted++;
+        }
+        if (inserted > 0) {
+          await client.query(
+            'UPDATE sections SET enrolled = enrolled + $1 WHERE id = $2',
+            [inserted, section_id]
+          );
+        }
+      });
+    }
+
+    const updatedSec = await query(
+      'SELECT enrolled, max_capacity FROM sections WHERE id = $1',
+      [section_id]
+    );
+
+    res.json({
+      success: true,
+      data: {
+        inserted,
+        skipped_duplicates,
+        skipped_capacity,
+        total_matched: allRes.rows.length,
+        enrolled:      updatedSec.rows[0].enrolled,
+        max_capacity:  updatedSec.rows[0].max_capacity,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+// GET /schedule/admin/student-departments?department_contains=Engineering
+async function adminGetStudentDepartments(req, res, next) {
+  try {
+    const { department_contains } = req.query;
+    const params = [];
+    let sql = `SELECT DISTINCT department FROM users
+               WHERE role = 'student' AND status = 'active'
+                 AND department IS NOT NULL AND department != ''`;
+    if (department_contains) {
+      params.push(`%${department_contains}%`);
+      sql += ` AND department ILIKE $1`;
+    }
+    sql += ' ORDER BY department';
+    const result = await query(sql, params);
+    res.json({ success: true, data: { departments: result.rows.map(r => r.department) } });
+  } catch (error) {
+    next(error);
+  }
+}
+
+// DELETE /schedule/admin/sections/:sectionId/enrollments
+async function adminRemoveAllEnrollments(req, res, next) {
+  try {
+    const { sectionId } = req.params;
+    const secRes = await query(
+      'SELECT id, enrolled FROM sections WHERE id = $1 AND is_active = TRUE',
+      [sectionId]
+    );
+    if (!secRes.rows.length) {
+      return res.status(404).json({ success: false, message: 'Section not found.' });
+    }
+
+    const countRes = await query(
+      "SELECT COUNT(*) AS cnt FROM enrollments WHERE section_id = $1 AND status = 'enrolled'",
+      [sectionId]
+    );
+    const removed = parseInt(countRes.rows[0].cnt, 10);
+
+    if (removed > 0) {
+      await withTransaction(async client => {
+        await client.query(
+          "UPDATE enrollments SET status = 'dropped', updated_at = NOW() WHERE section_id = $1 AND status = 'enrolled'",
+          [sectionId]
+        );
+        await client.query(
+          'UPDATE sections SET enrolled = 0 WHERE id = $1',
+          [sectionId]
+        );
+      });
+    }
+
+    res.json({ success: true, data: { removed, enrolled: 0 } });
+  } catch (error) {
+    next(error);
+  }
+}
+
 module.exports = {
   getMySchedule,
   getTodaySchedule,
@@ -1619,4 +2053,11 @@ module.exports = {
   getSemesterStats,
   getSemesterMeetings,
   getRoomAvailability,
+  adminGetEnrollments,
+  adminSearchStudents,
+  adminEnrollStudent,
+  adminRemoveEnrollment,
+  adminBulkEnroll,
+  adminGetStudentDepartments,
+  adminRemoveAllEnrollments,
 };

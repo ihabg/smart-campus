@@ -49,6 +49,56 @@ router.get(
   ctrl.getRoomAvailability
 );
 
+// ── Admin enrollment routes (named — must stay before /:id) ──
+router.get(
+  '/admin/sections/:sectionId/enrollments',
+  protect,
+  restrictTo('admin', 'super_admin'),
+  ctrl.adminGetEnrollments
+);
+
+router.get(
+  '/admin/students/search',
+  protect,
+  restrictTo('admin', 'super_admin'),
+  ctrl.adminSearchStudents
+);
+
+router.post(
+  '/admin/enroll',
+  protect,
+  restrictTo('admin', 'super_admin'),
+  ctrl.adminEnrollStudent
+);
+
+router.delete(
+  '/admin/enroll/:sectionId/:studentId',
+  protect,
+  restrictTo('admin', 'super_admin'),
+  ctrl.adminRemoveEnrollment
+);
+
+router.post(
+  '/admin/bulk-enroll',
+  protect,
+  restrictTo('admin', 'super_admin'),
+  ctrl.adminBulkEnroll
+);
+
+router.get(
+  '/admin/student-departments',
+  protect,
+  restrictTo('admin', 'super_admin'),
+  ctrl.adminGetStudentDepartments
+);
+
+router.delete(
+  '/admin/sections/:sectionId/enrollments',
+  protect,
+  restrictTo('admin', 'super_admin'),
+  ctrl.adminRemoveAllEnrollments
+);
+
 // Admin CRUD routes
 router.post(
   '/',
