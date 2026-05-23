@@ -43,6 +43,8 @@ export const roomAPI = {
   getByNumber: (roomNumber) =>
     api.get(`/rooms/number/${encodeURIComponent(roomNumber)}`),
 
+  getLiveStatus: (roomId) => api.get(`/rooms/${roomId}/live-status`),
+
   create: (data) => api.post('/rooms', data),
 
   update: (id, data) => api.patch(`/rooms/${id}`, data),

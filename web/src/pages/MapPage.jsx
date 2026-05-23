@@ -553,6 +553,77 @@ function findBlockByScheduleRoom(roomNumber) {
 }
 
 
+function fmtTime(timeStr) {
+  if (!timeStr) return '';
+  const [h, m] = timeStr.split(':').map(Number);
+  const period = h < 12 ? 'AM' : 'PM';
+  const hour12 = h % 12 || 12;
+  return `${hour12}:${String(m).padStart(2, '0')} ${period}`;
+}
+
+function LiveStatusPanel({ status, loading }) {
+  if (loading) {
+    return <div className="room-live-loading">Loading live status…</div>;
+  }
+  if (!status) return null;
+
+  const isOccupied = status.status === 'occupied';
+  const { current, next } = status;
+
+  return (
+    <>
+      <div className={`room-popup-status${isOccupied ? ' status-occupied' : ''}`}>
+        <div className="room-status-left">
+          <span className={`room-status-dot${isOccupied ? ' dot-occupied' : ''}`} />
+          <div>
+            <strong>{isOccupied ? 'In Session' : 'Available'}</strong>
+            <small>
+              {isOccupied
+                ? `${current.course_code} · ends ${fmtTime(current.end_time)}`
+                : 'No active class'}
+            </small>
+          </div>
+        </div>
+        <span className={`room-status-badge${isOccupied ? '' : ' badge-open'}`}>
+          {isOccupied ? 'LIVE' : 'OPEN'}
+        </span>
+      </div>
+
+      {isOccupied && current && (
+        <div className="room-popup-live-class current-class">
+          <div className="live-class-label">Current Class</div>
+          <div className="live-class-name">{current.course_code}: {current.course_name}</div>
+          {current.instructor_name && (
+            <div className="live-class-instructor">{current.instructor_name}</div>
+          )}
+          <div className="live-class-time">
+            {fmtTime(current.start_time)} – {fmtTime(current.end_time)}
+          </div>
+        </div>
+      )}
+
+      {next ? (
+        <div className="room-popup-live-class next-class">
+          <div className="live-class-label">Next Class</div>
+          <div className="live-class-name">{next.course_code}: {next.course_name}</div>
+          {next.instructor_name && (
+            <div className="live-class-instructor">{next.instructor_name}</div>
+          )}
+          <div className="live-class-time">
+            {fmtTime(next.start_time)} – {fmtTime(next.end_time)}
+          </div>
+        </div>
+      ) : !isOccupied && (
+        <div className="room-popup-empty">
+          <span className="room-popup-empty-icon">✨</span>
+          <h4>No classes scheduled now</h4>
+          <p>This location is currently free</p>
+        </div>
+      )}
+    </>
+  );
+}
+
 const MIN_MAP_ZOOM = 1;
 const MAX_MAP_ZOOM = 3;
 const MAP_ZOOM_STEP = 0.12;
@@ -605,6 +676,9 @@ useEffect(() => {
   window.addEventListener('keydown', onKeyDown);
   return () => window.removeEventListener('keydown', onKeyDown);
 }, []);
+
+  const [liveStatus, setLiveStatus] = useState(null);
+  const [liveStatusLoading, setLiveStatusLoading] = useState(false);
 
   const [dbRoomsByFloor, setDbRoomsByFloor] = useState({});
   const [dbRoomsLoaded, setDbRoomsLoaded] = useState(false);
@@ -783,6 +857,22 @@ useEffect(() => {
     setStartNodeId('B2_LEFT_STAIRS');
   }
 }, [location.search, mapFloors, dbRoomsLoaded]);
+
+  useEffect(() => {
+    if (!selectedBlock?.dbId || !isAcademicSpace(selectedBlock)) {
+      setLiveStatus(null);
+      setLiveStatusLoading(false);
+      return;
+    }
+    setLiveStatusLoading(true);
+    roomAPI.getLiveStatus(selectedBlock.dbId)
+      .then(res => {
+        const payload = res?.data?.data || res?.data || res;
+        setLiveStatus(payload || null);
+      })
+      .catch(() => setLiveStatus(null))
+      .finally(() => setLiveStatusLoading(false));
+  }, [selectedBlock]);
 
   function clearRoute() {
     setRoutePath([]);
@@ -1175,30 +1265,20 @@ setSelectedNeed('all');
             </button>
           </div>
 
-          {shouldShowAvailabilityBox(selectedBlock) && (
-  <div className="room-popup-status">
-    <div className="room-status-left">
-      <span className="room-status-dot" />
-
-      <div>
-        <strong>{selectedBlock.status || 'Available'}</strong>
-        <small>Facility available</small>
-      </div>
-    </div>
-
-    <span className="room-status-badge">
-      {selectedBlock.status === 'Occupied' ? 'LIVE' : 'OPEN'}
-    </span>
-  </div>
-)}
-
-              {shouldShowNoClassBox(selectedBlock) && (
-                    <div className="room-popup-empty">
-                      <span className="room-popup-empty-icon">✨</span>
-                        <h4>No classes scheduled now</h4>
-                         <p>This location is currently free</p>
-                     </div>
-              )}
+          {isAcademicSpace(selectedBlock) ? (
+            <LiveStatusPanel status={liveStatus} loading={liveStatusLoading} />
+          ) : shouldShowAvailabilityBox(selectedBlock) && (
+            <div className="room-popup-status">
+              <div className="room-status-left">
+                <span className="room-status-dot" />
+                <div>
+                  <strong>Available</strong>
+                  <small>Facility available</small>
+                </div>
+              </div>
+              <span className="room-status-badge badge-open">OPEN</span>
+            </div>
+          )}
 
           <div className="room-popup-grid">
             {getRoomInfoItems(selectedBlock, currentFloor.title).map((item) => (

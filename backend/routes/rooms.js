@@ -6,6 +6,7 @@ const { validateRoom, validateUUID } = require('../middleware/validate');
 
 router.get('/', ctrl.getRoomsByFloor);
 router.get('/number/:roomNumber', ctrl.getRoomByNumber);
+router.get('/:roomId/live-status', protect, ctrl.getRoomLiveStatus);
 router.get('/:id', validateUUID('id'), ctrl.getRoomById);
 router.post('/',                    protect, restrictTo('admin','super_admin'), validateRoom, ctrl.createRoom);
 router.patch('/bulk-coordinates',   protect, restrictTo('admin','super_admin'), ctrl.bulkUpdateCoordinates);

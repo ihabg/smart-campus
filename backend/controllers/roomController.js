@@ -465,6 +465,167 @@ async function setAdjacency(req, res, next) {
     next(error);
   }
 }
+async function getRoomLiveStatus(req, res, next) {
+  try {
+    const { roomId } = req.params;
+
+    // Matches any published semester — same pattern as getMySchedule.
+    // Using LIMIT 1 on the "latest" semester was the bug: if multiple
+    // semesters are published, the wrong one could be selected and the
+    // JOIN would filter out every meeting for the actual active semester.
+    const sql = `
+      WITH
+      current_candidates AS (
+        -- Primary source: section_meetings rows
+        SELECT
+          1 AS src_priority,
+          s.section_number,
+          c.code  AS course_code,
+          c.name  AS course_name,
+          sm.start_time AS start_time,
+          sm.end_time   AS end_time,
+          CASE WHEN i.id IS NOT NULL
+            THEN TRIM(COALESCE(i.title || ' ', '') || COALESCE(i.first_name, '') || ' ' || COALESCE(i.last_name, ''))
+            ELSE NULL
+          END AS instructor_name
+        FROM section_meetings sm
+        JOIN sections s    ON s.id = sm.section_id
+        JOIN courses   c   ON c.id = s.course_id
+        LEFT JOIN instructors i ON i.id = s.instructor_id
+        JOIN semesters sem
+          ON s.semester::text = sem.semester
+         AND s.academic_year  = sem.academic_year
+         AND sem.status       = 'published'
+        WHERE COALESCE(sm.room_id, s.room_id) = $1
+          AND s.is_active    = TRUE
+          AND sm.day_of_week = EXTRACT(DOW FROM CURRENT_DATE)::int
+          AND sm.start_time <= CURRENT_TIME::time
+          AND sm.end_time    > CURRENT_TIME::time
+
+        UNION ALL
+
+        -- Fallback: sections that have no section_meetings rows at all
+        SELECT
+          2 AS src_priority,
+          s.section_number,
+          c.code  AS course_code,
+          c.name  AS course_name,
+          s.start_time AS start_time,
+          s.end_time   AS end_time,
+          CASE WHEN i.id IS NOT NULL
+            THEN TRIM(COALESCE(i.title || ' ', '') || COALESCE(i.first_name, '') || ' ' || COALESCE(i.last_name, ''))
+            ELSE NULL
+          END AS instructor_name
+        FROM sections s
+        JOIN courses   c   ON c.id = s.course_id
+        LEFT JOIN instructors i ON i.id = s.instructor_id
+        JOIN semesters sem
+          ON s.semester::text = sem.semester
+         AND s.academic_year  = sem.academic_year
+         AND sem.status       = 'published'
+        WHERE s.room_id       = $1
+          AND s.is_active     = TRUE
+          AND EXTRACT(DOW FROM CURRENT_DATE)::int = ANY(s.day_of_week)
+          AND s.start_time   <= CURRENT_TIME::time
+          AND s.end_time      > CURRENT_TIME::time
+          AND NOT EXISTS (SELECT 1 FROM section_meetings sm2 WHERE sm2.section_id = s.id)
+      ),
+
+      next_candidates AS (
+        -- Primary source: section_meetings rows
+        SELECT
+          1 AS src_priority,
+          s.section_number,
+          c.code  AS course_code,
+          c.name  AS course_name,
+          sm.start_time AS start_time,
+          sm.end_time   AS end_time,
+          CASE WHEN i.id IS NOT NULL
+            THEN TRIM(COALESCE(i.title || ' ', '') || COALESCE(i.first_name, '') || ' ' || COALESCE(i.last_name, ''))
+            ELSE NULL
+          END AS instructor_name
+        FROM section_meetings sm
+        JOIN sections s    ON s.id = sm.section_id
+        JOIN courses   c   ON c.id = s.course_id
+        LEFT JOIN instructors i ON i.id = s.instructor_id
+        JOIN semesters sem
+          ON s.semester::text = sem.semester
+         AND s.academic_year  = sem.academic_year
+         AND sem.status       = 'published'
+        WHERE COALESCE(sm.room_id, s.room_id) = $1
+          AND s.is_active    = TRUE
+          AND sm.day_of_week = EXTRACT(DOW FROM CURRENT_DATE)::int
+          AND sm.start_time  > CURRENT_TIME::time
+
+        UNION ALL
+
+        -- Fallback: sections that have no section_meetings rows at all
+        SELECT
+          2 AS src_priority,
+          s.section_number,
+          c.code  AS course_code,
+          c.name  AS course_name,
+          s.start_time AS start_time,
+          s.end_time   AS end_time,
+          CASE WHEN i.id IS NOT NULL
+            THEN TRIM(COALESCE(i.title || ' ', '') || COALESCE(i.first_name, '') || ' ' || COALESCE(i.last_name, ''))
+            ELSE NULL
+          END AS instructor_name
+        FROM sections s
+        JOIN courses   c   ON c.id = s.course_id
+        LEFT JOIN instructors i ON i.id = s.instructor_id
+        JOIN semesters sem
+          ON s.semester::text = sem.semester
+         AND s.academic_year  = sem.academic_year
+         AND sem.status       = 'published'
+        WHERE s.room_id       = $1
+          AND s.is_active     = TRUE
+          AND EXTRACT(DOW FROM CURRENT_DATE)::int = ANY(s.day_of_week)
+          AND s.start_time    > CURRENT_TIME::time
+          AND NOT EXISTS (SELECT 1 FROM section_meetings sm2 WHERE sm2.section_id = s.id)
+      )
+
+      SELECT
+        (
+          SELECT row_to_json(t)
+          FROM (
+            SELECT section_number, course_code, course_name,
+                   start_time::text, end_time::text, instructor_name
+            FROM current_candidates
+            ORDER BY src_priority, start_time
+            LIMIT 1
+          ) t
+        ) AS current,
+        (
+          SELECT row_to_json(t)
+          FROM (
+            SELECT section_number, course_code, course_name,
+                   start_time::text, end_time::text, instructor_name
+            FROM next_candidates
+            ORDER BY src_priority, start_time
+            LIMIT 1
+          ) t
+        ) AS next
+    `;
+
+    const result  = await query(sql, [roomId]);
+    const row     = result.rows[0] || {};
+    const current = row.current   || null;
+    const next    = row.next      || null;
+
+    res.json({
+      success: true,
+      data: {
+        status: current ? 'occupied' : 'available',
+        current,
+        next,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
 module.exports = {
   getRoomsByFloor,
   getRoomById,
@@ -474,4 +635,5 @@ module.exports = {
   deleteRoom,
   bulkUpdateCoordinates,
   setAdjacency,
+  getRoomLiveStatus,
 };

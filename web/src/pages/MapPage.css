@@ -775,6 +775,96 @@
   font-size: 14px;
 }
 
+/* ─── Live Room Status ──────────────────────────────────── */
+
+.room-live-loading {
+  padding: 14px 18px;
+  color: #6a7a96;
+  font-size: 14px;
+  font-weight: 700;
+  border-bottom: 1px solid #eef3fb;
+}
+
+.room-popup-status.status-occupied {
+  background: #fff4e6;
+  border-bottom-color: #ffe0b2;
+}
+
+.room-popup-status.status-occupied .room-status-left strong {
+  color: #b45309;
+}
+
+.room-popup-status.status-occupied .room-status-left small {
+  color: #92400e;
+}
+
+.room-status-dot.dot-occupied {
+  background: #ef4444;
+  animation: livePulse 1.4s ease-in-out infinite;
+}
+
+.room-status-badge.badge-open {
+  background: #14a44d;
+}
+
+.room-popup-live-class {
+  margin: 0 18px 14px;
+  border-radius: 14px;
+  padding: 14px 16px;
+}
+
+.room-popup-live-class.current-class {
+  background: #fff4e6;
+  border: 1px solid #fddcab;
+}
+
+.room-popup-live-class.next-class {
+  background: #f0f7ff;
+  border: 1px solid #c8defc;
+}
+
+.live-class-label {
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  margin-bottom: 6px;
+}
+
+.current-class .live-class-label {
+  color: #b45309;
+}
+
+.next-class .live-class-label {
+  color: #2563eb;
+}
+
+.live-class-name {
+  font-size: 15px;
+  font-weight: 800;
+  color: #17233c;
+  line-height: 1.4;
+  margin-bottom: 4px;
+}
+
+.live-class-instructor {
+  font-size: 13px;
+  color: #51627e;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.live-class-time {
+  font-size: 13px;
+  font-weight: 800;
+  color: #24324b;
+}
+
+@keyframes livePulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.55; transform: scale(1.18); }
+}
+
 .room-popup-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
