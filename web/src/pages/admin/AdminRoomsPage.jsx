@@ -315,6 +315,7 @@ export default function AdminRoomsPage() {
         open={showCreate}
         onClose={() => setShowCreate(false)}
         floorId={floorId}
+        roomTypes={roomTypes}
         getBackendErrorMessage={getBackendErrorMessage}
         onSaved={async () => {
           setShowCreate(false);
@@ -328,6 +329,7 @@ export default function AdminRoomsPage() {
         onClose={() => setEditRoom(null)}
         floorId={floorId}
         existingRoom={editRoom}
+        roomTypes={roomTypes}
         getBackendErrorMessage={getBackendErrorMessage}
         onSaved={async () => {
           setEditRoom(null);
@@ -406,6 +408,7 @@ function RoomFormModal({
   onSaved,
   title,
   getBackendErrorMessage,
+  roomTypes,
 }) {
   const isEdit = Boolean(existingRoom?.id);
 
