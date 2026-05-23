@@ -62,9 +62,11 @@ export default function SchedulePage() {
   const semester = selectedTerm?.semester || '';
   const year = selectedTerm?.academic_year || '';
 
-  const { schedule, loading, error } = useMySchedule(
-    selectedTerm ? { semester, academic_year: year } : {}
-  );
+  const scheduleParams = selectedTerm
+    ? { semester: selectedTerm.semester, academic_year: selectedTerm.academic_year }
+    : null;
+
+  const { schedule, loading, error } = useMySchedule(scheduleParams);
 const openOfficeHours = async (instructor) => {
   if (!instructor?.email) return;
 

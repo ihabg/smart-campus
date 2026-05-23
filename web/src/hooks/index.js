@@ -122,26 +122,33 @@ export function useRooms(floorId, params = {}) {
 }
 
 // ─── useMySchedule ────────────────────────────────────────────
-export function useMySchedule(params = {}) {
+export function useMySchedule(params) {
   const [schedule, setSchedule] = useState({ sections: [], by_day: {} });
   const [loading,  setLoading]  = useState(true);
   const [error,    setError]    = useState(null);
 
-  const fetch = useCallback(async () => {
+  useEffect(() => {
+    if (params === null) return;
+
+    let cancelled = false;
     setLoading(true);
-    try {
-      const { data } = await scheduleAPI.getMy(params);
-      setSchedule(data.data);
-    } catch (err) {
-      setError(err.response?.data?.message || 'Failed to load schedule');
-    } finally {
-      setLoading(false);
-    }
+    setSchedule({ sections: [], by_day: {} });
+
+    scheduleAPI.getMy(params)
+      .then(({ data }) => {
+        if (!cancelled) setSchedule(data.data);
+      })
+      .catch(err => {
+        if (!cancelled) setError(err.response?.data?.message || 'Failed to load schedule');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => { cancelled = true; };
   }, [JSON.stringify(params)]); // eslint-disable-line
 
-  useEffect(() => { fetch(); }, [fetch]);
-
-  return { schedule, loading, error, refetch: fetch };
+  return { schedule, loading, error };
 }
 
 // ─── useTodaySchedule ────────────────────────────────────────
