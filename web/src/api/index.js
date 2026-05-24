@@ -45,6 +45,8 @@ export const roomAPI = {
 
   getLiveStatus: (roomId) => api.get(`/rooms/${roomId}/live-status`),
 
+  getAvailableNow: () => api.get('/rooms/available-now'),
+
   create: (data) => api.post('/rooms', data),
 
   update: (id, data) => api.patch(`/rooms/${id}`, data),

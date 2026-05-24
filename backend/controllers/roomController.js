@@ -626,6 +626,122 @@ async function getRoomLiveStatus(req, res, next) {
   }
 }
 
+// ─── Get all available rooms right now ──────────────────────
+async function getRoomsAvailableNow(req, res, next) {
+  try {
+    const sql = `
+      WITH
+      -- Rooms that have an active session at this exact moment.
+      -- Uses the identical semester join, time cast, and section_meetings
+      -- fallback pattern as getRoomLiveStatus so the two endpoints agree.
+      occupied_rooms AS (
+        -- Primary: section_meetings row covers right now
+        SELECT DISTINCT COALESCE(sm.room_id, s.room_id) AS room_id
+        FROM section_meetings sm
+        JOIN sections s ON s.id = sm.section_id
+        JOIN semesters sem
+          ON s.semester::text = sem.semester
+         AND s.academic_year  = sem.academic_year
+         AND sem.status       = 'published'
+        WHERE s.is_active    = TRUE
+          AND sm.day_of_week = EXTRACT(DOW FROM CURRENT_DATE)::int
+          AND sm.start_time <= CURRENT_TIME::time
+          AND sm.end_time    > CURRENT_TIME::time
+
+        UNION
+
+        -- Fallback: sections that have NO section_meetings rows at all
+        SELECT DISTINCT s.room_id
+        FROM sections s
+        JOIN semesters sem
+          ON s.semester::text = sem.semester
+         AND s.academic_year  = sem.academic_year
+         AND sem.status       = 'published'
+        WHERE s.is_active    = TRUE
+          AND EXTRACT(DOW FROM CURRENT_DATE)::int = ANY(s.day_of_week)
+          AND s.start_time  <= CURRENT_TIME::time
+          AND s.end_time     > CURRENT_TIME::time
+          AND NOT EXISTS (
+            SELECT 1 FROM section_meetings sm2 WHERE sm2.section_id = s.id
+          )
+      ),
+
+      -- Next class today for every room (we filter to available rooms later)
+      next_class AS (
+        SELECT COALESCE(sm.room_id, s.room_id) AS room_id,
+               sm.start_time AS next_start
+        FROM section_meetings sm
+        JOIN sections s ON s.id = sm.section_id
+        JOIN semesters sem
+          ON s.semester::text = sem.semester
+         AND s.academic_year  = sem.academic_year
+         AND sem.status       = 'published'
+        WHERE s.is_active    = TRUE
+          AND sm.day_of_week = EXTRACT(DOW FROM CURRENT_DATE)::int
+          AND sm.start_time  > CURRENT_TIME::time
+
+        UNION ALL
+
+        SELECT s.room_id, s.start_time
+        FROM sections s
+        JOIN semesters sem
+          ON s.semester::text = sem.semester
+         AND s.academic_year  = sem.academic_year
+         AND sem.status       = 'published'
+        WHERE s.is_active    = TRUE
+          AND EXTRACT(DOW FROM CURRENT_DATE)::int = ANY(s.day_of_week)
+          AND s.start_time   > CURRENT_TIME::time
+          AND NOT EXISTS (
+            SELECT 1 FROM section_meetings sm2 WHERE sm2.section_id = s.id
+          )
+      )
+
+      SELECT
+        r.id,
+        r.room_number,
+        r.type,
+        r.capacity,
+        f.floor_label,
+        f.floor_number,
+        (
+          SELECT MIN(nc.next_start)::text
+          FROM next_class nc
+          WHERE nc.room_id = r.id
+        ) AS next_time,
+        CURRENT_TIME::time AS as_of
+      FROM rooms r
+      JOIN floors f ON f.id = r.floor_id
+      WHERE r.type IN (
+          'classroom', 'lecture_hall', 'lab', 'amphitheater',
+          'engineering_drawing_room', 'engineering_drawing_studio'
+        )
+        AND r.is_active = TRUE
+        AND NOT EXISTS (
+          SELECT 1 FROM occupied_rooms occ WHERE occ.room_id = r.id
+        )
+      ORDER BY f.floor_number, r.room_number
+    `;
+
+    const result = await query(sql);
+    const rooms  = result.rows;
+    const asOf   = rooms[0]?.as_of || null;
+
+    // Strip the per-row as_of column — return it once at the top level
+    const cleanRooms = rooms.map(({ as_of: _a, ...rest }) => rest);
+
+    res.json({
+      success: true,
+      data: {
+        rooms: cleanRooms,
+        count: cleanRooms.length,
+        as_of: asOf,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
 module.exports = {
   getRoomsByFloor,
   getRoomById,
@@ -636,4 +752,5 @@ module.exports = {
   bulkUpdateCoordinates,
   setAdjacency,
   getRoomLiveStatus,
+  getRoomsAvailableNow,
 };

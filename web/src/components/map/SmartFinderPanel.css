@@ -353,6 +353,192 @@
   }
 }
 
+/* =========================================================
+   Available Now
+   ========================================================= */
+
+.avail-now-btn {
+  width: 100%;
+  margin-top: 12px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  border: 1.5px solid #b8e8c8;
+  background: #f0faf3;
+  color: #16753a;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: background 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.avail-now-btn:hover:not(:disabled) {
+  background: #e0f5e8;
+  border-color: #6ecf8e;
+  box-shadow: 0 6px 16px rgba(22, 117, 58, 0.12);
+}
+
+.avail-now-btn.active {
+  background: #16a046;
+  color: #ffffff;
+  border-color: #16a046;
+  box-shadow: 0 8px 20px rgba(22, 160, 70, 0.28);
+}
+
+.avail-now-btn:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.avail-now-pulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+  animation: availNowPulse 1.4s ease-in-out infinite;
+}
+
+.avail-now-spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid rgba(22, 117, 58, 0.3);
+  border-top-color: #16753a;
+  animation: availNowSpin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+.avail-now-btn.active .avail-now-spinner {
+  border-color: rgba(255, 255, 255, 0.3);
+  border-top-color: #ffffff;
+}
+
+@keyframes availNowPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.5; transform: scale(1.35); }
+}
+
+@keyframes availNowSpin {
+  to { transform: rotate(360deg); }
+}
+
+.avail-now-list {
+  margin-top: 10px;
+  /* Viewport-responsive: shrinks on small screens so the card + Find a Room card both fit
+     in the sidebar without requiring sidebar scroll. On 768px+ it evaluates to ~220px. */
+  max-height: min(220px, max(80px, calc(100vh - 550px)));
+  overflow-y: auto;
+  border-radius: 12px;
+  border: 1px solid #c8ecd5;
+  background: #f8fdf9;
+}
+
+.avail-now-list::-webkit-scrollbar {
+  width: 5px;
+}
+
+.avail-now-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.avail-now-list::-webkit-scrollbar-thumb {
+  background: #a8d8b8;
+  border-radius: 999px;
+}
+
+.avail-now-list-header {
+  padding: 7px 12px;
+  background: #16a046;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border-radius: 12px 12px 0 0;
+}
+
+.avail-now-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid #e4f3ea;
+  transition: background 0.15s ease;
+}
+
+.avail-now-row:last-child {
+  border-bottom: none;
+}
+
+.avail-now-row:hover {
+  background: #e5f7eb;
+}
+
+.avail-now-row-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.avail-now-room-num {
+  font-size: 13px;
+  font-weight: 900;
+  color: #10254d;
+}
+
+.avail-now-floor-badge {
+  font-size: 10px;
+  font-weight: 800;
+  color: #16753a;
+  background: #dcf5e6;
+  border-radius: 5px;
+  padding: 1px 6px;
+}
+
+.avail-now-type-chip {
+  font-size: 10px;
+  font-weight: 700;
+  color: #4a607c;
+  background: #eef2f8;
+  border-radius: 5px;
+  padding: 1px 6px;
+  margin-left: auto;
+}
+
+.avail-now-next {
+  font-size: 11px;
+  color: #6b7a99;
+  line-height: 1.4;
+}
+
+.avail-now-empty {
+  padding: 16px 12px;
+  text-align: center;
+  color: #6b7a99;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* =========================================================
+   Available Now mode — collapse filter UI to free up sidebar height
+   =========================================================
+   When the user activates Available Now, the filter pills, category
+   select, and summary boxes are irrelevant and take up ~320px.
+   Hiding them lets the card + list + Find a Room card all fit in the
+   sidebar on 768px+ viewports without requiring sidebar scroll.
+   ========================================================= */
+
+.map-tools-card--pro.avail-now-active .map-filter-pills,
+.map-tools-card--pro.avail-now-active .map-select-group-pro,
+.map-tools-card--pro.avail-now-active .map-tools-summary-pro {
+  display: none;
+}
+
 @media (max-width: 768px) {
   .map-filter-pills {
     grid-template-columns: repeat(2, minmax(0, 1fr));

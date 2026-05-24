@@ -433,6 +433,24 @@
   pointer-events: none !important;
 }
 
+.map-block-zone.available-now-zone {
+  fill: rgba(22, 160, 70, 0.32) !important;
+  stroke: #16a046 !important;
+  stroke-width: 3px !important;
+  animation: availNowMapGlow 2s ease-in-out infinite alternate;
+}
+
+@keyframes availNowMapGlow {
+  from { fill: rgba(22, 160, 70, 0.22); }
+  to   { fill: rgba(22, 160, 70, 0.44); }
+}
+
+.map-block-zone.occupied-dim {
+  fill: rgba(100, 110, 130, 0.12) !important;
+  stroke: rgba(100, 110, 130, 0.18) !important;
+  stroke-width: 1px !important;
+}
+
 .lab-zone.need-match { fill: rgba(34, 197, 94, 0.28); stroke: #16a34a; }
 .lecture-zone.need-match { fill: rgba(245, 158, 11, 0.28); stroke: #f59e0b; }
 .studio-zone.need-match { fill: rgba(14, 165, 233, 0.28); stroke: #0ea5e9; }

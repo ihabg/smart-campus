@@ -478,12 +478,20 @@ function matchesNeed(block, need) {
   return block.type === need;
 }
 
-function getBlockClass(block, selectedBlock, selectedNeed) {
+function getBlockClass(block, selectedBlock, selectedNeed, availableNowMode, availableRoomIds) {
   const classes = ['map-block-zone'];
 
   if (selectedBlock?.id === block.id) classes.push('selected');
   if (selectedNeed !== 'all' && matchesNeed(block, selectedNeed)) {
     classes.push('need-match');
+  }
+
+  if (availableNowMode && block.dbId && isAcademicSpace(block)) {
+    if (availableRoomIds.has(block.dbId)) {
+      classes.push('available-now-zone');
+    } else {
+      classes.push('occupied-dim');
+    }
   }
 
   if (block.type === 'lab') classes.push('lab-zone');
@@ -696,6 +704,10 @@ useEffect(() => {
   const [routeTarget, setRouteTarget] = useState(null);
   const [routeError, setRouteError] = useState('');
 
+  const [availableNowMode, setAvailableNowMode] = useState(false);
+  const [availableRooms, setAvailableRooms] = useState([]);
+  const [availableRoomsLoading, setAvailableRoomsLoading] = useState(false);
+
 
 
 
@@ -811,6 +823,11 @@ const visibleBlocks = useMemo(() => {
   return currentFloor.blocks.filter(block => matchesNeed(block, selectedNeed));
 }, [currentFloor, selectedNeed]);
 
+const availableRoomIds = useMemo(
+  () => new Set(availableRooms.map(r => r.id)),
+  [availableRooms]
+);
+
 useEffect(() => {
   const params = new URLSearchParams(location.search);
   const roomFromUrl = params.get('room');
@@ -880,6 +897,39 @@ useEffect(() => {
     setRouteTarget(null);
     setRouteError('');
   }
+
+  const handleToggleAvailableNow = useCallback(async () => {
+    if (availableNowMode) {
+      setAvailableNowMode(false);
+      setAvailableRooms([]);
+      return;
+    }
+    setAvailableRoomsLoading(true);
+    try {
+      const res = await roomAPI.getAvailableNow();
+      const payload = res?.data?.data || res?.data || {};
+      setAvailableRooms(payload.rooms || []);
+      setAvailableNowMode(true);
+    } catch {
+      setAvailableNowMode(false);
+    } finally {
+      setAvailableRoomsLoading(false);
+    }
+  }, [availableNowMode]);
+
+  const handleSelectAvailableRoom = useCallback((room) => {
+    const floorKey = normalizeFloorKeyFromDb({
+      floor_label: room.floor_label,
+      floor_number: room.floor_number,
+    });
+    setActiveFloor(floorKey);
+    resetMapView();
+    const block = (mapFloors[floorKey]?.blocks || []).find(b => b.dbId === room.id);
+    if (block) {
+      setScheduleHighlightedBlock(block);
+      setSelectedBlock(null);
+    }
+  }, [mapFloors]);
   function handleSelectBlock(block) {
     setScheduleHighlightedBlock(null);
     setSelectedBlock(block);
@@ -1185,6 +1235,11 @@ setSelectedNeed('all');
   setSelectedNeed={setSelectedNeed}
   setSelectedBlock={setSelectedBlock}
   visibleBlocks={visibleBlocks}
+  availableNowMode={availableNowMode}
+  availableRooms={availableRooms}
+  availableRoomsLoading={availableRoomsLoading}
+  onToggleAvailableNow={handleToggleAvailableNow}
+  onSelectAvailableRoom={handleSelectAvailableRoom}
 />
 
 <div className="room-search-card">
@@ -1364,7 +1419,9 @@ setSelectedNeed('all');
                     className={`${getBlockClass(
   block,
   selectedBlock || scheduleHighlightedBlock,
-  selectedNeed
+  selectedNeed,
+  availableNowMode,
+  availableRoomIds
 )} ${hiddenByFilter ? 'dimmed' : ''}`}
                     onMouseEnter={() => setHoveredBlock(block)}
                     onMouseLeave={() => setHoveredBlock(null)}
@@ -1384,7 +1441,9 @@ onClick={(event) => {
                     className={`${getBlockClass(
   block,
   selectedBlock || scheduleHighlightedBlock,
-  selectedNeed
+  selectedNeed,
+  availableNowMode,
+  availableRoomIds
 )} ${hiddenByFilter ? 'dimmed' : ''}`}
                     onMouseEnter={() => setHoveredBlock(block)}
                     onMouseLeave={() => setHoveredBlock(null)}

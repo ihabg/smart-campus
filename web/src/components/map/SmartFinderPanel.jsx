@@ -33,8 +33,24 @@ const REQUEST_ICON_MAP = {
   accessible: '♿',
 };
 
+const TYPE_SHORT = {
+  classroom: 'Class',
+  lecture_hall: 'Lecture',
+  lab: 'Lab',
+  amphitheater: 'Hall',
+  engineering_drawing_room: 'Drawing',
+  engineering_drawing_studio: 'Studio',
+};
+
 function getRequestIcon(value) {
   return REQUEST_ICON_MAP[value] || '📍';
+}
+
+function fmtTime(t) {
+  if (!t) return '';
+  const [h, m] = t.split(':').map(Number);
+  const p = h < 12 ? 'AM' : 'PM';
+  return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${p}`;
 }
 
 export default function SmartFinderPanel({
@@ -43,9 +59,15 @@ export default function SmartFinderPanel({
   setSelectedNeed,
   setSelectedBlock,
   visibleBlocks = [],
+  availableNowMode = false,
+  availableRooms = [],
+  availableRoomsLoading = false,
+  onToggleAvailableNow,
+  onSelectAvailableRoom,
 }) {
   const safeRequestOptions = Array.isArray(requestOptions) ? requestOptions : [];
   const safeVisibleBlocks = Array.isArray(visibleBlocks) ? visibleBlocks : [];
+  const safeAvailableRooms = Array.isArray(availableRooms) ? availableRooms : [];
 
   const activeOption =
     safeRequestOptions.find(option => option.value === selectedNeed) ||
@@ -63,7 +85,7 @@ export default function SmartFinderPanel({
 
   return (
     <motion.div
-      className="map-tools-card map-tools-card--pro"
+      className={`map-tools-card map-tools-card--pro${availableNowMode ? ' avail-now-active' : ''}`}
       initial={{ opacity: 0, y: 18, scale: 0.98 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       transition={{ duration: 0.28, ease: 'easeOut' }}
@@ -81,8 +103,12 @@ export default function SmartFinderPanel({
 
         <div>
           <span className="map-tools-eyebrow">Smart Finder</span>
-          <h3>What do you need?</h3>
-          <p>Choose a category, then click any highlighted room on the map.</p>
+          <h3>{availableNowMode ? 'Rooms Free Now' : 'What do you need?'}</h3>
+          <p>
+            {availableNowMode
+              ? 'Click a room from the list to jump to it on the map.'
+              : 'Choose a category, then click any highlighted room on the map.'}
+          </p>
         </div>
       </div>
 
@@ -156,6 +182,61 @@ export default function SmartFinderPanel({
           <strong>{safeVisibleBlocks.length}</strong>
         </motion.div>
       </div>
+
+      {/* ── Available Now ── */}
+      <button
+        type="button"
+        className={`avail-now-btn${availableNowMode ? ' active' : ''}`}
+        onClick={typeof onToggleAvailableNow === 'function' ? onToggleAvailableNow : undefined}
+        disabled={availableRoomsLoading}
+      >
+        {availableRoomsLoading ? (
+          <span className="avail-now-spinner" />
+        ) : (
+          <span className="avail-now-pulse" />
+        )}
+        {availableNowMode
+          ? `Available Now — ${safeAvailableRooms.length} free`
+          : 'Show Available Rooms Now'}
+      </button>
+
+      {availableNowMode && (
+        <div className="avail-now-list">
+          <div className="avail-now-list-header">
+            {safeAvailableRooms.length > 0
+              ? `${safeAvailableRooms.length} rooms available right now`
+              : 'No rooms available right now'}
+          </div>
+
+          {safeAvailableRooms.length === 0 ? (
+            <div className="avail-now-empty">All academic rooms are in use</div>
+          ) : (
+            safeAvailableRooms.map(room => (
+              <div
+                key={room.id}
+                className="avail-now-row"
+                onClick={() =>
+                  typeof onSelectAvailableRoom === 'function' && onSelectAvailableRoom(room)
+                }
+              >
+                <div className="avail-now-row-top">
+                  <span className="avail-now-room-num">{room.room_number}</span>
+                  <span className="avail-now-floor-badge">{room.floor_label}</span>
+                  <span className="avail-now-type-chip">
+                    {TYPE_SHORT[room.type] || room.type}
+                  </span>
+                </div>
+                <div className="avail-now-next">
+                  {room.next_time
+                    ? `Next class at ${fmtTime(room.next_time)}`
+                    : 'No more classes today'}
+                  {room.capacity ? ` · ${room.capacity} seats` : ''}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
     </motion.div>
   );
 }
