@@ -38,7 +38,8 @@
       "Bash(node -e \"require\\('./controllers/roomController'\\); console.log\\('roomController OK'\\);\")",
       "Bash(node -e \"require\\('./routes/rooms'\\); console.log\\('rooms route OK'\\);\")",
       "Bash(node -e \"require\\('./controllers/instructorController'\\); console.log\\('instructorController OK'\\);\")",
-      "Bash(node -c scripts/migrate_office_rooms.js)"
+      "Bash(node -c scripts/migrate_office_rooms.js)",
+      "Bash(xargs grep -l \"office_room_id\")"
     ]
   }
 }

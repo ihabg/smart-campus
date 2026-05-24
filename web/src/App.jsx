@@ -28,6 +28,7 @@ import {
 } from './pages/admin/AdminPages';
 import AdminRoomsPage from './pages/admin/AdminRoomsPage';
 import MapEditorPage from './pages/admin/MapEditorPage';
+import AdminOfficeReviewPage from './pages/admin/AdminOfficeReviewPage';
 import SemesterManagementPage from './pages/admin/SemesterManagementPage';
 import ProfessorDashboard from './pages/ProfessorDashboard';
 import ProfessorAssessmentsPage from './pages/ProfessorAssessmentsPage';
@@ -118,8 +119,9 @@ export default function App() {
   <Route path="/admin"               element={<AdminDashboard />} />
   <Route path="/admin/users"         element={<AdminUsers />} />
   <Route path="/admin/floors"        element={<AdminFloors />} />
-  <Route path="/admin/rooms"         element={<AdminRoomsPage />} />
+  <Route path="/admin/rooms"          element={<AdminRoomsPage />} />
   <Route path="/admin/map-editor"    element={<MapEditorPage />} />
+  <Route path="/admin/office-review" element={<AdminOfficeReviewPage />} />
   <Route path="/admin/semester"      element={<SemesterManagementPage />} />
   <Route path="/admin/schedule"      element={<AdminSchedule />} />
   <Route path="/admin/notifications" element={<AdminNotifications />} />

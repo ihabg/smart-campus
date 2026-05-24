@@ -402,14 +402,24 @@ export function AdminFloors() {
           </p>
         </div>
 
-        <Button
-          variant="primary"
-          icon={<PlusIcon />}
-          onClick={() => setShowCreate(true)}
-          disabled={buildingsLoading || allBuildings.length === 0 || !selectedBuildingId}
-        >
-          Add Floor
-        </Button>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          <Link
+            to="/admin/office-review"
+            className="btn btn--secondary"
+            style={{ fontSize: 13 }}
+          >
+            🏷️ Office Review
+          </Link>
+
+          <Button
+            variant="primary"
+            icon={<PlusIcon />}
+            onClick={() => setShowCreate(true)}
+            disabled={buildingsLoading || allBuildings.length === 0 || !selectedBuildingId}
+          >
+            Add Floor
+          </Button>
+        </div>
       </div>
 
       {/* ── College / Building selector ── */}
