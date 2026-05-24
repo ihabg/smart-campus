@@ -1,0 +1,534 @@
+/* ── Professor Profile Layout ──────────────────────────────────
+   Only applied when role === 'professor' | 'department_head'.
+   Student / admin profile uses the existing maxWidth-600 div —
+   none of these classes are rendered for those roles.
+   ─────────────────────────────────────────────────────────── */
+
+.prof-profile {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding-bottom: 48px;
+}
+
+/* ── Hero card ─────────────────────────────────────────────── */
+
+.prof-hero {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 28px 32px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+/* Avatar */
+.prof-hero__avatar-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.prof-hero__avatar {
+  width: 88px;
+  height: 88px;
+  border-radius: 50%;
+  background: var(--najah-light, #dce8ff);
+  border: 3px solid var(--border);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 30px;
+  font-weight: 700;
+  color: var(--navy);
+  font-family: var(--font-display);
+  letter-spacing: -1px;
+}
+
+.prof-hero__avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.prof-hero__avatar-edit {
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  width: 26px;
+  height: 26px;
+  background: var(--navy);
+  border-radius: 50%;
+  border: 2px solid var(--surface, #fff);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 11px;
+  color: #fff;
+  transition: background var(--t-fast, 120ms);
+}
+
+.prof-hero__avatar-edit:hover {
+  background: var(--navy-mid, #0a2d6e);
+}
+
+/* Info block beside avatar */
+.prof-hero__info {
+  flex: 1;
+  min-width: 0;
+}
+
+.prof-hero__name {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.25;
+  margin: 0 0 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.prof-hero__email {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 0 0 10px;
+  word-break: break-all;
+}
+
+.prof-hero__badges {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+/* ── Two-column body ────────────────────────────────────────── */
+
+.prof-body {
+  display: grid;
+  /* left: fluid up to 400px; right: fills remaining space — both allow shrinking */
+  grid-template-columns: minmax(0, 400px) minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+
+/* ── Left column (edit form + tabs) ─────────────────────────── */
+
+.prof-left {
+  /* sticky on tall viewports so the form stays visible while scrolling cards */
+  position: sticky;
+  top: 16px;
+  /* critical: allow the grid item to be clipped to its track width */
+  min-width: 0;
+}
+
+.prof-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 14px;
+}
+
+.prof-tab {
+  padding: 9px 18px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  font-size: 13.5px;
+  font-weight: 400;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color var(--t-fast, 120ms), border-color var(--t-fast, 120ms);
+  margin-bottom: -1px;
+  font-family: var(--font-body);
+}
+
+.prof-tab.active {
+  color: var(--navy);
+  font-weight: 600;
+  border-bottom-color: var(--navy);
+}
+
+.prof-tab:hover:not(.active) {
+  color: var(--text-2, #2d3f6e);
+}
+
+/* Prevent form-row columns from blowing past the left column width */
+.prof-left .form-row {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+/* Ensure card and any nested grids inside left column can't overflow */
+.prof-left .card {
+  min-width: 0;
+}
+
+/* ── Right column (info cards, stacked) ─────────────────────── */
+
+.prof-right {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+/* ── Info card shared styles ─────────────────────────────────── */
+
+.prof-card {
+  background: var(--surface, #fff);
+  border: 1px solid var(--border);
+  border-radius: var(--r-xl, 20px);
+  padding: 20px 22px;
+  box-shadow: var(--shadow-sm, 0 2px 8px rgba(3,24,74,0.08));
+  transition: box-shadow var(--t-mid, 220ms);
+}
+
+.prof-card:hover {
+  box-shadow: var(--shadow-md, 0 4px 16px rgba(3,24,74,0.10));
+}
+
+.prof-card__head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 10px;
+  margin-bottom: 16px;
+  white-space: nowrap;
+}
+
+.prof-card__head-icon {
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.prof-card__head-extra {
+  margin-left: auto;
+}
+
+/* ── Academic info field rows ────────────────────────────────── */
+
+.prof-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.prof-field__label {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+  margin-bottom: 2px;
+}
+
+.prof-field__value {
+  font-size: 14px;
+  color: var(--text);
+  font-weight: 500;
+  word-break: break-word;
+}
+
+.prof-field__value--mono {
+  font-family: var(--font-mono);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--navy);
+  letter-spacing: -0.01em;
+}
+
+/* ── Assigned office ─────────────────────────────────────────── */
+
+.prof-office__room-number {
+  font-family: var(--font-mono);
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--navy);
+  line-height: 1;
+  margin-bottom: 4px;
+}
+
+.prof-office__room-name {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 16px;
+}
+
+.prof-office__warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px 14px;
+  background: var(--amber-bg, #fdf4e0);
+  border: 1px solid var(--amber-border, #e8c570);
+  border-radius: var(--r-md, 8px);
+  font-size: 13px;
+  color: var(--amber, #966200);
+  line-height: 1.5;
+}
+
+.prof-office__warning-icon {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.prof-map-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background: var(--surface, #fff);
+  border: 1.5px solid var(--border);
+  border-radius: var(--r-md, 8px);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-2, #2d3f6e);
+  text-decoration: none;
+  transition: background var(--t-fast, 120ms), border-color var(--t-fast, 120ms), box-shadow var(--t-fast, 120ms);
+  white-space: nowrap;
+}
+
+.prof-map-btn:hover {
+  background: var(--bg, #f0f2f8);
+  border-color: var(--border-strong, #b0bed8);
+  box-shadow: var(--shadow-xs, 0 1px 3px rgba(3,24,74,0.06));
+}
+
+/* ── Teaching summary ────────────────────────────────────────── */
+
+.prof-term-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 9px;
+  border-radius: var(--r-full, 9999px);
+  background: var(--blue-bg, #e0e8ff);
+  color: var(--blue, #1443c8);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  border: 1px solid #c0d0f8;
+  white-space: nowrap;
+}
+
+.prof-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.prof-stat {
+  background: var(--surface-2, #f8f9fd);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md, 8px);
+  padding: 12px 14px;
+}
+
+.prof-stat__label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin-bottom: 5px;
+}
+
+.prof-stat__value {
+  font-size: 24px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  color: var(--text);
+  line-height: 1;
+}
+
+.prof-next-class {
+  padding: 12px 14px;
+  background: var(--blue-bg, #e0e8ff);
+  border: 1px solid #c0d0f8;
+  border-radius: var(--r-md, 8px);
+}
+
+.prof-next-class__label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--blue, #1443c8);
+  margin-bottom: 5px;
+}
+
+.prof-next-class__detail {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--navy);
+  line-height: 1.4;
+}
+
+.prof-next-class__room {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 3px;
+}
+
+.prof-empty {
+  font-size: 13px;
+  color: var(--text-muted);
+  padding: 4px 0;
+  margin: 0;
+}
+
+/* ── Office hours ────────────────────────────────────────────── */
+
+.prof-oh-slots {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.prof-oh-slot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 9px 12px;
+  background: var(--surface-2, #f8f9fd);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md, 8px);
+}
+
+.prof-oh-slot__day {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.prof-oh-slot__time {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+.prof-oh-more {
+  font-size: 12px;
+  color: var(--text-muted);
+  text-align: center;
+  padding: 4px 0;
+  margin-bottom: 6px;
+}
+
+.prof-oh-location {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 14px;
+  line-height: 1.5;
+}
+
+.prof-manage-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 18px;
+  background: var(--navy);
+  color: #fff;
+  border-radius: var(--r-md, 8px);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  border: none;
+  transition: background var(--t-fast, 120ms), transform var(--t-fast, 120ms), box-shadow var(--t-fast, 120ms);
+  white-space: nowrap;
+  font-family: var(--font-body);
+}
+
+.prof-manage-btn:hover {
+  background: var(--navy-mid, #0a2d6e);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md, 0 4px 16px rgba(3,24,74,0.10));
+}
+
+/* ── Loading / error state in right column ───────────────────── */
+
+.prof-right-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 48px 24px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+/* ── Responsive ─────────────────────────────────────────────── */
+
+/* Laptop / large tablet: collapse two-column body to single column.
+   At ≤900px the left column (max 400px) + gap + right would leave
+   the right panel too narrow, so we stack early. */
+@media (max-width: 900px) {
+  .prof-body {
+    grid-template-columns: 1fr;
+  }
+
+  /* unstick so the form scrolls with the page */
+  .prof-left {
+    position: static;
+  }
+}
+
+/* Tablet: tighten hero */
+@media (max-width: 768px) {
+  .prof-hero {
+    padding: 20px;
+    gap: 16px;
+  }
+
+  .prof-hero__avatar {
+    width: 72px;
+    height: 72px;
+    font-size: 24px;
+  }
+
+  .prof-hero__name {
+    font-size: 18px;
+  }
+}
+
+/* Mobile: tighten spacing */
+@media (max-width: 480px) {
+  .prof-profile {
+    padding-bottom: 32px;
+  }
+
+  .prof-hero {
+    padding: 16px;
+    gap: 12px;
+  }
+
+  .prof-hero__avatar {
+    width: 64px;
+    height: 64px;
+    font-size: 20px;
+  }
+
+  .prof-hero__name {
+    font-size: 17px;
+  }
+
+  .prof-card {
+    padding: 16px 18px;
+  }
+
+  /* stack first/last name inputs vertically on small screens */
+  .prof-left .form-row {
+    grid-template-columns: 1fr;
+  }
+}

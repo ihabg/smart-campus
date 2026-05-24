@@ -311,7 +311,11 @@ export const instructorAPI = {
 };
 // ─── professorAPI ─────────────────────────────────────────────
 export const professorAPI = {
-  getDashboard: () => api.get('/professor/dashboard'),
+  getDashboard: (params = {}) => api.get('/professor/dashboard', { params }),
+
+  getTerms: () => api.get('/professor/terms'),
+
+  getOfficeHours: () => api.get('/professor/office-hours'),
 
   getSchedule: (params = {}) => api.get('/professor/schedule', { params }),
 
@@ -329,6 +333,11 @@ export const professorAPI = {
   saveGradesBulk: (data) => api.post('/professor/grades/bulk', data),
 
   sendWarning: (data) => api.post('/professor/warning', data)
+};
+
+// ─── studentAPI ──────────────────────────────────────────────
+export const studentAPI = {
+  getStudyPlan: () => api.get('/student/study-plan'),
 };
 
 export default api;

@@ -33,6 +33,7 @@ const assessmentRoutes   = require('./routes/assessments');
 const courseRoutes       = require('./routes/courses');
 const instructorRoutes   = require('./routes/instructors');
 const roomTypeRoutes     = require('./routes/roomTypes');
+const studentRoutes      = require('./routes/student');
 
 const app  = express();
 const PORT = process.env.PORT || 5000;
@@ -113,6 +114,7 @@ app.use('/api/announcements', announcementRoutes);
 app.use('/api/chat',          chatRoutes);
 app.use('/api/professor',     professorRoutes);
 app.use('/api/assessments',   assessmentRoutes);
+app.use('/api/student',       studentRoutes);
 app.use('/api/dean',          deanRoutes);
 app.use('/api/dept-head',     deptHeadRoutes);
 app.use('/api/lab-assistant', labAssistantRoutes);

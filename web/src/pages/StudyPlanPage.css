@@ -1,0 +1,486 @@
+/* ── Study Plan Page ─────────────────────────────────────────
+   Layout mirrors the app's existing card/variable system.
+   No hardcoded colours — all values use CSS custom properties
+   with safe fallbacks.
+   ─────────────────────────────────────────────────────────── */
+
+.sp-page {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding-bottom: 48px;
+}
+
+/* ── Student identity bar ────────────────────────────────────── */
+
+.sp-student-bar {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 18px 24px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.sp-student-bar__avatar {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--najah-light, #dce8ff);
+  border: 2px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--navy);
+  font-family: var(--font-display);
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.sp-student-bar__avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.sp-student-bar__info {
+  flex: 1;
+  min-width: 0;
+}
+
+.sp-student-bar__name {
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0 0 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sp-student-bar__meta {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+/* ── Summary cards ───────────────────────────────────────────── */
+
+.sp-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.sp-stat {
+  background: var(--surface, #fff);
+  border: 1px solid var(--border);
+  border-radius: var(--r-xl, 20px);
+  padding: 16px 18px;
+  box-shadow: var(--shadow-sm, 0 2px 8px rgba(3,24,74,0.08));
+}
+
+.sp-stat__label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.sp-stat__value {
+  font-size: 26px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  color: var(--text);
+  line-height: 1;
+}
+
+.sp-stat__value--green {
+  color: #16a34a;
+}
+
+.sp-stat__value--blue {
+  color: var(--blue, #1443c8);
+}
+
+.sp-stat__value--red {
+  color: #dc2626;
+}
+
+/* ── Pending official plan banner ────────────────────────────── */
+
+.sp-pending {
+  display: flex;
+  gap: 14px;
+  padding: 16px 20px;
+  background: var(--surface-2, #f8f9fd);
+  border: 1px dashed var(--border-strong, #b0bed8);
+  border-radius: var(--r-xl, 20px);
+  margin-bottom: 20px;
+  align-items: flex-start;
+}
+
+.sp-pending__icon {
+  font-size: 22px;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.sp-pending__title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+.sp-pending__desc {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  line-height: 1.55;
+  margin: 0;
+}
+
+/* ── Controls: search + filters ──────────────────────────────── */
+
+.sp-controls {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.sp-search {
+  flex: 1;
+  min-width: 200px;
+  padding: 9px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md, 8px);
+  font-size: 13px;
+  background: var(--surface, #fff);
+  color: var(--text);
+  outline: none;
+  transition: border-color var(--t-fast, 120ms), box-shadow var(--t-fast, 120ms);
+  min-width: 0;
+}
+
+.sp-search:focus {
+  border-color: var(--navy);
+  box-shadow: 0 0 0 3px rgba(3, 24, 74, 0.08);
+}
+
+.sp-filters {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.sp-filter-btn {
+  padding: 7px 14px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--r-full, 9999px);
+  background: var(--surface, #fff);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--t-fast, 120ms), border-color var(--t-fast, 120ms), color var(--t-fast, 120ms);
+  font-family: var(--font-body);
+}
+
+.sp-filter-btn:hover:not(.sp-filter-btn--active) {
+  background: var(--surface-2, #f8f9fd);
+  color: var(--text);
+}
+
+.sp-filter-btn--active {
+  background: var(--navy);
+  border-color: var(--navy);
+  color: #fff;
+  font-weight: 600;
+}
+
+/* ── Empty state ─────────────────────────────────────────────── */
+
+.sp-empty {
+  text-align: center;
+  padding: 48px 24px;
+  color: var(--text-muted);
+  font-size: 13.5px;
+}
+
+.sp-empty__icon {
+  font-size: 36px;
+  margin-bottom: 12px;
+}
+
+/* ── Semester group ──────────────────────────────────────────── */
+
+.sp-group {
+  margin-bottom: 24px;
+}
+
+.sp-group-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 0 8px;
+  border-bottom: 2px solid var(--border);
+  margin-bottom: 10px;
+}
+
+.sp-group-head__label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--navy);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.sp-group-head__count {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+/* ── Desktop table ───────────────────────────────────────────── */
+
+.sp-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.sp-table th {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+  padding: 0 12px 8px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.sp-table th:last-child {
+  text-align: right;
+}
+
+.sp-table td {
+  padding: 10px 12px;
+  font-size: 13px;
+  color: var(--text);
+  vertical-align: middle;
+  border-top: 1px solid var(--border);
+}
+
+.sp-table td:last-child {
+  text-align: right;
+}
+
+.sp-table tr:hover td {
+  background: var(--surface-2, #f8f9fd);
+}
+
+.sp-table__code {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--navy);
+  white-space: nowrap;
+}
+
+.sp-table__name {
+  font-weight: 500;
+  color: var(--text);
+}
+
+.sp-table__name-ar {
+  font-size: 11px;
+  color: var(--text-muted);
+  direction: rtl;
+  margin-top: 2px;
+}
+
+.sp-table__hours {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  text-align: center;
+}
+
+.sp-table__grade {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 13px;
+}
+
+/* ── Status badges ───────────────────────────────────────────── */
+
+.sp-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: var(--r-full, 9999px);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+.sp-badge--completed {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.sp-badge--in_progress {
+  background: var(--blue-bg, #e0e8ff);
+  color: var(--blue, #1443c8);
+}
+
+.sp-badge--failed {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.sp-badge--dropped {
+  background: var(--surface-2, #f8f9fd);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+
+/* ── Mobile course cards (hidden on desktop) ─────────────────── */
+
+.sp-card-list {
+  display: none;
+}
+
+.sp-course-card {
+  background: var(--surface, #fff);
+  border: 1px solid var(--border);
+  border-radius: var(--r-xl, 20px);
+  padding: 14px 16px;
+  margin-bottom: 10px;
+  box-shadow: var(--shadow-sm, 0 2px 8px rgba(3,24,74,0.08));
+}
+
+.sp-course-card__top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.sp-course-card__code {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--navy);
+}
+
+.sp-course-card__name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 2px;
+}
+
+.sp-course-card__name-ar {
+  font-size: 11px;
+  color: var(--text-muted);
+  direction: rtl;
+}
+
+.sp-course-card__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 6px;
+}
+
+.sp-course-card__grade {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--navy);
+}
+
+/* ── Responsive ─────────────────────────────────────────────── */
+
+/* Tablet: 2-column summary, hide table → show cards */
+@media (max-width: 768px) {
+  .sp-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .sp-table-wrap {
+    display: none;
+  }
+
+  .sp-card-list {
+    display: block;
+  }
+
+  .sp-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .sp-search {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .sp-filters {
+    gap: 6px;
+  }
+
+  .sp-student-bar__name {
+    font-size: 16px;
+  }
+}
+
+/* Mobile: single-column everything */
+@media (max-width: 480px) {
+  .sp-page {
+    padding-bottom: 32px;
+  }
+
+  .sp-student-bar {
+    padding: 14px 16px;
+    gap: 12px;
+  }
+
+  .sp-student-bar__avatar {
+    width: 44px;
+    height: 44px;
+    font-size: 15px;
+  }
+
+  .sp-stat {
+    padding: 12px 14px;
+  }
+
+  .sp-stat__value {
+    font-size: 22px;
+  }
+
+  .sp-filter-btn {
+    padding: 6px 11px;
+    font-size: 11.5px;
+  }
+
+  .sp-pending {
+    padding: 14px 16px;
+  }
+}

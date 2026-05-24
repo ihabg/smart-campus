@@ -66,6 +66,7 @@ const NAV = {
       { to: '/schedule',                       icon: '📅', label: 'My Schedule' },
       { to: '/materials',                      icon: '📚', label: 'Course Materials' },
       { to: '/assessments',                   icon: '📝', label: 'Assignments & Quizzes' },
+      { to: '/study-plan',                     icon: '🎓', label: 'Study Plan' },
       { to: '/announcements',                  icon: '📢', label: 'Announcements' },
       { to: '/profile',                        icon: '👤', label: 'My Profile' },
     ],
