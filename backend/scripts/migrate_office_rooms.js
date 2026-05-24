@@ -22,7 +22,18 @@ const { Pool } = require('pg');
 const isDryRun = !process.argv.includes('--commit');
 const isForce  = process.argv.includes('--force');
 
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+if (!process.env.DB_PASSWORD) {
+  console.error('\n✗ Database password missing. Check backend/.env (DB_PASSWORD must be set).\n');
+  process.exit(1);
+}
+
+const pool = new Pool({
+  host:     process.env.DB_HOST     || 'localhost',
+  port:     parseInt(process.env.DB_PORT) || 5432,
+  database: process.env.DB_NAME     || 'smart_campus',
+  user:     process.env.DB_USER     || 'postgres',
+  password: process.env.DB_PASSWORD,
+});
 
 // ─── Arabic normalization ─────────────────────────────────────
 
