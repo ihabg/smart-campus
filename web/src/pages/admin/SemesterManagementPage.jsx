@@ -1001,6 +1001,209 @@ function BulkEnrollPanel({ sectionId, sectionDetail, defaultDept, departments, o
 // ─── Enrollments tab ─────────────────────────────────────────
 const ENROLLED_LIMIT = 20;
 
+function sectionLabel(s) {
+  const days = daysArrayToString(s.day_of_week) || '';
+  const time = s.start_time ? `${formatTime(s.start_time)}–${formatTime(s.end_time)}` : '';
+  return [
+    `${s.course_code} — Sec ${s.section_number}`,
+    days, time,
+    s.instructor_name,
+  ].filter(Boolean).join(' · ');
+}
+
+function SectionSearchCombobox({ sections, sectionsLoading, selectedId, onSelect }) {
+  const [query,          setQuery]          = useState('');
+  const [open,           setOpen]           = useState(false);
+  const [highlightIndex, setHighlightIndex] = useState(0);
+
+  const wrapRef  = useRef(null);
+  const inputRef = useRef(null);
+  const listRef  = useRef(null);
+
+  // When parent resets selectedId (e.g. semester filter change), clear the input
+  useEffect(() => {
+    if (!selectedId) setQuery('');
+  }, [selectedId]);
+
+  const filtered = useMemo(() => {
+    if (!query.trim()) return sections;
+    const q = query.toLowerCase();
+    return sections.filter(s => sectionLabel(s).toLowerCase().includes(q));
+  }, [sections, query]);
+
+  // Close on outside click/tap
+  useEffect(() => {
+    const handler = e => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  // Scroll highlighted item into view
+  useEffect(() => {
+    if (!listRef.current) return;
+    const item = listRef.current.children[highlightIndex];
+    if (item) item.scrollIntoView({ block: 'nearest' });
+  }, [highlightIndex, open]);
+
+  const handleInputChange = e => {
+    setQuery(e.target.value);
+    setOpen(true);
+    setHighlightIndex(0);
+    if (selectedId) onSelect('');
+  };
+
+  const handleSelect = section => {
+    onSelect(section.id);
+    setQuery(sectionLabel(section));
+    setOpen(false);
+    setHighlightIndex(0);
+  };
+
+  const handleClear = () => {
+    setQuery('');
+    onSelect('');
+    setOpen(false);
+    inputRef.current?.focus();
+  };
+
+  const handleKeyDown = e => {
+    if (!open && e.key !== 'Escape') {
+      setOpen(true);
+      return;
+    }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setHighlightIndex(i => Math.min(i + 1, filtered.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setHighlightIndex(i => Math.max(i - 1, 0));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (filtered[highlightIndex]) handleSelect(filtered[highlightIndex]);
+    } else if (e.key === 'Escape') {
+      setOpen(false);
+    }
+  };
+
+  const placeholder = sectionsLoading
+    ? 'Loading sections…'
+    : sections.length === 0
+      ? 'No sections found for this semester / college'
+      : `Search ${sections.length} section${sections.length !== 1 ? 's' : ''}…`;
+
+  return (
+    <div ref={wrapRef} style={{ position: 'relative', width: '100%', maxWidth: 700 }}>
+      {/* Input row */}
+      <div style={{ position: 'relative' }}>
+        <input
+          ref={inputRef}
+          type="text"
+          value={query}
+          onChange={handleInputChange}
+          onFocus={() => setOpen(true)}
+          onKeyDown={handleKeyDown}
+          disabled={sectionsLoading}
+          placeholder={placeholder}
+          autoComplete="off"
+          style={{
+            width: '100%',
+            padding: '8px 36px 8px 12px',
+            borderRadius: 8,
+            border: '1px solid #d1d5db',
+            fontSize: 13,
+            color: '#374151',
+            background: sectionsLoading ? '#f9fafb' : '#fff',
+            boxSizing: 'border-box',
+            outline: 'none',
+          }}
+        />
+        {(query || selectedId) && (
+          <button
+            type="button"
+            onClick={handleClear}
+            title="Clear selection"
+            style={{
+              position: 'absolute',
+              right: 8,
+              top: '50%',
+              transform: 'translateY(-50%)',
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              color: '#9ca3af',
+              fontSize: 18,
+              lineHeight: 1,
+              padding: '0 2px',
+              display: 'flex',
+              alignItems: 'center',
+            }}
+          >
+            ×
+          </button>
+        )}
+      </div>
+
+      {/* Dropdown */}
+      {open && !sectionsLoading && (
+        <div
+          ref={listRef}
+          role="listbox"
+          style={{
+            position: 'absolute',
+            top: 'calc(100% + 4px)',
+            left: 0,
+            width: '100%',
+            maxHeight: 260,
+            overflowY: 'auto',
+            background: '#fff',
+            border: '1px solid #d1d5db',
+            borderRadius: 8,
+            boxShadow: '0 4px 16px rgba(0,0,0,0.10)',
+            zIndex: 200,
+          }}
+        >
+          {filtered.length === 0 ? (
+            <div style={{ padding: '10px 12px', fontSize: 13, color: '#94a3b8' }}>
+              No sections match "{query}"
+            </div>
+          ) : (
+            filtered.map((s, idx) => (
+              <button
+                key={s.id}
+                type="button"
+                role="option"
+                aria-selected={s.id === selectedId}
+                onMouseDown={() => handleSelect(s)}
+                onMouseEnter={() => setHighlightIndex(idx)}
+                style={{
+                  display: 'block',
+                  width: '100%',
+                  textAlign: 'left',
+                  padding: '10px 12px',
+                  background: idx === highlightIndex ? '#f0f9ff' : s.id === selectedId ? '#f8fafc' : 'transparent',
+                  border: 'none',
+                  borderBottom: idx < filtered.length - 1 ? '1px solid #f1f5f9' : 'none',
+                  cursor: 'pointer',
+                  fontSize: 13,
+                  color: '#374151',
+                  lineHeight: 1.5,
+                  fontWeight: s.id === selectedId ? 600 : 400,
+                }}
+              >
+                {sectionLabel(s)}
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function EnrollmentsTab({ semester, academicYear, departmentContains, onDataChanged }) {
   const [sections,        setSections]        = useState([]);
   const [sectionsLoading, setSectionsLoading] = useState(false);
@@ -1088,8 +1291,8 @@ function EnrollmentsTab({ semester, academicYear, departmentContains, onDataChan
 
   useEffect(() => { loadEnrolled(); }, [loadEnrolled]);
 
-  const handleSectionChange = e => {
-    setSelectedId(e.target.value);
+  const handleSectionSelect = id => {
+    setSelectedId(id);
     setSectionDetail(null);
     setStudents([]);
     setStudentsPage(1);
@@ -1137,16 +1340,6 @@ function EnrollmentsTab({ semester, academicYear, departmentContains, onDataChan
 
   const totalPages = Math.ceil(studentsTotal / ENROLLED_LIMIT);
 
-  const sectionLabel = s => {
-    const days = daysArrayToString(s.day_of_week) || '';
-    const time = s.start_time ? `${formatTime(s.start_time)}–${formatTime(s.end_time)}` : '';
-    return [
-      `${s.course_code} — Sec ${s.section_number}`,
-      days, time,
-      s.instructor_name,
-    ].filter(Boolean).join(' · ');
-  };
-
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
@@ -1155,23 +1348,12 @@ function EnrollmentsTab({ semester, academicYear, departmentContains, onDataChan
         <label style={{ fontSize: 13, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 6 }}>
           Select Section
         </label>
-        <select
-          value={selectedId}
-          onChange={handleSectionChange}
-          disabled={sectionsLoading}
-          style={{ width: '100%', maxWidth: 700, padding: '8px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: 13, color: '#374151', background: '#fff' }}
-        >
-          <option value="">
-            {sectionsLoading
-              ? 'Loading sections…'
-              : sections.length === 0
-                ? 'No sections found for this semester / college'
-                : `— Select a section (${sections.length} available) —`}
-          </option>
-          {sections.map(s => (
-            <option key={s.id} value={s.id}>{sectionLabel(s)}</option>
-          ))}
-        </select>
+        <SectionSearchCombobox
+          sections={sections}
+          sectionsLoading={sectionsLoading}
+          selectedId={selectedId}
+          onSelect={handleSectionSelect}
+        />
       </div>
 
       {/* Empty placeholder */}
