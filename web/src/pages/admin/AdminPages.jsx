@@ -308,18 +308,33 @@ export function AdminFloors() {
   const [delFloor, setDelFloor] = useState(null);
   const [uploading, setUploading] = useState(null);
   const [delLoading, setDelLoading] = useState(false);
+  const [selectedBuildingId, setSelectedBuildingId] = useState(null);
+  const [showBuildingManager, setShowBuildingManager] = useState(false);
 
-  const { data: bldData, loading: buildingsLoading } = useAsync(
+  const { data: bldData, loading: buildingsLoading, refetch: refetchBuildings } = useAsync(
     () => floorAPI.getBuildings(),
     []
   );
 
-const allBuildings = bldData?.buildings || [];
+  const allBuildings = bldData?.buildings || [];
 
-const buildings =
-  allBuildings.filter((building) => building.code === 'ENG').length > 0
-    ? allBuildings.filter((building) => building.code === 'ENG')
-    : allBuildings;
+  // Auto-select: prefer ENG if present, otherwise first building
+  useEffect(() => {
+    if (selectedBuildingId || allBuildings.length === 0) return;
+    const preferred = allBuildings.find(b => b.code === 'ENG') ?? allBuildings[0];
+    setSelectedBuildingId(preferred.id);
+  }, [allBuildings]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // If selectedBuildingId is no longer in the active list (after archive/delete), auto-select
+  useEffect(() => {
+    if (!selectedBuildingId || allBuildings.length === 0) return;
+    if (!allBuildings.find(b => b.id === selectedBuildingId)) {
+      const preferred = allBuildings.find(b => b.code === 'ENG') ?? allBuildings[0];
+      setSelectedBuildingId(preferred?.id ?? null);
+    }
+  }, [allBuildings, selectedBuildingId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const selectedBuilding = allBuildings.find(b => b.id === selectedBuildingId) ?? null;
 
   const { data, loading, refetch } = useAsync(
     () => floorAPI.getAll({ active_only: 'false' }),
@@ -328,30 +343,12 @@ const buildings =
 
   const floors = data?.floors || [];
 
-  const byBuilding = {};
-
-  floors.forEach((floor) => {
-    const key = floor.building_code || 'UNKNOWN';
-
-    if (!byBuilding[key]) {
-      byBuilding[key] = {
-        name: floor.building_name,
-        code: floor.building_code,
-        id: floor.building_id,
-        floors: []
-      };
-    }
-
-    byBuilding[key].floors.push(floor);
-  });
-
-  Object.values(byBuilding).forEach((building) => {
-    building.floors.sort((a, b) => {
-      const aOrder = Number(a.display_order ?? a.floor_number ?? 0);
-      const bOrder = Number(b.display_order ?? b.floor_number ?? 0);
-      return aOrder - bOrder;
-    });
-  });
+  const selectedFloors = floors
+    .filter(f => f.building_id === selectedBuildingId)
+    .sort((a, b) =>
+      Number(a.display_order ?? a.floor_number ?? 0) -
+      Number(b.display_order ?? b.floor_number ?? 0)
+    );
 
   const handleUploadMap = async (floorId, file) => {
     if (!file) return;
@@ -408,58 +405,100 @@ const buildings =
           variant="primary"
           icon={<PlusIcon />}
           onClick={() => setShowCreate(true)}
-          disabled={buildingsLoading || buildings.length === 0}
+          disabled={buildingsLoading || allBuildings.length === 0 || !selectedBuildingId}
         >
           Add Floor
         </Button>
       </div>
 
-      {loading ? (
+      {/* ── College / Building selector ── */}
+      <div className="card" style={{ marginBottom: 16, padding: '12px 18px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+            College / Building
+          </span>
+
+          {buildingsLoading ? (
+            <Spinner size="sm" />
+          ) : allBuildings.length === 0 ? (
+            <span style={{ fontSize: 13, color: 'var(--text-faint)' }}>No buildings found</span>
+          ) : allBuildings.length === 1 ? (
+            <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--text)' }}>
+              Block {selectedBuilding?.code} — {selectedBuilding?.name}
+            </span>
+          ) : (
+            <select
+              value={selectedBuildingId || ''}
+              onChange={e => setSelectedBuildingId(e.target.value)}
+              style={{
+                height: 36,
+                border: '1px solid var(--border)',
+                borderRadius: 8,
+                padding: '0 32px 0 12px',
+                fontSize: 14,
+                fontWeight: 600,
+                color: 'var(--text)',
+                background: 'var(--surface)',
+                cursor: 'pointer',
+                outline: 'none',
+                minWidth: 260,
+                appearance: 'none',
+                backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%236b7280' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E")`,
+                backgroundRepeat: 'no-repeat',
+                backgroundPosition: 'right 12px center',
+              }}
+            >
+              {allBuildings.map(b => (
+                <option key={b.id} value={b.id}>
+                  Block {b.code} — {b.name}
+                </option>
+              ))}
+            </select>
+          )}
+
+          {selectedBuilding && (
+            <Badge variant="gray">
+              {selectedFloors.length} floor{selectedFloors.length !== 1 ? 's' : ''}
+            </Badge>
+          )}
+
+          <button
+            type="button"
+            className="btn btn--secondary btn--sm"
+            onClick={() => setShowBuildingManager(true)}
+            style={{ marginLeft: 'auto', whiteSpace: 'nowrap' }}
+          >
+            Manage Buildings
+          </button>
+        </div>
+      </div>
+
+      {/* ── Floors list ── */}
+      {loading || buildingsLoading ? (
         <Spinner center />
-      ) : floors.length === 0 ? (
+      ) : allBuildings.length === 0 ? (
         <div className="card">
           <div className="empty-state">
             <div className="empty-state__icon">🏢</div>
-            <p className="empty-state__title">No floors found</p>
+            <p className="empty-state__title">No buildings configured</p>
             <p className="empty-state__sub">
-              Create the first floor for your building.
+              Add a building to the database to get started.
+            </p>
+          </div>
+        </div>
+      ) : selectedFloors.length === 0 ? (
+        <div className="card">
+          <div className="empty-state">
+            <div className="empty-state__icon">🏢</div>
+            <p className="empty-state__title">No floors yet</p>
+            <p className="empty-state__sub">
+              Create the first floor for {selectedBuilding?.name || 'this building'}.
             </p>
           </div>
         </div>
       ) : (
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 'var(--space-xl)'
-          }}
-        >
-          {Object.values(byBuilding).map((building) => (
-            <div key={building.code} className="card card--no-pad">
-              <div
-                style={{
-                  padding: '12px 16px',
-                  background: 'var(--bg)',
-                  borderBottom: '1px solid var(--border)',
-                  fontWeight: 700,
-                  fontSize: 15,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: 12
-                }}
-              >
-                <span>
-                  Block {building.code} — {building.name}
-                </span>
-
-                <Badge variant="gray">
-                  {building.floors.length} floor
-                  {building.floors.length !== 1 ? 's' : ''}
-                </Badge>
-              </div>
-
-              {building.floors.map((floor) => (
+        <div className="card card--no-pad">
+          {selectedFloors.map((floor) => (
                 <div
                   key={floor.id}
                   style={{
@@ -622,8 +661,6 @@ const buildings =
                     </button>
                   </div>
                 </div>
-              ))}
-            </div>
           ))}
         </div>
       )}
@@ -631,7 +668,8 @@ const buildings =
       <FloorFormModal
         open={showCreate}
         onClose={() => setShowCreate(false)}
-        buildings={buildings}
+        buildings={allBuildings}
+        defaultBuildingId={selectedBuildingId}
         onSaved={() => {
           setShowCreate(false);
           refetch();
@@ -642,7 +680,8 @@ const buildings =
       <FloorFormModal
         open={!!editFloor}
         onClose={() => setEditFloor(null)}
-        buildings={buildings}
+        buildings={allBuildings}
+        defaultBuildingId={selectedBuildingId}
         existingFloor={editFloor}
         onSaved={() => {
           setEditFloor(null);
@@ -660,9 +699,326 @@ const buildings =
         title="Delete Floor"
         message={`Delete floor "${delFloor?.floor_label}"? All rooms on this floor may also be deleted or become unavailable depending on backend constraints.`}
       />
+
+      <BuildingManagerModal
+        open={showBuildingManager}
+        onClose={() => setShowBuildingManager(false)}
+        onBuildingsChanged={refetchBuildings}
+      />
     </div>
   );
 }
+
+// ─── Building Manager Modal ───────────────────────────────────
+
+function buildingErrMsg(err) {
+  const fieldErrors = err?.response?.data?.errors;
+  if (Array.isArray(fieldErrors) && fieldErrors.length > 0) {
+    return fieldErrors.map(e => e.message).join(', ');
+  }
+  return err?.response?.data?.message || err?.message || 'An unexpected error occurred';
+}
+
+function BuildingManagerModal({ open, onClose, onBuildingsChanged }) {
+  const [buildings, setBuildings] = useState([]);
+  const [loadingBuildings, setLoadingBuildings] = useState(false);
+  const [formMode, setFormMode] = useState(null); // null | 'add' | 'edit'
+  const [editTarget, setEditTarget] = useState(null);
+  const [form, setForm] = useState({ code: '', name: '', description: '' });
+  const [formErrors, setFormErrors] = useState({});
+  const [formLoading, setFormLoading] = useState(false);
+  const [archiveConfirm, setArchiveConfirm] = useState(null);
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
+  const [actionLoading, setActionLoading] = useState(false);
+
+  const fetchBuildings = useCallback(async () => {
+    setLoadingBuildings(true);
+    try {
+      const res = await floorAPI.getBuildingsAdmin();
+      setBuildings(res?.data?.data?.buildings || res?.data?.buildings || []);
+    } catch (err) {
+      toast.error(buildingErrMsg(err));
+    } finally {
+      setLoadingBuildings(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (open) fetchBuildings();
+  }, [open, fetchBuildings]);
+
+  const activeCount = buildings.filter(b => b.is_active).length;
+
+  const openAdd = () => {
+    setEditTarget(null);
+    setForm({ code: '', name: '', description: '' });
+    setFormErrors({});
+    setFormMode('add');
+  };
+
+  const openEdit = (b) => {
+    setEditTarget(b);
+    setForm({ code: b.code, name: b.name, description: b.description || '' });
+    setFormErrors({});
+    setFormMode('edit');
+  };
+
+  const cancelForm = () => { setFormMode(null); setEditTarget(null); };
+
+  const validateForm = () => {
+    const errs = {};
+    if (!form.code.trim()) errs.code = 'Code is required';
+    if (!form.name.trim()) errs.name = 'Name is required';
+    setFormErrors(errs);
+    return !Object.keys(errs).length;
+  };
+
+  const handleSaveBuilding = async () => {
+    if (!validateForm()) return;
+    setFormLoading(true);
+    try {
+      if (formMode === 'add') {
+        await floorAPI.createBuilding(form);
+        toast.success('Building created');
+      } else {
+        await floorAPI.updateBuilding(editTarget.id, form);
+        toast.success('Building updated');
+      }
+      cancelForm();
+      await fetchBuildings();
+      onBuildingsChanged();
+    } catch (err) {
+      toast.error(buildingErrMsg(err));
+    } finally {
+      setFormLoading(false);
+    }
+  };
+
+  const handleToggleActive = async (building) => {
+    if (building.is_active) {
+      if (activeCount <= 1) {
+        toast.error('You must keep at least one active building.');
+        return;
+      }
+      setArchiveConfirm(building);
+    } else {
+      setActionLoading(true);
+      try {
+        await floorAPI.updateBuilding(building.id, { is_active: true });
+        toast.success('Building restored');
+        await fetchBuildings();
+        onBuildingsChanged();
+      } catch (err) {
+        toast.error(buildingErrMsg(err));
+      } finally {
+        setActionLoading(false);
+      }
+    }
+  };
+
+  const handleConfirmArchive = async () => {
+    if (!archiveConfirm) return;
+    setActionLoading(true);
+    try {
+      await floorAPI.updateBuilding(archiveConfirm.id, { is_active: false });
+      toast.success('Building archived');
+      setArchiveConfirm(null);
+      await fetchBuildings();
+      onBuildingsChanged();
+    } catch (err) {
+      toast.error(buildingErrMsg(err));
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deleteConfirm) return;
+    setActionLoading(true);
+    try {
+      await floorAPI.deleteBuilding(deleteConfirm.id);
+      toast.success('Building deleted');
+      setDeleteConfirm(null);
+      await fetchBuildings();
+      onBuildingsChanged();
+    } catch (err) {
+      toast.error(buildingErrMsg(err));
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  return (
+    <>
+      <Modal
+        open={open}
+        onClose={onClose}
+        title="Manage Buildings"
+        footer={
+          <Button variant="secondary" onClick={onClose}>Close</Button>
+        }
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <button
+              type="button"
+              className="btn btn--primary btn--sm"
+              onClick={openAdd}
+              style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+            >
+              <PlusIcon /> Add Building
+            </button>
+          </div>
+
+          {formMode && (
+            <div style={{
+              border: '1px solid var(--border)',
+              borderRadius: 10,
+              padding: 14,
+              background: 'var(--bg)'
+            }}>
+              <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 10 }}>
+                {formMode === 'add' ? 'New Building' : `Edit Building — ${editTarget?.code}`}
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <Input
+                  label="Code (e.g. ENG)"
+                  required
+                  value={form.code}
+                  onChange={e => setForm(f => ({ ...f, code: e.target.value }))}
+                  error={formErrors.code}
+                  placeholder="ENG"
+                />
+                <Input
+                  label="Name"
+                  required
+                  value={form.name}
+                  onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+                  error={formErrors.name}
+                  placeholder="College of Engineering"
+                />
+                <Input
+                  label="Description (optional)"
+                  value={form.description}
+                  onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+                  placeholder=""
+                />
+                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                  <Button variant="secondary" onClick={cancelForm} disabled={formLoading}>
+                    Cancel
+                  </Button>
+                  <Button variant="primary" loading={formLoading} onClick={handleSaveBuilding}>
+                    {formMode === 'add' ? 'Create' : 'Save'}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {loadingBuildings ? (
+            <Spinner center />
+          ) : buildings.length === 0 ? (
+            <div className="empty-state">
+              <p className="empty-state__title">No buildings yet</p>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {buildings.map(b => (
+                <div
+                  key={b.id}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    padding: '10px 12px',
+                    border: '1px solid var(--border)',
+                    borderRadius: 10,
+                    background: b.is_active ? 'var(--surface)' : 'var(--bg)',
+                    opacity: b.is_active ? 1 : 0.65,
+                  }}
+                >
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <span style={{ fontWeight: 700, fontSize: 14 }}>Block {b.code}</span>
+                      <Badge variant={b.is_active ? 'green' : 'gray'}>
+                        {b.is_active ? 'Active' : 'Archived'}
+                      </Badge>
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{b.name}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 2 }}>
+                      {Number(b.floor_count)} active floor{Number(b.floor_count) !== 1 ? 's' : ''}
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    <button
+                      type="button"
+                      className="btn btn--secondary btn--sm"
+                      onClick={() => openEdit(b)}
+                      disabled={actionLoading}
+                    >
+                      Edit
+                    </button>
+
+                    <button
+                      type="button"
+                      className="btn btn--secondary btn--sm"
+                      onClick={() => handleToggleActive(b)}
+                      disabled={actionLoading}
+                    >
+                      {b.is_active ? 'Archive' : 'Restore'}
+                    </button>
+
+                    {Number(b.floor_count) === 0 && (
+                      <button
+                        type="button"
+                        className="btn btn--ghost btn--sm btn--icon"
+                        style={{ color: 'var(--red)' }}
+                        onClick={() => setDeleteConfirm(b)}
+                        disabled={actionLoading}
+                        title="Permanently delete building"
+                      >
+                        <TrashIcon />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </Modal>
+
+      <ConfirmDialog
+        open={!!archiveConfirm}
+        onClose={() => setArchiveConfirm(null)}
+        onConfirm={handleConfirmArchive}
+        loading={actionLoading}
+        danger
+        title="Archive Building"
+        message={
+          archiveConfirm
+            ? Number(archiveConfirm.floor_count) > 0
+              ? `This building has ${archiveConfirm.floor_count} active floor${Number(archiveConfirm.floor_count) !== 1 ? 's' : ''}. Archiving it will hide it from Floors & Maps selectors. Floors and rooms will not be deleted. Continue?`
+              : `Archive "${archiveConfirm.name}"? It will be hidden from Floors & Maps selectors.`
+            : ''
+        }
+      />
+
+      <ConfirmDialog
+        open={!!deleteConfirm}
+        onClose={() => setDeleteConfirm(null)}
+        onConfirm={handleConfirmDelete}
+        loading={actionLoading}
+        danger
+        title="Delete Building"
+        message={`Permanently delete building "${deleteConfirm?.name}"? This cannot be undone.`}
+      />
+    </>
+  );
+}
+
+// ─── Floor Form Modal ─────────────────────────────────────────
 
 function FloorFormModal({
   open,
@@ -670,7 +1026,8 @@ function FloorFormModal({
   buildings,
   existingFloor,
   onSaved,
-  title
+  title,
+  defaultBuildingId
 }) {
   const isEdit = Boolean(existingFloor?.id);
 
@@ -725,7 +1082,7 @@ function FloorFormModal({
       });
     } else {
       setForm({
-        building_id: buildings[0]?.id || '',
+        building_id: defaultBuildingId || buildings[0]?.id || '',
         floor_number: '',
         floor_label: '',
         name: '',

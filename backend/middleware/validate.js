@@ -185,10 +185,21 @@ const validateNotification = [
   handleValidation,
 ];
 
-// ─── UUID param validator ─────────────────────────────────────
+// ─── UUID param validator (strict — RFC 4122 v1-v5) ──────────
 
 const validateUUID = (paramName = 'id') => [
   param(paramName).isUUID().withMessage(`${paramName} must be a valid UUID`),
+  handleValidation,
+];
+
+// ─── UUID format validator (loose — 8-4-4-4-12 hex only) ─────
+// Use for tables whose PKs are UUID-typed but not RFC 4122-compliant
+// (e.g. hand-crafted seed IDs like 11111111-0000-0000-0000-000000000001).
+
+const validateUUIDFormat = (paramName = 'id') => [
+  param(paramName)
+    .matches(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
+    .withMessage(`${paramName} must be a valid UUID`),
   handleValidation,
 ];
 
@@ -210,5 +221,6 @@ module.exports = {
   validateSection,
   validateNotification,
   validateUUID,
+  validateUUIDFormat,
   validatePagination,
 };

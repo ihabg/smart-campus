@@ -4,6 +4,14 @@ import api from './axiosInstance';
 export const floorAPI = {
   getBuildings: () => api.get('/floors/buildings'),
 
+  getBuildingsAdmin: () => api.get('/floors/buildings/manage'),
+
+  createBuilding: (data) => api.post('/floors/buildings', data),
+
+  updateBuilding: (id, data) => api.patch(`/floors/buildings/${id}`, data),
+
+  deleteBuilding: (id) => api.delete(`/floors/buildings/${id}`),
+
   getAll: (params = {}) => api.get('/floors', { params }),
 
   getById: (id) => api.get(`/floors/${id}`),

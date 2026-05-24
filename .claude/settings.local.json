@@ -7,7 +7,11 @@
       "PowerShell(New-Item -ItemType Directory -Force \"c:\\\\Users\\\\Kebab\\\\Desktop\\\\smartwhek\\\\backend\\\\scripts\")",
       "Bash(node -e \"const fs = require\\('fs'\\); const code = fs.readFileSync\\('src/components/ui/index.jsx','utf8'\\); console.log\\('Lines:', code.split\\('\\\\n'\\).length, '| SearchableSelect exported:', code.includes\\('export function SearchableSelect'\\)\\)\")",
       "Bash(node -e ' *)",
-      "Bash(git check-ignore *)"
+      "Bash(git check-ignore *)",
+      "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\Kebab\\\\Desktop\\\\smartwhek\\\\backend\\\\database\" -Recurse -Include \"*.sql\", \"*.js\")",
+      "Bash(Select-Object FullName)",
+      "Bash(git ls-tree *)",
+      "Bash(git log *)"
     ]
   }
 }

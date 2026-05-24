@@ -227,7 +227,7 @@ async function deleteFloor(req, res, next) {
   }
 }
 
-// ─── Get all buildings ───────────────────────────────────────
+// ─── Get all buildings (public — active only) ────────────────
 
 async function getBuildings(req, res, next) {
   try {
@@ -245,4 +245,131 @@ async function getBuildings(req, res, next) {
   }
 }
 
-module.exports = { getAllFloors, getFloorById, createFloor, updateFloor, uploadFloorMap, deleteFloor, getBuildings };
+// ─── Get all buildings including inactive (admin only) ───────
+
+async function getBuildingsAdmin(req, res, next) {
+  try {
+    const result = await query(
+      `SELECT b.*, COUNT(f.id) AS floor_count
+       FROM buildings b
+       LEFT JOIN floors f ON f.building_id = b.id AND f.is_active = TRUE
+       GROUP BY b.id
+       ORDER BY b.code`,
+    );
+    res.json({ success: true, data: { buildings: result.rows } });
+  } catch (error) {
+    next(error);
+  }
+}
+
+// ─── Create building (admin) ─────────────────────────────────
+
+async function createBuilding(req, res, next) {
+  try {
+    const { code, name, description } = req.body;
+
+    if (!code || !name) {
+      return res.status(400).json({ success: false, message: 'code and name are required.' });
+    }
+
+    const existing = await query('SELECT id FROM buildings WHERE LOWER(code) = LOWER($1)', [code]);
+    if (existing.rows.length) {
+      return res.status(409).json({ success: false, message: `A building with code "${code}" already exists.` });
+    }
+
+    const result = await query(
+      `INSERT INTO buildings (code, name, description, is_active)
+       VALUES ($1, $2, $3, TRUE)
+       RETURNING *`,
+      [code.trim().toUpperCase(), name.trim(), description?.trim() || null],
+    );
+
+    res.status(201).json({ success: true, data: { building: result.rows[0] } });
+  } catch (error) {
+    next(error);
+  }
+}
+
+// ─── Update building (admin) ─────────────────────────────────
+
+async function updateBuilding(req, res, next) {
+  try {
+    const { id } = req.params;
+    const { code, name, description, is_active } = req.body;
+
+    const fields = [];
+    const values = [];
+    let idx = 1;
+
+    if (code !== undefined) {
+      // Check code uniqueness against other buildings
+      const dup = await query(
+        'SELECT id FROM buildings WHERE LOWER(code) = LOWER($1) AND id <> $2',
+        [code, id],
+      );
+      if (dup.rows.length) {
+        return res.status(409).json({ success: false, message: `A building with code "${code}" already exists.` });
+      }
+      fields.push(`code = $${idx++}`);
+      values.push(code.trim().toUpperCase());
+    }
+
+    if (name !== undefined) { fields.push(`name = $${idx++}`); values.push(name.trim()); }
+    if (description !== undefined) { fields.push(`description = $${idx++}`); values.push(description?.trim() || null); }
+    if (is_active !== undefined) { fields.push(`is_active = $${idx++}`); values.push(Boolean(is_active)); }
+
+    if (!fields.length) {
+      return res.status(400).json({ success: false, message: 'No fields to update.' });
+    }
+
+    fields.push(`updated_at = NOW()`);
+    values.push(id);
+
+    const result = await query(
+      `UPDATE buildings SET ${fields.join(', ')} WHERE id = $${idx} RETURNING *`,
+      values,
+    );
+
+    if (!result.rows.length) {
+      return res.status(404).json({ success: false, message: 'Building not found.' });
+    }
+
+    res.json({ success: true, data: { building: result.rows[0] } });
+  } catch (error) {
+    next(error);
+  }
+}
+
+// ─── Delete building (admin, only if no floors) ──────────────
+
+async function deleteBuilding(req, res, next) {
+  try {
+    const { id } = req.params;
+
+    const floorCheck = await query(
+      'SELECT COUNT(*) AS cnt FROM floors WHERE building_id = $1',
+      [id],
+    );
+    if (Number(floorCheck.rows[0].cnt) > 0) {
+      return res.status(409).json({
+        success: false,
+        message: 'Cannot delete a building that has floors. Archive it instead.',
+      });
+    }
+
+    const result = await query('DELETE FROM buildings WHERE id = $1 RETURNING id', [id]);
+
+    if (!result.rows.length) {
+      return res.status(404).json({ success: false, message: 'Building not found.' });
+    }
+
+    res.json({ success: true, message: 'Building deleted.' });
+  } catch (error) {
+    next(error);
+  }
+}
+
+module.exports = {
+  getAllFloors, getFloorById, createFloor, updateFloor, uploadFloorMap, deleteFloor,
+  getBuildings, getBuildingsAdmin, createBuilding, updateBuilding, deleteBuilding,
+};
