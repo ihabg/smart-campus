@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom';
 import { floorAPI, mapEditorAPI, roomAPI } from '../../api/index';
 import { Button, Input, Select, Modal, ConfirmDialog, Spinner } from '../../components/ui/index';
+import OfficeAssignmentsPanel from '../../components/ui/OfficeAssignmentsPanel';
 import { getErrorMessage } from '../../utils/helpers';
 import { useRoomTypes } from '../../hooks/index';
 import toast from 'react-hot-toast';
@@ -193,6 +194,11 @@ function getBlockCssClass(block, selected, connecting) {
   if (type === 'stairs' || type === 'emergency_stairs') classes.push('mec-design-block--stairs');
 
   return classes.join(' ');
+}
+
+function isOfficeType(type) {
+  const t = String(type || '').toLowerCase().replace(/[\s_]/g, '');
+  return t === 'office' || t === 'doctoroffice';
 }
 
 export default function MapEditorPage() {
@@ -1476,6 +1482,18 @@ export default function MapEditorPage() {
                     Delete Room
                   </Button>
                 </div>
+
+                {isOfficeType(selectedRoom.type) && (
+                  <div style={{ marginTop: 12 }}>
+                    {selectedRoom.isStaticOnly ? (
+                      <div style={{ padding: '10px 12px', background: '#fff7ed', borderRadius: 8, fontSize: 12, color: '#9a3412', lineHeight: 1.5 }}>
+                        Save the room to the database first before assigning professors.
+                      </div>
+                    ) : (
+                      <OfficeAssignmentsPanel roomId={selectedRoom.dbId || selectedRoom.id} />
+                    )}
+                  </div>
+                )}
 
                 <div style={{ marginTop: 16 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
