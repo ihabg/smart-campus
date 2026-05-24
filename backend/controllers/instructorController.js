@@ -69,6 +69,7 @@ async function getAllInstructors(req, res, next) {
         i.last_name,
         i.email,
         i.department,
+        i.doctor_number,
         i.office_room_id,
         i.is_active,
         i.created_at,

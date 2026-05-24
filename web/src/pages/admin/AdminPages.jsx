@@ -2365,16 +2365,22 @@ export function SectionFormModal({
     const name = instructor.instructor_name ||
       `${instructor.title || ''} ${instructor.first_name || ''} ${instructor.last_name || ''}`.trim() ||
       instructor.email;
-    return {
-      value: instructor.id,
-      label: instructor.department ? `${name} — ${instructor.department}` : name,
-    };
+    const parts = [
+      name,
+      instructor.doctor_number && `#${instructor.doctor_number}`,
+      instructor.email,
+      instructor.department,
+    ].filter(Boolean);
+    return { value: instructor.id, label: parts.join(' — ') };
   });
 
   const roomOptions = activeRooms.map(room => {
-    const parts = [room.room_number];
-    if (room.type) parts.push(room.type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()));
-    if (room.capacity) parts.push(`Cap: ${room.capacity}`);
+    const parts = [
+      room.room_number,
+      room.name,
+      room.type && room.type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+      room.capacity && `Cap: ${room.capacity}`,
+    ].filter(Boolean);
     return { value: room.id, label: parts.join(' — ') };
   });
 
