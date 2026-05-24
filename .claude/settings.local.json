@@ -11,7 +11,9 @@
       "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\Kebab\\\\Desktop\\\\smartwhek\\\\backend\\\\database\" -Recurse -Include \"*.sql\", \"*.js\")",
       "Bash(Select-Object FullName)",
       "Bash(git ls-tree *)",
-      "Bash(git log *)"
+      "Bash(git log *)",
+      "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\Kebab\\\\Desktop\\\\smartwhek\\\\web\\\\src\" -Recurse -Depth 2)",
+      "Bash(Sort-Object FullName)"
     ]
   }
 }

@@ -351,7 +351,7 @@ export default function AdminRoomsPage() {
   );
 }
 
-function emptyRoomForm() {
+export function emptyRoomForm() {
   return {
     room_number: '',
     lecturer_number: '',
@@ -364,7 +364,7 @@ function emptyRoomForm() {
   };
 }
 
-function cleanRoomType(value) {
+export function cleanRoomType(value) {
   const type = String(value || 'lecture_hall')
     .trim()
     .toLowerCase()
@@ -375,7 +375,7 @@ function cleanRoomType(value) {
   return type;
 }
 
-function buildRoomPayload(form, floorId) {
+export function buildRoomPayload(form, floorId) {
   const payload = {
     floor_id: floorId,
     room_number: String(form.room_number || '').trim().toUpperCase(),
@@ -400,7 +400,7 @@ function buildRoomPayload(form, floorId) {
   return payload;
 }
 
-function RoomFormModal({
+export function RoomFormModal({
   open,
   onClose,
   floorId,
@@ -501,8 +501,6 @@ if (
 
     try {
       const payload = buildRoomPayload(form, floorId);
-
-      console.log('ROOM PAYLOAD:', payload);
 
       if (isEdit) {
         await roomAPI.update(existingRoom.id, payload);

@@ -10,7 +10,8 @@ import {
   courseAPI,
   instructorAPI
 } from '../../api/index';
-import { useAsync, useAllSections } from '../../hooks/index';
+import { useAsync, useAllSections, useRoomTypes } from '../../hooks/index';
+import { RoomFormModal } from './AdminRoomsPage';
 import {
   Table, Pagination, Button, Input, Select, Textarea,
   Modal, ConfirmDialog, Badge, Spinner, SectionHeader,
@@ -18,7 +19,7 @@ import {
 } from '../../components/ui/index';
 import {
   formatDate, formatTime, daysArrayToString, statusBadgeClass,
-  statusLabel, roomTypeLabel, getErrorMessage, semesterLabel,
+  statusLabel, roomTypeLabel, roomTypeBadgeClass, getErrorMessage, semesterLabel,
 } from '../../utils/helpers';
 import toast from 'react-hot-toast';
 import { RoomAvailabilityMap } from '../../components/map/RoomAvailabilityMap';
@@ -125,8 +126,7 @@ export function AdminDashboard() {
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {[
-              { to: '/admin/floors', label: 'Manage Floors & Upload Maps' },
-              { to: '/admin/rooms', label: 'Manage Rooms' },
+              { to: '/admin/floors', label: 'Manage Floors & Rooms' },
               { to: '/admin/map-editor', label: '✏️ Open Map Editor' },
               { to: '/admin/schedule', label: 'Manage Schedule' },
               { to: '/admin/announcements', label: '📢 Manage Announcements' },
@@ -310,6 +310,7 @@ export function AdminFloors() {
   const [delLoading, setDelLoading] = useState(false);
   const [selectedBuildingId, setSelectedBuildingId] = useState(null);
   const [showBuildingManager, setShowBuildingManager] = useState(false);
+  const [showRoomsFor, setShowRoomsFor] = useState(null);
 
   const { data: bldData, loading: buildingsLoading, refetch: refetchBuildings } = useAsync(
     () => floorAPI.getBuildings(),
@@ -643,6 +644,15 @@ export function AdminFloors() {
                       Edit Floor
                     </button>
 
+                    <button
+                      type="button"
+                      className="btn btn--primary btn--sm"
+                      onClick={() => setShowRoomsFor(floor)}
+                      title="View and manage rooms on this floor"
+                    >
+                      Manage Rooms
+                    </button>
+
                     <Link
                       to={`/admin/map-editor?floor=${floor.id}`}
                       className="btn btn--secondary btn--sm"
@@ -705,11 +715,304 @@ export function AdminFloors() {
         onClose={() => setShowBuildingManager(false)}
         onBuildingsChanged={refetchBuildings}
       />
+
+      <RoomsManagerModal
+        floor={showRoomsFor}
+        open={!!showRoomsFor}
+        onClose={() => setShowRoomsFor(null)}
+      />
     </div>
   );
 }
 
 // ─── Building Manager Modal ───────────────────────────────────
+
+// ─── Rooms Manager Modal ──────────────────────────────────────
+
+function roomsErrMsg(err) {
+  const fieldErrors = err?.response?.data?.errors;
+  if (Array.isArray(fieldErrors) && fieldErrors.length > 0) {
+    return fieldErrors.map(e => e.message).join(', ');
+  }
+  return err?.response?.data?.message || err?.message || 'An unexpected error occurred';
+}
+
+function RoomsManagerModal({ floor, open, onClose }) {
+  const { roomTypes } = useRoomTypes();
+  const [rooms, setRooms] = useState([]);
+  const [loadingRooms, setLoadingRooms] = useState(false);
+  const [search, setSearch] = useState('');
+  const [typeFilter, setTypeFilter] = useState('');
+  const [showCreate, setShowCreate] = useState(false);
+  const [editRoom, setEditRoom] = useState(null);
+  const [delRoom, setDelRoom] = useState(null);
+  const [delLoading, setDelLoading] = useState(false);
+
+  const fetchRooms = useCallback(async () => {
+    if (!floor?.id) return;
+    setLoadingRooms(true);
+    try {
+      const res = await roomAPI.getByFloor(floor.id, { active_only: 'false' });
+      const payload = res?.data?.data || res?.data || {};
+      setRooms(payload.rooms || []);
+    } catch (err) {
+      toast.error(roomsErrMsg(err));
+    } finally {
+      setLoadingRooms(false);
+    }
+  }, [floor?.id]);
+
+  useEffect(() => {
+    if (open && floor?.id) {
+      setSearch('');
+      setTypeFilter('');
+      fetchRooms();
+    }
+  }, [open, floor?.id, fetchRooms]);
+
+  const filteredRooms = rooms.filter(r => {
+    const matchSearch = !search ||
+      r.room_number?.toLowerCase().includes(search.toLowerCase()) ||
+      r.name?.toLowerCase().includes(search.toLowerCase());
+    const matchType = !typeFilter || r.type === typeFilter;
+    return matchSearch && matchType;
+  });
+
+  const handleDelete = async () => {
+    if (!delRoom?.id) return;
+    setDelLoading(true);
+    try {
+      await roomAPI.delete(delRoom.id);
+      toast.success(`Room ${delRoom.room_number} deleted`);
+      setDelRoom(null);
+      await fetchRooms();
+    } catch (err) {
+      toast.error(roomsErrMsg(err));
+    } finally {
+      setDelLoading(false);
+    }
+  };
+
+  const floorTitle = floor
+    ? `${floor.building_code || floor.building_name || ''} — ${floor.floor_label}${floor.name ? ` (${floor.name})` : ''}`
+    : '';
+
+  return (
+    <>
+      <Modal
+        open={open}
+        onClose={onClose}
+        title={`Rooms — ${floorTitle}`}
+        size="lg"
+        footer={
+          <Button variant="secondary" onClick={onClose}>Close</Button>
+        }
+      >
+        {/* ── Toolbar ── */}
+        <div style={{
+          display: 'flex',
+          gap: 8,
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          marginBottom: 12,
+        }}>
+          <input
+            type="search"
+            className="form-input"
+            placeholder="Search room # or name…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            style={{ flex: '1 1 160px', minWidth: 0, height: 36 }}
+          />
+
+          <select
+            className="form-input"
+            value={typeFilter}
+            onChange={e => setTypeFilter(e.target.value)}
+            style={{ width: 160, height: 36, flexShrink: 0 }}
+          >
+            <option value="">All types</option>
+            {roomTypes.map(rt => (
+              <option key={rt.value} value={rt.value}>{rt.label_en}</option>
+            ))}
+          </select>
+
+          <Link
+            to={floor?.id ? `/admin/map-editor?floor=${floor.id}` : '/admin/map-editor'}
+            className="btn btn--secondary btn--sm"
+            style={{ whiteSpace: 'nowrap', flexShrink: 0 }}
+            onClick={onClose}
+          >
+            Open Map Editor
+          </Link>
+
+          <button
+            type="button"
+            className="btn btn--primary btn--sm"
+            onClick={() => setShowCreate(true)}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}
+          >
+            <PlusIcon /> Add Room
+          </button>
+        </div>
+
+        {/* ── Room count ── */}
+        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>
+          {loadingRooms
+            ? 'Loading…'
+            : `${filteredRooms.length} of ${rooms.length} room${rooms.length !== 1 ? 's' : ''}`}
+        </div>
+
+        {/* ── Table ── */}
+        {loadingRooms ? (
+          <Spinner center />
+        ) : rooms.length === 0 ? (
+          <div className="empty-state">
+            <div className="empty-state__icon">🚪</div>
+            <p className="empty-state__title">No rooms on this floor yet</p>
+            <p className="empty-state__sub">Click "Add Room" to create the first one.</p>
+          </div>
+        ) : filteredRooms.length === 0 ? (
+          <div className="empty-state">
+            <p className="empty-state__title">No rooms match your filter</p>
+          </div>
+        ) : (
+          <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 'min(420px, 55vh)', borderRadius: 10, border: '1px solid var(--border)' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr style={{ background: 'var(--bg)', borderBottom: '1px solid var(--border)' }}>
+                  {['Room #', 'Name', 'Type', 'Capacity', 'Positioned', 'Accessible', ''].map(h => (
+                    <th
+                      key={h}
+                      style={{
+                        padding: '8px 12px',
+                        textAlign: 'left',
+                        fontWeight: 700,
+                        fontSize: 11,
+                        color: 'var(--text-muted)',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.05em',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filteredRooms.map((r, i) => (
+                  <tr
+                    key={r.id}
+                    style={{
+                      borderBottom: i < filteredRooms.length - 1 ? '1px solid var(--border)' : 'none',
+                      background: 'var(--surface)',
+                    }}
+                  >
+                    <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontWeight: 700, color: 'var(--najah-blue)', whiteSpace: 'nowrap' }}>
+                      {r.room_number}
+                    </td>
+                    <td style={{ padding: '9px 12px', minWidth: 120 }}>
+                      <div style={{ fontWeight: 500 }}>{r.name}</div>
+                      {r.department && (
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{r.department}</div>
+                      )}
+                    </td>
+                    <td style={{ padding: '9px 12px', whiteSpace: 'nowrap' }}>
+                      <Badge variant={roomTypeBadgeClass(r.type).replace('badge--', '')}>
+                        {roomTypeLabel(r.type)}
+                      </Badge>
+                    </td>
+                    <td style={{ padding: '9px 12px', whiteSpace: 'nowrap', color: 'var(--text-muted)' }}>
+                      {r.capacity ? `${r.capacity} seats` : '—'}
+                    </td>
+                    <td style={{ padding: '9px 12px', whiteSpace: 'nowrap' }}>
+                      {r.coord_x != null
+                        ? <span style={{ color: 'var(--green)', fontSize: 12 }}>✓ Yes</span>
+                        : <span style={{ color: 'var(--text-faint)', fontSize: 12 }}>No</span>}
+                    </td>
+                    <td style={{ padding: '9px 12px', whiteSpace: 'nowrap', textAlign: 'center' }}>
+                      {r.is_accessible ? '✓' : '✗'}
+                    </td>
+                    <td style={{ padding: '9px 12px', whiteSpace: 'nowrap' }}>
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        <button
+                          type="button"
+                          className="btn btn--ghost btn--sm btn--icon"
+                          onClick={() => setEditRoom({ ...r })}
+                          title="Edit room"
+                        >
+                          <EditIcon />
+                        </button>
+                        <Link
+                          to={`/admin/map-editor?floor=${r.floor_id}`}
+                          className="btn btn--ghost btn--sm btn--icon"
+                          title="Position on map"
+                          onClick={onClose}
+                        >
+                          🗺️
+                        </Link>
+                        <button
+                          type="button"
+                          className="btn btn--ghost btn--sm btn--icon"
+                          onClick={() => setDelRoom(r)}
+                          style={{ color: 'var(--red)' }}
+                          title="Delete room"
+                        >
+                          <TrashIcon />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Modal>
+
+      {/* Add room — floor is locked to current floor */}
+      <RoomFormModal
+        open={showCreate}
+        onClose={() => setShowCreate(false)}
+        floorId={floor?.id}
+        roomTypes={roomTypes}
+        getBackendErrorMessage={roomsErrMsg}
+        onSaved={async () => {
+          setShowCreate(false);
+          await fetchRooms();
+        }}
+        title={`Add Room — ${floorTitle}`}
+      />
+
+      {/* Edit room */}
+      <RoomFormModal
+        open={!!editRoom}
+        onClose={() => setEditRoom(null)}
+        floorId={floor?.id}
+        existingRoom={editRoom}
+        roomTypes={roomTypes}
+        getBackendErrorMessage={roomsErrMsg}
+        onSaved={async () => {
+          setEditRoom(null);
+          await fetchRooms();
+        }}
+        title="Edit Room"
+      />
+
+      {/* Delete confirmation */}
+      <ConfirmDialog
+        open={!!delRoom}
+        onClose={() => setDelRoom(null)}
+        onConfirm={handleDelete}
+        loading={delLoading}
+        danger
+        title="Delete Room"
+        message={`Delete room "${delRoom?.room_number}${delRoom?.name ? ` — ${delRoom.name}` : ''}"? Schedule references will be unassigned by the database.`}
+      />
+    </>
+  );
+}
 
 function buildingErrMsg(err) {
   const fieldErrors = err?.response?.data?.errors;
