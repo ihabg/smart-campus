@@ -56,6 +56,7 @@ router.use(protect);
 router.use(restrictTo('professor','department_head','super_admin'));
 
 router.get('/dashboard',                              ctrl.getDashboard);
+router.get('/terms',                                  ctrl.getProfessorTerms);
 router.get('/schedule',                               ctrl.getSchedule);
 router.get('/rooms',                                  ctrl.getRoomsForChange);
 router.get('/materials',                              ctrl.getMaterials);

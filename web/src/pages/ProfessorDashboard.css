@@ -1492,3 +1492,34 @@
     min-width: 0;
   }
 }
+
+/* ── Term selector bar (visible in all non-schedule modes) ─── */
+.prof-term-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--card-bg, #fff);
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: var(--radius-md, 10px);
+  padding: 10px 16px;
+  flex-wrap: wrap;
+}
+
+.prof-term-bar__label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted, #6b7280);
+  white-space: nowrap;
+}
+
+@media (max-width: 600px) {
+  .prof-term-bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .prof-term-bar .prof-select {
+    width: 100%;
+  }
+}

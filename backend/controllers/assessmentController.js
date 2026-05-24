@@ -200,6 +200,15 @@ async function listProfessorSections(req, res, next) {
     const instructorId = await requireInstructor(req, res);
     if (!instructorId) return;
 
+    const { semester, academic_year } = req.query;
+
+    if (!semester || !academic_year) {
+      return res.status(400).json({
+        success: false,
+        message: 'semester and academic_year are required.'
+      });
+    }
+
     const result = await query(
       `
       SELECT s.id, s.section_number, s.semester::text AS semester, s.academic_year,
@@ -211,11 +220,14 @@ async function listProfessorSections(req, res, next) {
       JOIN courses c ON c.id = s.course_id
       LEFT JOIN enrollments e ON e.section_id = s.id
       LEFT JOIN course_assessments a ON a.section_id = s.id
-      WHERE s.instructor_id = $1 AND s.is_active = TRUE
+      WHERE s.instructor_id = $1
+        AND s.is_active = TRUE
+        AND s.semester::text = $2
+        AND s.academic_year = $3
       GROUP BY s.id, c.id
       ORDER BY c.code, s.section_number
       `,
-      [instructorId]
+      [instructorId, semester, academic_year]
     );
 
     res.json({ success: true, data: result.rows });

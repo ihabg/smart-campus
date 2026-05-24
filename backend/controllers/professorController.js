@@ -32,8 +32,10 @@ function sendCsv(res, filename, rows) {
 
 async function getInstructorIdByUserEmail(req) {
   const result = await query(
-    `SELECT id FROM instructors WHERE LOWER(email) = LOWER($1) LIMIT 1`,
-    [req.user.email]
+    `SELECT id FROM instructors
+     WHERE LOWER(email) = LOWER($1) OR user_id = $2
+     LIMIT 1`,
+    [req.user.email, req.user.id]
   );
 
   return result.rows[0]?.id || null;
@@ -132,8 +134,18 @@ async function getDashboard(req, res, next) {
     if (!profId) return;
 
     const today = new Date().getDay();
+    const { semester, academic_year } = req.query;
 
-    const [sectionsRes, todayRes, statsRes, atRiskRes] = await Promise.all([
+    // Build semester filter for sections list.
+    // When params are missing return empty sections rather than all semesters.
+    const sectionsParams = [profId];
+    let sectionsFilter = 'AND 1 = 0';
+    if (semester && academic_year) {
+      sectionsParams.push(semester, academic_year);
+      sectionsFilter = 'AND s.semester::text = $2 AND s.academic_year = $3';
+    }
+
+    const [sectionsRes, todayRes, statsRes, atRiskRes, termsRes, titleRes] = await Promise.all([
       query(
         `
         SELECT
@@ -160,9 +172,10 @@ async function getDashboard(req, res, next) {
         LEFT JOIN floors f ON f.id = r.floor_id
         WHERE s.instructor_id = $1
           AND s.is_active = TRUE
+          ${sectionsFilter}
         ORDER BY c.code
         `,
-        [profId]
+        sectionsParams
       ),
 
       query(
@@ -255,16 +268,51 @@ async function getDashboard(req, res, next) {
         LIMIT 10
         `,
         [profId]
+      ),
+
+      // Distinct terms this professor has sections in, most recent first.
+      // Uses a CTE so the ORDER BY expressions don't need to appear in SELECT.
+      query(
+        `
+        WITH professor_terms AS (
+          SELECT
+            s.semester::text AS semester,
+            s.academic_year,
+            split_part(s.academic_year, '/', 1)::int AS year_start,
+            CASE s.semester::text
+              WHEN 'summer' THEN 3
+              WHEN 'spring' THEN 2
+              WHEN 'fall'   THEN 1
+              ELSE 0
+            END AS semester_order
+          FROM sections s
+          WHERE s.instructor_id = $1
+            AND s.is_active = TRUE
+          GROUP BY s.semester, s.academic_year
+        )
+        SELECT semester, academic_year
+        FROM professor_terms
+        ORDER BY year_start DESC, semester_order DESC
+        `,
+        [profId]
+      ),
+
+      // Instructor's academic title from the instructors table
+      query(
+        `SELECT title FROM instructors WHERE id = $1`,
+        [profId]
       )
     ]);
 
     res.json({
       success: true,
       data: {
-        sections: sectionsRes.rows,
-        today_schedule: todayRes.rows,
-        stats: statsRes.rows[0] || {},
-        at_risk: atRiskRes.rows
+        sections:         sectionsRes.rows,
+        today_schedule:   todayRes.rows,
+        stats:            statsRes.rows[0] || {},
+        at_risk:          atRiskRes.rows,
+        terms:            termsRes.rows,
+        instructor_title: titleRes.rows[0]?.title || null
       }
     });
   } catch (e) {
@@ -1318,7 +1366,14 @@ async function getMaterials(req, res, next) {
     const instructorId = await requireInstructor(req, res);
     if (!instructorId) return;
 
-    const { section_id } = req.query;
+    const { semester, academic_year, section_id } = req.query;
+
+    if (!semester || !academic_year) {
+      return res.status(400).json({
+        success: false,
+        message: 'semester and academic_year are required.'
+      });
+    }
 
     const sectionsRes = await query(
       `
@@ -1353,12 +1408,14 @@ async function getMaterials(req, res, next) {
       LEFT JOIN rooms r ON r.id = s.room_id
       WHERE s.instructor_id = $1
         AND s.is_active = TRUE
+        AND s.semester::text = $2
+        AND s.academic_year = $3
       ORDER BY c.code, s.section_number
       `,
-      [instructorId]
+      [instructorId, semester, academic_year]
     );
 
-    const materialParams = [instructorId];
+    const materialParams = [instructorId, semester, academic_year];
     let sectionFilter = '';
 
     if (section_id) {
@@ -1401,6 +1458,8 @@ async function getMaterials(req, res, next) {
         ) AS enrolled
       FROM professor_course_materials pcm
       JOIN sections s ON s.id = pcm.section_id
+        AND s.semester::text = $2
+        AND s.academic_year = $3
       JOIN courses c ON c.id = pcm.course_id
       WHERE pcm.instructor_id = $1
         AND (
@@ -1857,35 +1916,46 @@ async function getOfficeHourBookings(req, res, next) {
     const instructorId = await requireInstructor(req, res);
     if (!instructorId) return;
 
-    const result = await query(
-      `
-      SELECT
-        b.id,
-        b.office_hour_id,
-        b.student_id,
-        b.requested_date,
-        b.message,
-        b.status,
-        b.created_at,
-        oh.day_of_week,
-        oh.start_time,
-        oh.end_time,
-        oh.office_room,
-        CONCAT_WS(' ', u.first_name, u.last_name) AS student_name,
-        u.student_id AS student_number,
-        u.email AS student_email
-      FROM office_hour_bookings b
-      JOIN office_hours oh ON oh.id = b.office_hour_id
-      JOIN users u ON u.id = b.student_id
-      WHERE oh.instructor_id = $1
-      ORDER BY
-        CASE b.status WHEN 'pending' THEN 0 WHEN 'accepted' THEN 1 ELSE 2 END,
-        b.created_at DESC
-      `,
-      [instructorId]
-    );
+    let bookings = [];
+    try {
+      const result = await query(
+        `
+        SELECT
+          b.id,
+          b.office_hour_id,
+          b.student_id,
+          b.requested_date,
+          b.message,
+          b.status,
+          b.created_at,
+          oh.day_of_week,
+          oh.start_time,
+          oh.end_time,
+          oh.office_room,
+          CONCAT_WS(' ', u.first_name, u.last_name) AS student_name,
+          u.student_id AS student_number,
+          u.email AS student_email
+        FROM office_hour_bookings b
+        JOIN office_hours oh ON oh.id = b.office_hour_id
+        JOIN users u ON u.id = b.student_id
+        WHERE oh.instructor_id = $1
+        ORDER BY
+          CASE b.status WHEN 'pending' THEN 0 WHEN 'accepted' THEN 1 ELSE 2 END,
+          b.created_at DESC
+        `,
+        [instructorId]
+      );
+      bookings = result.rows;
+    } catch (tableErr) {
+      if (tableErr.code === '42P01') {
+        // office_hour_bookings table does not exist yet — return empty list
+        bookings = [];
+      } else {
+        throw tableErr;
+      }
+    }
 
-    res.json({ success: true, data: { bookings: result.rows } });
+    res.json({ success: true, data: { bookings } });
   } catch (e) {
     next(e);
   }
@@ -1960,57 +2030,13 @@ async function getCourseMessages(req, res, next) {
     const instructorId = await requireInstructor(req, res);
     if (!instructorId) return;
 
-    const sectionsRes = await query(
-      `
-      SELECT
-        s.id,
-        s.section_number,
-        c.code,
-        c.name AS course_name,
-        COALESCE(c.name_ar, c.name) AS course_name_ar,
-        (
-          SELECT COUNT(*)
-          FROM enrollments e
-          WHERE e.section_id = s.id
-            AND e.status = 'enrolled'
-        ) AS enrolled
-      FROM sections s
-      JOIN courses c ON c.id = s.course_id
-      WHERE s.instructor_id = $1
-        AND s.is_active = TRUE
-      ORDER BY c.code, s.section_number
-      `,
-      [instructorId]
-    );
-
-    const messagesRes = await query(
-      `
-      SELECT
-        m.id,
-        m.section_id,
-        m.title,
-        m.body,
-        m.is_pinned,
-        m.created_at,
-        m.updated_at,
-        c.code AS course_code,
-        c.name AS course_name,
-        s.section_number
-      FROM section_messages m
-      JOIN sections s ON s.id = m.section_id
-      JOIN courses c ON c.id = s.course_id
-      WHERE m.instructor_id = $1
-        AND m.is_active = TRUE
-      ORDER BY m.is_pinned DESC, m.created_at DESC
-      `,
-      [instructorId]
-    );
-
+    // section_messages table is not yet available — return safe empty response
     res.json({
       success: true,
       data: {
-        sections: sectionsRes.rows,
-        messages: messagesRes.rows
+        sections: [],
+        messages: [],
+        feature_available: false
       }
     });
   } catch (e) {
@@ -2019,92 +2045,19 @@ async function getCourseMessages(req, res, next) {
 }
 
 async function createCourseMessage(req, res, next) {
-  try {
-    const instructorId = await requireInstructor(req, res);
-    if (!instructorId) return;
-
-    const { section_id, title, body, is_pinned = false, notify_students = true } = req.body;
-
-    if (!section_id || !title || !body) {
-      return res.status(400).json({ success: false, message: 'Section, title, and message are required.' });
-    }
-
-    const ownRes = await query(
-      `
-      SELECT s.id, c.code, c.name AS course_name, s.section_number
-      FROM sections s
-      JOIN courses c ON c.id = s.course_id
-      WHERE s.id = $1
-        AND s.instructor_id = $2
-        AND s.is_active = TRUE
-      `,
-      [section_id, instructorId]
-    );
-
-    if (!ownRes.rows.length) {
-      return res.status(403).json({ success: false, message: 'Not your active section.' });
-    }
-
-    const section = ownRes.rows[0];
-
-    const insertRes = await query(
-      `
-      INSERT INTO section_messages (section_id, instructor_id, title, body, is_pinned, is_active, created_at, updated_at)
-      VALUES ($1,$2,$3,$4,$5,TRUE,NOW(),NOW())
-      RETURNING *
-      `,
-      [section_id, instructorId, title.trim(), body.trim(), Boolean(is_pinned)]
-    );
-
-    let notificationId = null;
-    if (notify_students) {
-      notificationId = await notifySectionStudents({
-        sectionId: section_id,
-        senderId: req.user.id,
-        title: `New message: ${title.trim()}`,
-        body: `${section.code} §${section.section_number}: ${body.trim()}`,
-        type: 'custom',
-        data: {
-          section_id,
-          message_id: insertRes.rows[0].id,
-          course_code: section.code
-        }
-      });
-    }
-
-    res.status(201).json({ success: true, data: { message: insertRes.rows[0], notification_id: notificationId } });
-  } catch (e) {
-    next(e);
-  }
+  // section_messages table is not yet available
+  return res.status(503).json({
+    success: false,
+    message: 'Course messages feature is not available yet.'
+  });
 }
 
 async function deleteCourseMessage(req, res, next) {
-  try {
-    const instructorId = await requireInstructor(req, res);
-    if (!instructorId) return;
-
-    const { messageId } = req.params;
-
-    const result = await query(
-      `
-      UPDATE section_messages
-      SET is_active = FALSE,
-          updated_at = NOW()
-      WHERE id = $1
-        AND instructor_id = $2
-      RETURNING id
-      `,
-      [messageId, instructorId]
-    );
-
-    if (!result.rows.length) {
-      return res.status(404).json({ success: false, message: 'Message not found.' });
-    }
-
-    res.json({ success: true, data: { deleted_id: result.rows[0].id } });
-  } catch (e) {
-    next(e);
-  }
+  // section_messages table is not yet available
+  return res.status(503).json({
+    success: false,
+    message: 'Course messages feature is not available yet.'
+  });
 }
 
 async function exportGradesCsv(req, res, next) {
@@ -2333,12 +2286,57 @@ async function cancelMeetingChange(req, res, next) {
   }
 }
 
+async function getProfessorTerms(req, res, next) {
+  try {
+    const profId = await requireInstructor(req, res);
+    if (!profId) return;
+
+    const result = await query(
+      `
+      WITH professor_terms AS (
+        SELECT
+          s.semester::text AS semester,
+          s.academic_year,
+          split_part(s.academic_year, '/', 1)::int AS year_start,
+          CASE s.semester::text
+            WHEN 'summer' THEN 3
+            WHEN 'spring' THEN 2
+            WHEN 'fall'   THEN 1
+            ELSE 0
+          END AS semester_order
+        FROM sections s
+        WHERE s.instructor_id = $1
+          AND s.is_active = TRUE
+        GROUP BY s.semester, s.academic_year
+      )
+      SELECT semester, academic_year
+      FROM professor_terms
+      ORDER BY year_start DESC, semester_order DESC
+      `,
+      [profId]
+    );
+
+    res.json({ success: true, data: { terms: result.rows } });
+  } catch (e) {
+    next(e);
+  }
+}
+
 async function getAnalytics(req, res, next) {
   try {
     const instructorId = await requireInstructor(req, res);
     if (!instructorId) return;
 
-    const sectionId = req.query.section_id || null;
+    const { semester, academic_year, section_id } = req.query;
+
+    if (!semester || !academic_year) {
+      return res.status(400).json({
+        success: false,
+        message: 'semester and academic_year are required.'
+      });
+    }
+
+    const sectionId = section_id || null;
 
     const sectionsRes = await query(
       `
@@ -2388,11 +2386,13 @@ async function getAnalytics(req, res, next) {
       LEFT JOIN attendance_warnings aw ON aw.section_id = s.id
       WHERE s.instructor_id = $1
         AND s.is_active = TRUE
-        AND ($2::uuid IS NULL OR s.id = $2::uuid)
+        AND s.semester::text = $2
+        AND s.academic_year = $3
+        AND ($4::uuid IS NULL OR s.id = $4::uuid)
       GROUP BY s.id, s.course_id, s.section_number, c.code, c.name, c.name_ar
       ORDER BY c.code, s.section_number
       `,
-      [instructorId, sectionId]
+      [instructorId, semester, academic_year, sectionId]
     );
 
     const totalsRes = await query(
@@ -2408,9 +2408,11 @@ async function getAnalytics(req, res, next) {
       LEFT JOIN attendance_warnings aw ON aw.section_id = s.id
       WHERE s.instructor_id = $1
         AND s.is_active = TRUE
-        AND ($2::uuid IS NULL OR s.id = $2::uuid)
+        AND s.semester::text = $2
+        AND s.academic_year = $3
+        AND ($4::uuid IS NULL OR s.id = $4::uuid)
       `,
-      [instructorId, sectionId]
+      [instructorId, semester, academic_year, sectionId]
     );
 
     res.json({
@@ -2428,6 +2430,7 @@ async function getAnalytics(req, res, next) {
 
 module.exports = {
   getDashboard,
+  getProfessorTerms,
   getSectionStudents,
   getAttendance,
   getAttendanceSummary,

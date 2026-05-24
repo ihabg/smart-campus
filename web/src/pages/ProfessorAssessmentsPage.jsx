@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { assessmentAPI } from '../api/index';
 import { Spinner } from '../components/ui/index';
+import useProfessorTerm from '../hooks/useProfessorTerm';
 import './ProfessorAssessmentsPage.css';
 
 const TYPES = [
@@ -79,6 +80,8 @@ function publicFileUrl(fileUrl) {
 }
 
 export default function ProfessorAssessmentsPage() {
+  const { semester, academicYear, termLoading, hasTerm } = useProfessorTerm();
+
   const [sections, setSections] = useState([]);
   const [selectedSection, setSelectedSection] = useState('');
   const [assessments, setAssessments] = useState([]);
@@ -97,14 +100,25 @@ export default function ProfessorAssessmentsPage() {
   );
 
   const loadSections = useCallback(async () => {
-    const response = await assessmentAPI.professorSections();
+    if (!hasTerm) {
+      setLoading(false);
+      return;
+    }
+    // Clear stale data before fetching for the new term
+    setSections([]);
+    setAssessments([]);
+    setSelectedSection('');
+    const response = await assessmentAPI.professorSections({
+      semester,
+      academic_year: academicYear
+    });
     const rows = response.data?.data || [];
     setSections(rows);
-    if (rows.length && !selectedSection) {
+    if (rows.length) {
       setSelectedSection(rows[0].id);
       setForm(defaultForm(rows[0].id));
     }
-  }, [selectedSection]);
+  }, [semester, academicYear, hasTerm]);
 
   const loadAssessments = useCallback(async (sectionId = selectedSection) => {
     if (!sectionId) return;
@@ -234,7 +248,25 @@ export default function ProfessorAssessmentsPage() {
     }
   }
 
-  if (loading) return <Spinner center />;
+  if (loading || (termLoading && !hasTerm)) return <Spinner center />;
+
+  if (!hasTerm) {
+    return (
+      <div className="assess-page">
+        <section className="assess-hero">
+          <div>
+            <span>Professor Portal</span>
+            <h1>Assignments &amp; Quizzes</h1>
+          </div>
+        </section>
+        <div className="empty-state" style={{ marginTop: 32 }}>
+          <div className="empty-state__icon">📋</div>
+          <p className="empty-state__title">No assigned sections yet.</p>
+          <p>You will see your assessments once sections are assigned to you for the current semester.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="assess-page">

@@ -346,7 +346,7 @@ function assessmentFormData(data = {}, file) {
 }
 
 export const assessmentAPI = {
-  professorSections: () => api.get('/assessments/professor/sections'),
+  professorSections: (params = {}) => api.get('/assessments/professor/sections', { params }),
 
   professorList: (params = {}) => api.get('/assessments/professor', { params }),
 

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom';
 import axiosInstance from '../api/axiosInstance';
 import { useAuth } from '../context/AuthContext';
+import useProfessorTerm from '../hooks/useProfessorTerm';
 import './ProfessorDashboard.css';
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -191,9 +192,9 @@ export default function ProfessorDashboard() {
   const [scheduleLoading, setScheduleLoading] = useState(false);
   const [toast, setToast] = useState(null);
 
+  const { semester, academicYear, terms, termLoading, hasTerm, setTerm } = useProfessorTerm();
+
   const [scheduleView, setScheduleView] = useState('text');
-  const [semester, setSemester] = useState('spring');
-  const [academicYear, setAcademicYear] = useState('2025/2026');
 
   const [activeSection, setActiveSection] = useState(null);
   const [students, setStudents] = useState([]);
@@ -305,40 +306,63 @@ export default function ProfessorDashboard() {
     setTimeout(() => setToast(null), 3500);
   }, []);
 
+  const dashGen = useRef(0);
+  const schedGen = useRef(0);
+
   const loadDashboard = useCallback(async () => {
+    if (!hasTerm) return;
+    const gen = ++dashGen.current;
     setLoading(true);
+    setData(null);
     try {
-      const r = await axiosInstance.get('/professor/dashboard');
-      setData(r.data.data);
+      const r = await axiosInstance.get('/professor/dashboard', {
+        params: { semester, academic_year: academicYear }
+      });
+      if (gen === dashGen.current) setData(r.data.data);
     } catch {
-      showToast('Failed to load dashboard', 'error');
+      if (gen === dashGen.current) showToast('Failed to load dashboard', 'error');
     } finally {
-      setLoading(false);
+      if (gen === dashGen.current) setLoading(false);
     }
-  }, [showToast]);
+  }, [semester, academicYear, hasTerm, showToast]);
 
   const loadSchedule = useCallback(async () => {
+    if (!hasTerm) return;
+    const gen = ++schedGen.current;
     setScheduleLoading(true);
     try {
       const r = await axiosInstance.get('/professor/schedule', {
         params: { semester, academic_year: academicYear }
       });
-      setScheduleRows(r.data.data.sections || []);
-      setOfficeHours(r.data.data.office_hours || []);
-      setScheduleChanges(r.data.data.active_changes || []);
+      if (gen === schedGen.current) {
+        setScheduleRows(r.data.data.sections || []);
+        setOfficeHours(r.data.data.office_hours || []);
+        setScheduleChanges(r.data.data.active_changes || []);
+      }
     } catch {
-      showToast('Failed to load schedule', 'error');
+      if (gen === schedGen.current) showToast('Failed to load schedule', 'error');
     } finally {
-      setScheduleLoading(false);
+      if (gen === schedGen.current) setScheduleLoading(false);
     }
-  }, [semester, academicYear, showToast]);
+  }, [semester, academicYear, hasTerm, showToast]);
 
   const loadMaterials = useCallback(async (sectionIdArg) => {
+    if (!hasTerm) return;
     setMaterialsLoading(true);
+    // When called with no sectionId (term change or mode switch), reset selection
+    if (sectionIdArg === undefined) {
+      setMaterialSections([]);
+      setMaterials([]);
+      setMaterialSectionId('');
+    }
     try {
-      const selectedSectionId = sectionIdArg ?? materialSectionId;
+      const selectedSectionId = sectionIdArg !== undefined ? sectionIdArg : '';
       const r = await axiosInstance.get('/professor/materials', {
-        params: selectedSectionId ? { section_id: selectedSectionId } : {}
+        params: {
+          semester,
+          academic_year: academicYear,
+          ...(selectedSectionId ? { section_id: selectedSectionId } : {})
+        }
       });
 
       const sections = r.data.data.sections || [];
@@ -352,21 +376,26 @@ export default function ProfessorDashboard() {
     } finally {
       setMaterialsLoading(false);
     }
-  }, [materialSectionId, showToast]);
+  }, [semester, academicYear, hasTerm, showToast]);
 
   const loadOfficeHoursPage = useCallback(async () => {
+    // Load office hours and bookings independently so a bookings failure
+    // does not prevent the office hours list from showing.
     setOfficeLoading(true);
     try {
-      const [hoursRes, bookingsRes] = await Promise.all([
-        axiosInstance.get('/professor/office-hours'),
-        axiosInstance.get('/professor/office-hour-bookings')
-      ]);
+      const hoursRes = await axiosInstance.get('/professor/office-hours');
       setOfficeRows(hoursRes.data.data.office_hours || []);
-      setOfficeBookings(bookingsRes.data.data.bookings || []);
     } catch {
       showToast('Failed to load office hours', 'error');
     } finally {
       setOfficeLoading(false);
+    }
+
+    try {
+      const bookingsRes = await axiosInstance.get('/professor/office-hour-bookings');
+      setOfficeBookings(bookingsRes.data.data.bookings || []);
+    } catch {
+      setOfficeBookings([]);
     }
   }, [showToast]);
 
@@ -383,16 +412,20 @@ export default function ProfessorDashboard() {
   }, [showToast]);
 
   const loadAnalytics = useCallback(async () => {
+    if (!hasTerm) return;
     setAnalyticsLoading(true);
+    setAnalytics({ totals: {}, sections: [] });
     try {
-      const r = await axiosInstance.get('/professor/analytics');
+      const r = await axiosInstance.get('/professor/analytics', {
+        params: { semester, academic_year: academicYear }
+      });
       setAnalytics(r.data.data || { totals: {}, sections: [] });
     } catch {
       showToast('Failed to load analytics', 'error');
     } finally {
       setAnalyticsLoading(false);
     }
-  }, [showToast]);
+  }, [semester, academicYear, hasTerm, showToast]);
 
 
   const loadMessages = useCallback(async () => {
@@ -924,10 +957,42 @@ export default function ProfessorDashboard() {
   const now24 = new Date().toTimeString().slice(0, 5);
   const nextClass = todayItems.find((s) => String(s.end_time || '').slice(0, 5) > now24) || todayItems[0] || null;
 
-  if (loading) {
+  if (termLoading) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 300 }}>
         <div className="spinner" />
+      </div>
+    );
+  }
+
+  if (loading && hasTerm) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 300 }}>
+        <div className="spinner" />
+      </div>
+    );
+  }
+
+  // Professor has no sections in any semester
+  if (!hasTerm) {
+    return (
+      <div className="prof-dash">
+        <div className="prof-header">
+          <div className="prof-header__left">
+            <div className="prof-header__badge">👨‍🏫 Professor Portal</div>
+            <h1 className="prof-header__title">
+              {user?.academic_title || 'Dr.'} {user?.last_name}
+            </h1>
+            <p className="prof-header__sub">
+              {user?.department || 'Faculty of Engineering'} — An-Najah National University
+            </p>
+          </div>
+        </div>
+        <div className="empty-state" style={{ marginTop: 48 }}>
+          <div className="empty-state__icon">📋</div>
+          <p className="empty-state__title">No assigned sections yet.</p>
+          <p>You will see your dashboard once sections are assigned to you for the current semester.</p>
+        </div>
       </div>
     );
   }
@@ -1071,7 +1136,7 @@ export default function ProfessorDashboard() {
         <div className="prof-header__left">
           <div className="prof-header__badge">👨‍🏫 Professor Portal</div>
           <h1 className="prof-header__title">
-            {user?.academic_title || 'Dr.'} {user?.last_name}
+            {data?.instructor_title || user?.academic_title || 'Dr.'} {user?.last_name}
           </h1>
           <p className="prof-header__sub">
             {user?.department || 'Faculty of Engineering'} — An-Najah National University
@@ -1083,6 +1148,26 @@ export default function ProfessorDashboard() {
           <StatCard icon="👥" label="Students" value={stats.total_students || 0} color="gold" />
         </div>
       </div>
+
+      {mode !== 'schedule' && terms.length > 0 && (
+        <div className="prof-term-bar">
+          <span className="prof-term-bar__label">Semester</span>
+          <select
+            className="prof-select"
+            value={`${semester}||${academicYear}`}
+            onChange={e => {
+              const [s, y] = e.target.value.split('||');
+              setTerm(s, y);
+            }}
+          >
+            {terms.map(t => (
+              <option key={`${t.semester}||${t.academic_year}`} value={`${t.semester}||${t.academic_year}`}>
+                {SEMESTERS.find(s => s.value === t.semester)?.label || t.semester} — {t.academic_year}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {mode === 'overview' && (
         <div className="prof-overview-special">
@@ -1223,12 +1308,12 @@ export default function ProfessorDashboard() {
             >
               Table View
             </button>
-            <select className="prof-select" value={semester} onChange={(e) => setSemester(e.target.value)}>
+            <select className="prof-select" value={semester} onChange={(e) => setTerm(e.target.value, academicYear)}>
               {SEMESTERS.map((s) => (
                 <option key={s.value} value={s.value}>{s.label}</option>
               ))}
             </select>
-            <select className="prof-select" value={academicYear} onChange={(e) => setAcademicYear(e.target.value)}>
+            <select className="prof-select" value={academicYear} onChange={(e) => setTerm(semester, e.target.value)}>
               {getAcademicYearOptions().map((y) => (
                 <option key={y} value={y}>{y}</option>
               ))}
