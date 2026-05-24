@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { semesterAPI, scheduleAPI, roomAPI, enrollmentAPI } from '../../api';
+import { semesterAPI, scheduleAPI, roomAPI, enrollmentAPI, instructorAPI } from '../../api';
 import { SectionFormModal, AcademicYearStepper } from './AdminPages';
 import { ConfirmDialog, Spinner } from '../../components/ui/index';
 import { useCourses, useInstructors, useRoomTypes } from '../../hooks/index';
@@ -1505,6 +1505,506 @@ function IssueCard({ issue }) {
   );
 }
 
+// ─── Chip helper ──────────────────────────────────────────────
+function Chip({ label, value, color }) {
+  return (
+    <div style={{ textAlign: 'center', minWidth: 44 }}>
+      <div style={{ fontSize: 14, fontWeight: 700, color: color || '#374151', lineHeight: 1 }}>{value}</div>
+      <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 1 }}>{label}</div>
+    </div>
+  );
+}
+
+// ─── Room conflict detector ────────────────────────────────────
+function roomHasConflict(secs) {
+  for (let i = 0; i < secs.length; i++) {
+    for (let j = i + 1; j < secs.length; j++) {
+      const a = secs[i], b = secs[j];
+      const dA = Array.isArray(a.day_of_week) ? a.day_of_week : [];
+      const dB = Array.isArray(b.day_of_week) ? b.day_of_week : [];
+      if (dA.some(d => dB.includes(d)) && a.start_time && b.start_time) {
+        if (a.start_time < b.end_time && b.start_time < a.end_time) return true;
+      }
+    }
+  }
+  return false;
+}
+
+// ─── Doctors tab ──────────────────────────────────────────────
+function DoctorsTab({ semester, academicYear, departmentContains }) {
+  const [sections,     setSections]     = useState([]);
+  const [instructors,  setInstructors]  = useState([]);
+  const [loading,      setLoading]      = useState(false);
+  const [loadError,    setLoadError]    = useState(null);
+  const [expandedId,   setExpandedId]   = useState(null);
+  const [search,       setSearch]       = useState('');
+  const [filterMode,   setFilterMode]   = useState('all'); // 'all' | 'assigned' | 'unassigned'
+
+  const load = useCallback(async () => {
+    if (!semester || !academicYear) return;
+    setLoading(true);
+    setLoadError(null);
+    let sectErr = null;
+    let instErr = null;
+
+    // Sections — same params/limit as EnrollmentsTab (max 1000 enforced by backend)
+    try {
+      const res = await scheduleAPI.getAll({
+        semester,
+        academic_year: academicYear,
+        department_contains: departmentContains || undefined,
+        limit: 1000,
+      });
+      setSections(res.data?.data?.sections || []);
+    } catch (err) {
+      sectErr = getErrorMessage(err);
+      setSections([]);
+    }
+
+    // Instructors — independent fetch; if this fails we still show assigned doctors from sections
+    try {
+      const res = await instructorAPI.getAll({ limit: 1000, active_only: 'true' });
+      setInstructors(res.data?.data?.instructors || []);
+    } catch (err) {
+      instErr = getErrorMessage(err);
+      setInstructors([]);
+    }
+
+    if (sectErr) {
+      setLoadError(sectErr);
+      toast.error('Failed to load doctors data', { id: 'doctors-tab-load-error' });
+    } else if (instErr) {
+      toast.error('Could not load full instructor list — showing section-assigned doctors only', { id: 'doctors-inst-load-error' });
+    }
+
+    setLoading(false);
+  }, [semester, academicYear, departmentContains]);
+
+  useEffect(() => { load(); }, [load]);
+
+  // Build per-instructor section groups
+  const doctorRows = useMemo(() => {
+    const byId = new Map();
+    for (const s of sections) {
+      if (!s.instructor_id) continue;
+      if (!byId.has(s.instructor_id)) byId.set(s.instructor_id, []);
+      byId.get(s.instructor_id).push(s);
+    }
+
+    // Instructors with sections
+    const rows = [];
+    for (const [id, secs] of byId.entries()) {
+      const inst = instructors.find(i => String(i.id) === String(id));
+      const courseSet = new Set(secs.map(s => s.course_code).filter(Boolean));
+      const meetings = secs.reduce((acc, s) => acc + (Array.isArray(s.day_of_week) ? s.day_of_week.length : 0), 0);
+      rows.push({
+        id,
+        name: secs[0]?.instructor_name || (inst ? `${inst.title || ''} ${inst.first_name || ''} ${inst.last_name || ''}`.trim() : `ID ${id}`),
+        doctor_number: inst?.doctor_number ?? null,
+        email: inst?.email ?? secs[0]?.instructor_email ?? null,
+        department: inst?.department ?? null,
+        sectionCount: secs.length,
+        courseCount: courseSet.size,
+        meetings,
+        sections: secs,
+        hasSection: true,
+      });
+    }
+
+    // Instructors from DB not in any section
+    for (const inst of instructors) {
+      if (!byId.has(String(inst.id)) && !byId.has(inst.id)) {
+        rows.push({
+          id: inst.id,
+          name: `${inst.title || ''} ${inst.first_name || ''} ${inst.last_name || ''}`.trim() || inst.email,
+          doctor_number: inst.doctor_number ?? null,
+          email: inst.email ?? null,
+          department: inst.department ?? null,
+          sectionCount: 0,
+          courseCount: 0,
+          meetings: 0,
+          sections: [],
+          hasSection: false,
+        });
+      }
+    }
+
+    return rows.sort((a, b) => b.sectionCount - a.sectionCount || (a.name || '').localeCompare(b.name || ''));
+  }, [sections, instructors]);
+
+  const filtered = useMemo(() => {
+    let rows = doctorRows;
+    if (filterMode === 'assigned')   rows = rows.filter(r => r.hasSection);
+    if (filterMode === 'unassigned') rows = rows.filter(r => !r.hasSection);
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      rows = rows.filter(r =>
+        (r.name || '').toLowerCase().includes(q) ||
+        (r.email || '').toLowerCase().includes(q) ||
+        (r.department || '').toLowerCase().includes(q) ||
+        (r.doctor_number != null && String(r.doctor_number).includes(q))
+      );
+    }
+    return rows;
+  }, [doctorRows, filterMode, search]);
+
+  const assignedCount   = doctorRows.filter(r => r.hasSection).length;
+  const unassignedCount = doctorRows.filter(r => !r.hasSection).length;
+
+  if (loading) {
+    return (
+      <div style={{ padding: 48, textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>
+        <Spinner />
+        <div style={{ marginTop: 12 }}>Loading doctors…</div>
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div style={{ padding: 48, textAlign: 'center', border: '2px dashed #fecaca', borderRadius: 12, background: '#fef2f2' }}>
+        <div style={{ fontSize: 22, marginBottom: 8 }}>⚠️</div>
+        <div style={{ fontSize: 14, fontWeight: 600, color: '#dc2626', marginBottom: 4 }}>Failed to load doctors data</div>
+        <div style={{ fontSize: 12, color: '#ef4444', marginBottom: 16 }}>{loadError}</div>
+        <button onClick={load} style={{ padding: '8px 20px', borderRadius: 8, border: 'none', background: '#2563eb', color: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
+          Retry
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      {/* Summary chips */}
+      <div style={{ display: 'flex', gap: 20, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 16, padding: '10px 16px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 10 }}>
+          <Chip label="Total" value={doctorRows.length} color="#374151" />
+          <Chip label="Teaching" value={assignedCount} color="#2563eb" />
+          <Chip label="No Sections" value={unassignedCount} color={unassignedCount > 0 ? '#f59e0b' : '#94a3b8'} />
+        </div>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginLeft: 'auto' }}>
+          {[['all','All'],['assigned','Teaching'],['unassigned','No Sections']].map(([mode, lbl]) => (
+            <button key={mode} onClick={() => setFilterMode(mode)} style={{
+              padding: '5px 12px', borderRadius: 6, border: '1px solid', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+              borderColor: filterMode === mode ? '#2563eb' : '#e2e8f0',
+              background: filterMode === mode ? '#2563eb' : '#fff',
+              color: filterMode === mode ? '#fff' : '#374151',
+            }}>
+              {lbl}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Search */}
+      <input
+        type="text"
+        placeholder="Search by name, email, department, doctor number…"
+        value={search}
+        onChange={e => setSearch(e.target.value)}
+        style={{ width: '100%', padding: '8px 12px', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 13, marginBottom: 14, boxSizing: 'border-box', outline: 'none', color: '#111827', background: '#fff' }}
+      />
+
+      {/* Table */}
+      {filtered.length === 0 ? (
+        <div style={{ padding: 40, textAlign: 'center', color: '#94a3b8', fontSize: 13 }}>
+          No doctors match the current filter.
+        </div>
+      ) : (
+        <div style={{ border: '1px solid #e2e8f0', borderRadius: 10, overflow: 'hidden' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                <th style={{ padding: '9px 12px', textAlign: 'left', fontWeight: 600, color: '#64748b', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Doctor</th>
+                <th style={{ padding: '9px 12px', textAlign: 'left', fontWeight: 600, color: '#64748b', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Department</th>
+                <th style={{ padding: '9px 10px', textAlign: 'center', fontWeight: 600, color: '#64748b', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Sections</th>
+                <th style={{ padding: '9px 10px', textAlign: 'center', fontWeight: 600, color: '#64748b', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Courses</th>
+                <th style={{ padding: '9px 10px', textAlign: 'center', fontWeight: 600, color: '#64748b', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Meetings/wk</th>
+                <th style={{ padding: '9px 10px', textAlign: 'center', fontWeight: 600, color: '#64748b', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em' }} />
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((row, i) => (
+                <React.Fragment key={row.id}>
+                  <tr
+                    onClick={() => setExpandedId(expandedId === row.id ? null : row.id)}
+                    style={{ background: i % 2 === 0 ? '#fff' : '#f8fafc', borderBottom: '1px solid #e2e8f0', cursor: row.sections.length > 0 ? 'pointer' : 'default' }}
+                  >
+                    <td style={{ padding: '10px 12px' }}>
+                      <div style={{ fontWeight: 600, color: '#111827' }}>{row.name}</div>
+                      <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 1 }}>
+                        {row.doctor_number != null ? `#${row.doctor_number}` : ''}
+                        {row.doctor_number != null && row.email ? ' · ' : ''}
+                        {row.email || ''}
+                      </div>
+                    </td>
+                    <td style={{ padding: '10px 12px', color: '#64748b', fontSize: 12 }}>{row.department || '—'}</td>
+                    <td style={{ padding: '10px 12px', textAlign: 'center' }}>
+                      {row.sectionCount > 0
+                        ? <span style={{ fontWeight: 700, color: '#2563eb' }}>{row.sectionCount}</span>
+                        : <span style={{ color: '#f59e0b', fontWeight: 600, fontSize: 11 }}>None</span>
+                      }
+                    </td>
+                    <td style={{ padding: '10px 12px', textAlign: 'center', color: '#374151' }}>{row.courseCount || '—'}</td>
+                    <td style={{ padding: '10px 12px', textAlign: 'center', color: '#374151' }}>{row.meetings || '—'}</td>
+                    <td style={{ padding: '10px 12px', textAlign: 'center', fontSize: 11, color: '#94a3b8' }}>
+                      {row.sections.length > 0 ? (expandedId === row.id ? '▲' : '▼') : ''}
+                    </td>
+                  </tr>
+                  {expandedId === row.id && row.sections.length > 0 && (
+                    <tr style={{ background: '#f0f7ff' }}>
+                      <td colSpan={6} style={{ padding: '0 16px 12px' }}>
+                        <div style={{ paddingTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                          {row.sections.map(s => (
+                            <div key={s.id} style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '6px 10px', background: '#fff', borderRadius: 6, border: '1px solid #dbeafe', fontSize: 12, flexWrap: 'wrap' }}>
+                              <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#2563eb', minWidth: 70 }}>{s.course_code}</span>
+                              <span style={{ color: '#374151' }}>§{s.section_number}</span>
+                              <span style={{ color: '#64748b' }}>{Array.isArray(s.day_of_week) ? s.day_of_week.map(dayLabel).join(', ') : '—'}</span>
+                              <span style={{ color: '#64748b' }}>{s.start_time ? `${formatTime(s.start_time)}–${formatTime(s.end_time)}` : '—'}</span>
+                              <span style={{ color: '#94a3b8' }}>{s.room_number || '—'}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Rooms tab ────────────────────────────────────────────────
+function RoomsTab({ semester, academicYear, departmentContains }) {
+  const [sections,   setSections]   = useState([]);
+  const [loading,    setLoading]    = useState(false);
+  const [loadError,  setLoadError]  = useState(null);
+  const [expandedId, setExpandedId] = useState(null);
+  const [search,     setSearch]     = useState('');
+  const [filterMode, setFilterMode] = useState('all'); // 'all' | 'used' | 'conflict'
+
+  const load = useCallback(async () => {
+    if (!semester || !academicYear) return;
+    setLoading(true);
+    setLoadError(null);
+    try {
+      // limit capped at 1000 by backend validatePagination middleware
+      const res = await scheduleAPI.getAll({
+        semester,
+        academic_year: academicYear,
+        department_contains: departmentContains || undefined,
+        limit: 1000,
+      });
+      setSections(res.data?.data?.sections || []);
+    } catch (err) {
+      setLoadError(getErrorMessage(err));
+      setSections([]);
+      toast.error('Failed to load rooms data', { id: 'rooms-tab-load-error' });
+    } finally {
+      setLoading(false);
+    }
+  }, [semester, academicYear, departmentContains]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const roomRows = useMemo(() => {
+    const byId = new Map();
+    for (const s of sections) {
+      if (!s.room_id) continue;
+      if (!byId.has(s.room_id)) byId.set(s.room_id, []);
+      byId.get(s.room_id).push(s);
+    }
+    const rows = [];
+    for (const [id, secs] of byId.entries()) {
+      const first = secs[0];
+      const totalEnrolled = secs.reduce((acc, s) => acc + (s.enrolled_count ?? 0), 0);
+      const totalCapacity = secs.reduce((acc, s) => acc + (s.max_capacity ?? 0), 0);
+      const meetings = secs.reduce((acc, s) => acc + (Array.isArray(s.day_of_week) ? s.day_of_week.length : 0), 0);
+      const conflict = roomHasConflict(secs);
+      rows.push({
+        id,
+        room_number: first.room_number || `Room ${id}`,
+        room_name:   first.room_name   || null,
+        floor_label: first.floor_label || null,
+        building:    first.building_code || null,
+        sectionCount: secs.length,
+        totalEnrolled,
+        totalCapacity,
+        utilization: totalCapacity > 0 ? Math.round((totalEnrolled / totalCapacity) * 100) : null,
+        meetings,
+        conflict,
+        sections: secs,
+      });
+    }
+    return rows.sort((a, b) => {
+      if (a.conflict && !b.conflict) return -1;
+      if (!a.conflict && b.conflict) return 1;
+      return b.sectionCount - a.sectionCount;
+    });
+  }, [sections]);
+
+  const filtered = useMemo(() => {
+    let rows = roomRows;
+    if (filterMode === 'used')     rows = rows.filter(r => r.sectionCount > 0);
+    if (filterMode === 'conflict') rows = rows.filter(r => r.conflict);
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      rows = rows.filter(r =>
+        (r.room_number || '').toLowerCase().includes(q) ||
+        (r.room_name   || '').toLowerCase().includes(q) ||
+        (r.floor_label || '').toLowerCase().includes(q) ||
+        (r.building    || '').toLowerCase().includes(q)
+      );
+    }
+    return rows;
+  }, [roomRows, filterMode, search]);
+
+  const conflictCount = roomRows.filter(r => r.conflict).length;
+
+  if (loading) {
+    return (
+      <div style={{ padding: 48, textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>
+        <Spinner />
+        <div style={{ marginTop: 12 }}>Loading rooms…</div>
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div style={{ padding: 48, textAlign: 'center', border: '2px dashed #fecaca', borderRadius: 12, background: '#fef2f2' }}>
+        <div style={{ fontSize: 22, marginBottom: 8 }}>⚠️</div>
+        <div style={{ fontSize: 14, fontWeight: 600, color: '#dc2626', marginBottom: 4 }}>Failed to load rooms data</div>
+        <div style={{ fontSize: 12, color: '#ef4444', marginBottom: 16 }}>{loadError}</div>
+        <button onClick={load} style={{ padding: '8px 20px', borderRadius: 8, border: 'none', background: '#2563eb', color: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
+          Retry
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      {/* Summary chips */}
+      <div style={{ display: 'flex', gap: 20, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 16, padding: '10px 16px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 10 }}>
+          <Chip label="Rooms Used" value={roomRows.length} color="#374151" />
+          <Chip label="Conflicts" value={conflictCount} color={conflictCount > 0 ? '#dc2626' : '#94a3b8'} />
+        </div>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginLeft: 'auto' }}>
+          {[['all','All'],['used','With Sections'],['conflict','Conflicts Only']].map(([mode, lbl]) => (
+            <button key={mode} onClick={() => setFilterMode(mode)} style={{
+              padding: '5px 12px', borderRadius: 6, border: '1px solid', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+              borderColor: filterMode === mode ? '#2563eb' : '#e2e8f0',
+              background: filterMode === mode ? '#2563eb' : '#fff',
+              color: filterMode === mode ? '#fff' : '#374151',
+            }}>
+              {lbl}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Search */}
+      <input
+        type="text"
+        placeholder="Search by room number, name, floor, building…"
+        value={search}
+        onChange={e => setSearch(e.target.value)}
+        style={{ width: '100%', padding: '8px 12px', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 13, marginBottom: 14, boxSizing: 'border-box', outline: 'none', color: '#111827', background: '#fff' }}
+      />
+
+      {/* Table */}
+      {filtered.length === 0 ? (
+        <div style={{ padding: 40, textAlign: 'center', color: '#94a3b8', fontSize: 13 }}>
+          No rooms match the current filter.
+        </div>
+      ) : (
+        <div style={{ border: '1px solid #e2e8f0', borderRadius: 10, overflow: 'hidden' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                <th style={{ padding: '9px 12px', textAlign: 'left', fontWeight: 600, color: '#64748b', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Room</th>
+                <th style={{ padding: '9px 12px', textAlign: 'left', fontWeight: 600, color: '#64748b', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Location</th>
+                <th style={{ padding: '9px 10px', textAlign: 'center', fontWeight: 600, color: '#64748b', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Sections</th>
+                <th style={{ padding: '9px 10px', textAlign: 'center', fontWeight: 600, color: '#64748b', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Enrolled</th>
+                <th style={{ padding: '9px 10px', textAlign: 'center', fontWeight: 600, color: '#64748b', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Utilization</th>
+                <th style={{ padding: '9px 10px', textAlign: 'center', fontWeight: 600, color: '#64748b', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Meetings/wk</th>
+                <th style={{ padding: '9px 10px', textAlign: 'center', fontWeight: 600, color: '#64748b', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em' }} />
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((row, i) => (
+                <React.Fragment key={row.id}>
+                  <tr
+                    onClick={() => setExpandedId(expandedId === row.id ? null : row.id)}
+                    style={{ background: row.conflict ? '#fff5f5' : (i % 2 === 0 ? '#fff' : '#f8fafc'), borderBottom: '1px solid #e2e8f0', cursor: 'pointer' }}
+                  >
+                    <td style={{ padding: '10px 12px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        {row.conflict && <span title="Scheduling conflict detected" style={{ color: '#dc2626', fontSize: 13 }}>🔴</span>}
+                        <span style={{ fontWeight: 700, color: '#111827', fontFamily: 'monospace' }}>{row.room_number}</span>
+                      </div>
+                      {row.room_name && <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 1 }}>{row.room_name}</div>}
+                    </td>
+                    <td style={{ padding: '10px 12px', color: '#64748b', fontSize: 12 }}>
+                      {[row.floor_label, row.building].filter(Boolean).join(' · ') || '—'}
+                    </td>
+                    <td style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 700, color: '#2563eb' }}>{row.sectionCount}</td>
+                    <td style={{ padding: '10px 12px', textAlign: 'center', color: '#374151' }}>
+                      {row.totalCapacity > 0 ? `${row.totalEnrolled}/${row.totalCapacity}` : row.totalEnrolled || '—'}
+                    </td>
+                    <td style={{ padding: '10px 12px', textAlign: 'center' }}>
+                      {row.utilization != null ? (
+                        <span style={{
+                          fontWeight: 700,
+                          color: row.utilization > 100 ? '#dc2626' : row.utilization >= 80 ? '#f59e0b' : '#10b981',
+                        }}>
+                          {row.utilization}%
+                        </span>
+                      ) : '—'}
+                    </td>
+                    <td style={{ padding: '10px 12px', textAlign: 'center', color: '#374151' }}>{row.meetings || '—'}</td>
+                    <td style={{ padding: '10px 12px', textAlign: 'center', fontSize: 11, color: '#94a3b8' }}>
+                      {expandedId === row.id ? '▲' : '▼'}
+                    </td>
+                  </tr>
+                  {expandedId === row.id && (
+                    <tr style={{ background: '#f0f7ff' }}>
+                      <td colSpan={7} style={{ padding: '0 16px 12px' }}>
+                        <div style={{ paddingTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                          {row.sections.map(s => (
+                            <div key={s.id} style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '6px 10px', background: '#fff', borderRadius: 6, border: '1px solid #dbeafe', fontSize: 12, flexWrap: 'wrap' }}>
+                              <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#2563eb', minWidth: 70 }}>{s.course_code}</span>
+                              <span style={{ color: '#374151' }}>§{s.section_number}</span>
+                              <span style={{ color: '#64748b', flex: 1, minWidth: 100 }}>{s.instructor_name || '—'}</span>
+                              <span style={{ color: '#64748b' }}>{Array.isArray(s.day_of_week) ? s.day_of_week.map(dayLabel).join(', ') : '—'}</span>
+                              <span style={{ color: '#64748b' }}>{s.start_time ? `${formatTime(s.start_time)}–${formatTime(s.end_time)}` : '—'}</span>
+                              {s.enrolled_count != null && s.max_capacity != null && (
+                                <span style={{ color: s.enrolled_count > s.max_capacity ? '#dc2626' : '#94a3b8' }}>
+                                  {s.enrolled_count}/{s.max_capacity}
+                                </span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ValidationTab({ semester, academicYear, departmentContains }) {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
@@ -2004,15 +2504,26 @@ export default function SemesterManagementPage() {
           onDataChanged={handleSectionDataChanged}
         />
       )}
+      {activeTab === 'Doctors' && (
+        <DoctorsTab
+          semester={semester}
+          academicYear={academicYear}
+          departmentContains={deptFilter}
+        />
+      )}
+      {activeTab === 'Rooms' && (
+        <RoomsTab
+          semester={semester}
+          academicYear={academicYear}
+          departmentContains={deptFilter}
+        />
+      )}
       {activeTab === 'Validation' && (
         <ValidationTab
           semester={semester}
           academicYear={academicYear}
           departmentContains={deptFilter}
         />
-      )}
-      {activeTab !== 'Sections' && activeTab !== 'Timetable' && activeTab !== 'Enrollments' && activeTab !== 'Validation' && (
-        <PlaceholderTab name={activeTab} />
       )}
     </div>
   );
