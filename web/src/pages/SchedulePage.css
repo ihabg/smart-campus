@@ -706,6 +706,17 @@
 .prof-block em     { font-style: normal; font-weight: 700; }
 .prof-block small  { color: #c00020; font-size: 11px; }
 
+.prof-empty-state {
+  text-align: center;
+  padding: 32px 16px;
+  color: #6b7a99;
+  font-size: 15px;
+  background: #f4f6fb;
+  border-radius: 8px;
+  margin: 4px 0 8px;
+  direction: rtl;
+}
+
 /* =========================================================
    RESPONSIVE — tablet & mobile
    ========================================================= */

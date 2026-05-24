@@ -69,6 +69,7 @@ export default function SchedulePage() {
   const { schedule, loading, error } = useMySchedule(scheduleParams);
 const openOfficeHours = async (instructor) => {
   if (!instructor?.email) return;
+  if (!selectedTerm) return;
 
   try {
     const token =
@@ -79,8 +80,10 @@ const openOfficeHours = async (instructor) => {
     const response = await axios.get(
       `http://localhost:5000/api/office-hours/${encodeURIComponent(instructor.email)}`,
       {
-        headers: {
-          Authorization: `Bearer ${token}`
+        headers: { Authorization: `Bearer ${token}` },
+        params: {
+          semester: selectedTerm.semester,
+          academic_year: selectedTerm.academic_year
         }
       }
     );
@@ -184,6 +187,7 @@ const openOfficeHours = async (instructor) => {
     instructor={selectedInstructor}
     officeHours={officeHours}
     onClose={() => setOfficeHoursModal(false)}
+    selectedTerm={selectedTerm}
   />
 )}
     </div>
@@ -525,7 +529,7 @@ function TextSchedule({ sections, totalCredits, openOfficeHours }) {
   );
 }
 
-function OfficeHoursModal({ instructor, officeHours, onClose }) {
+function OfficeHoursModal({ instructor, officeHours, onClose, selectedTerm }) {
   const schedule = officeHours?.schedule || [];
   const office = officeHours?.office_hours || [];
   const info = officeHours?.instructor || instructor;
@@ -534,6 +538,12 @@ function OfficeHoursModal({ instructor, officeHours, onClose }) {
     info?.first_name && info?.last_name
       ? `${info.title || 'د.'} ${info.first_name} ${info.last_name}`
       : info?.name || instructor?.name || '—';
+
+  const termLabel = selectedTerm
+    ? `${semesterNameAr(selectedTerm.semester)} ${selectedTerm.academic_year}`
+    : '';
+
+  const hasContent = schedule.length > 0 || office.length > 0;
 
   return (
     <div className="office-hours-modal" onClick={onClose}>
@@ -544,7 +554,7 @@ function OfficeHoursModal({ instructor, officeHours, onClose }) {
       >
         <div className="office-hours-header">
           <div>
-            <h2>الساعات المكتبية ثاني 2025-2026</h2>
+            <h2>الساعات المكتبية{termLabel ? ` - ${termLabel}` : ''}</h2>
             <p>الاسم: {doctorName}</p>
             <small>{info?.email || instructor?.email || ''}</small>
           </div>
@@ -557,7 +567,14 @@ function OfficeHoursModal({ instructor, officeHours, onClose }) {
           -- إشارة (++++) تعني تضارب في المواعيد في حال ظهورها
         </div>
 
-        <ProfessorScheduleGrid schedule={schedule} officeHours={office} />
+        {hasContent ? (
+          <ProfessorScheduleGrid schedule={schedule} officeHours={office} />
+        ) : (
+          <div className="prof-empty-state">
+            لا يوجد جدول لهذا الدكتور في الفصل المحدد
+            {termLabel ? ` (${termLabel})` : ''}
+          </div>
+        )}
 
         <button type="button" className="office-hours-close" onClick={onClose}>
           إغلاق
@@ -755,6 +772,13 @@ function semesterName(semester) {
   if (semester === 'fall') return 'First Semester';
   if (semester === 'spring') return 'Second Semester';
   if (semester === 'summer') return 'Summer Semester';
+  return semester;
+}
+
+function semesterNameAr(semester) {
+  if (semester === 'fall')   return 'أول';
+  if (semester === 'spring') return 'ثاني';
+  if (semester === 'summer') return 'صيفي';
   return semester;
 }
 
