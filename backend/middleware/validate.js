@@ -32,7 +32,12 @@ const validateRegister = [
 ];
 
 const validateLogin = [
-  body('email').trim().isEmail().withMessage('Valid email required').normalizeEmail(),
+  // Accept either `identifier` (new shape) or `email` (legacy shape) — at least one required.
+  body().custom((_, { req }) => {
+    const id = (req.body.identifier || req.body.email || '').trim();
+    if (!id) throw new Error('Email or registration number is required');
+    return true;
+  }),
   body('password').notEmpty().withMessage('Password is required'),
   handleValidation,
 ];

@@ -13,7 +13,14 @@
       "Bash(git ls-tree *)",
       "Bash(git log *)",
       "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\Kebab\\\\Desktop\\\\smartwhek\\\\web\\\\src\" -Recurse -Depth 2)",
-      "Bash(Sort-Object FullName)"
+      "Bash(Sort-Object FullName)",
+      "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\Kebab\\\\Desktop\\\\smartwhek\" -Recurse -File -Name)",
+      "Bash(Select-Object -First 50)",
+      "Bash(node -e \"require\\('dotenv'\\).config\\(\\); const {pool} = require\\('./config/db'\\); pool.query\\(\\\\\"SELECT column_name, data_type FROM information_schema.columns WHERE table_name='instructors' ORDER BY ordinal_position\\\\\"\\).then\\(r=>{ console.log\\(r.rows.map\\(c=>c.column_name+' \\('+c.data_type+'\\)'\\).join\\('\\\\n'\\)\\); pool.end\\(\\); }\\).catch\\(e=>{ console.error\\(e.message\\); pool.end\\(\\); }\\);\")",
+      "Bash(node -e \"require\\('dotenv'\\).config\\(\\); const {pool} = require\\('./config/db'\\); pool.query\\(\\\\\"SELECT column_name, data_type FROM information_schema.columns WHERE table_name='users' ORDER BY ordinal_position\\\\\"\\).then\\(r=>{ console.log\\(r.rows.map\\(c=>c.column_name+' \\('+c.data_type+'\\)'\\).join\\('\\\\n'\\)\\); pool.end\\(\\); }\\).catch\\(e=>{ console.error\\(e.message\\); pool.end\\(\\); }\\);\")",
+      "Bash(node -e \"require\\('dotenv'\\).config\\(\\); const {pool} = require\\('./config/db'\\); pool.query\\(\\\\\"SELECT unnest\\(enum_range\\(NULL::user_role\\)\\) AS role\\\\\"\\).then\\(r=>{ console.log\\('roles:', r.rows.map\\(x=>x.role\\).join\\(', '\\)\\); pool.end\\(\\); }\\).catch\\(e=>{ pool.query\\(\\\\\"SELECT unnest\\(enum_range\\(NULL::role_enum\\)\\) AS role\\\\\"\\).then\\(r2=>{ console.log\\('roles:', r2.rows.map\\(x=>x.role\\).join\\(', '\\)\\); pool.end\\(\\); }\\).catch\\(e2=>{ console.error\\(e.message, e2.message\\); pool.end\\(\\); }\\); }\\);\")",
+      "Bash(node scripts/linkInstructorUsers.js)",
+      "Bash(node -e \"require\\('dotenv'\\).config\\(\\); const {pool} = require\\('./config/db'\\); pool.query\\(\\\\\"SELECT u.id, u.email, u.role, u.status, i.doctor_number FROM users u JOIN instructors i ON i.user_id = u.id WHERE u.role = 'professor' LIMIT 5\\\\\"\\).then\\(r=>{ console.log\\(r.rows\\); pool.end\\(\\); }\\).catch\\(e=>{ console.error\\(e.message\\); pool.end\\(\\); }\\);\")"
     ]
   }
 }

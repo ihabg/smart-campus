@@ -73,17 +73,43 @@ async function register(req, res, next) {
 
 async function login(req, res, next) {
   try {
-    const { email, password } = req.body;
+    const { password } = req.body;
+    const identifier = (req.body.identifier || req.body.email || '').trim();
 
-    const result = await query(
-      `SELECT id, first_name, last_name, email, password_hash, role, status,
-              student_id, department, year_of_study, avatar_url, fcm_token
-       FROM users WHERE email = $1`,
-      [email]
-    );
+    let result;
+    if (identifier.includes('@')) {
+      result = await query(
+        `SELECT id, first_name, last_name, email, password_hash, role, status,
+                student_id, department, year_of_study, avatar_url, fcm_token
+         FROM users WHERE LOWER(email) = LOWER($1)`,
+        [identifier]
+      );
+    } else {
+      // Try student registration number first
+      const studentResult = await query(
+        `SELECT id, first_name, last_name, email, password_hash, role, status,
+                student_id, department, year_of_study, avatar_url, fcm_token
+         FROM users WHERE student_id = $1`,
+        [identifier]
+      );
+      if (studentResult.rows.length) {
+        result = studentResult;
+      } else {
+        // Try doctor number — only works when the instructor has a linked user account
+        result = await query(
+          `SELECT u.id, u.first_name, u.last_name, u.email, u.password_hash, u.role, u.status,
+                  u.student_id, u.department, u.year_of_study, u.avatar_url, u.fcm_token
+           FROM   users u
+           JOIN   instructors i ON i.user_id = u.id
+           WHERE  i.doctor_number = $1
+             AND  i.is_active = TRUE`,
+          [identifier]
+        );
+      }
+    }
 
     if (!result.rows.length) {
-      return res.status(401).json({ success: false, message: 'Invalid email or password.' });
+      return res.status(401).json({ success: false, message: 'Invalid credentials.' });
     }
 
     const user = result.rows[0];
@@ -97,7 +123,7 @@ async function login(req, res, next) {
 
     const isMatch = await bcrypt.compare(password, user.password_hash);
     if (!isMatch) {
-      return res.status(401).json({ success: false, message: 'Invalid email or password.' });
+      return res.status(401).json({ success: false, message: 'Invalid credentials.' });
     }
 
     const accessToken  = signAccessToken({ id: user.id, role: user.role });

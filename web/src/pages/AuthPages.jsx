@@ -25,23 +25,23 @@ const DEPARTMENTS = [
 export function LoginPage() {
   const { login } = useAuth();
   const navigate  = useNavigate();
-  const [form,    setForm]    = useState({ email:'', password:'' });
+  const [form,    setForm]    = useState({ identifier:'', password:'' });
   const [errors,  setErrors]  = useState({});
   const [loading, setLoading] = useState(false);
   const [showLoginPassword, setShowLoginPassword] = useState(false);
-  
+
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }));
 
   const handleSubmit = async e => {
     e.preventDefault();
     const errs = {};
-    if (!form.email)    errs.email    = 'Email required';
-    if (!form.password) errs.password = 'Password required';
+    if (!form.identifier.trim()) errs.identifier = 'Email or registration number required';
+    if (!form.password)          errs.password    = 'Password required';
     setErrors(errs);
     if (Object.keys(errs).length) return;
     setLoading(true);
     try {
-      const user = await login(form.email, form.password);
+      const user = await login(form.identifier.trim(), form.password);
       const roleRoutes = {
         student:         '/dashboard',
         super_admin:     '/admin',
@@ -75,14 +75,14 @@ export function LoginPage() {
           <form onSubmit={handleSubmit} noValidate>
             <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
               <div className="form-group auth-field">
-                <label className="form-label">University Email</label>
+                <label className="form-label">Email or Registration Number</label>
                 <div className="auth-input-wrap">
                   <span className="auth-input-icon"><MailIcon /></span>
-                  <input className={`form-input ${errors.email ? 'form-input--error' : ''}`}
-                    type="email" placeholder="you@najah.edu"
-                    value={form.email} onChange={set('email')} autoComplete="email"/>
+                  <input className={`form-input ${errors.identifier ? 'form-input--error' : ''}`}
+                    type="text" placeholder="you@najah.edu or 12143698"
+                    value={form.identifier} onChange={set('identifier')} autoComplete="username"/>
                 </div>
-                {errors.email && <span className="form-error">{errors.email}</span>}
+                {errors.identifier && <span className="form-error">{errors.identifier}</span>}
               </div>
 
               <div className="form-group auth-field">
