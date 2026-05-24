@@ -67,7 +67,9 @@ export const roomAPI = {
   bulkUpdateCoordinates: (rooms) =>
     api.patch('/rooms/bulk-coordinates', { rooms }),
 
-  setAdjacency: (data) => api.patch('/rooms/adjacency', data)
+  setAdjacency: (data) => api.patch('/rooms/adjacency', data),
+
+  getAssignedInstructors: (roomId) => api.get(`/rooms/${roomId}/instructors`),
 };
 
 // ─── scheduleAPI ─────────────────────────────────────────────

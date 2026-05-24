@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { roomAPI, floorAPI } from '../../api/index';
+import { roomAPI, floorAPI, instructorAPI } from '../../api/index';
 import { useAsync, useRoomTypes } from '../../hooks/index';
 import {
   Table,
@@ -416,6 +416,27 @@ export function RoomFormModal({
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
 
+  const [officeInstructors, setOfficeInstructors] = useState([]);
+  const [officeInstLoading, setOfficeInstLoading] = useState(false);
+  const [showAddProf, setShowAddProf] = useState(false);
+  const [instSearch, setInstSearch] = useState('');
+  const [instSearchResults, setInstSearchResults] = useState([]);
+  const [instSearchLoading, setInstSearchLoading] = useState(false);
+
+  const loadOfficeInstructors = React.useCallback(async () => {
+    if (!existingRoom?.id) return;
+    setOfficeInstLoading(true);
+    try {
+      const res = await roomAPI.getAssignedInstructors(existingRoom.id);
+      const payload = res?.data?.data || res?.data || {};
+      setOfficeInstructors(payload.instructors || []);
+    } catch {
+      setOfficeInstructors([]);
+    } finally {
+      setOfficeInstLoading(false);
+    }
+  }, [existingRoom?.id]);
+
   React.useEffect(() => {
     if (!open) return;
 
@@ -433,12 +454,58 @@ export function RoomFormModal({
         description: existingRoom.description || '',
         is_accessible: existingRoom.is_accessible === true,
       });
+
+      if (cleanRoomType(existingRoom.type) === 'office') {
+        loadOfficeInstructors();
+      }
     } else {
       setForm(emptyRoomForm());
+      setOfficeInstructors([]);
     }
 
     setErrors({});
-  }, [open, existingRoom]);
+    setShowAddProf(false);
+    setInstSearch('');
+    setInstSearchResults([]);
+  }, [open, existingRoom, loadOfficeInstructors]);
+
+  const handleInstSearch = React.useCallback(async (val) => {
+    setInstSearch(val);
+    if (!val.trim()) { setInstSearchResults([]); return; }
+    setInstSearchLoading(true);
+    try {
+      const res = await instructorAPI.getAll({ search: val, active_only: 'true', limit: 10 });
+      const payload = res?.data?.data || res?.data || {};
+      setInstSearchResults(payload.instructors || []);
+    } catch {
+      setInstSearchResults([]);
+    } finally {
+      setInstSearchLoading(false);
+    }
+  }, []);
+
+  const handleAssignProf = async (inst) => {
+    try {
+      await instructorAPI.update(inst.id, { office_room_id: existingRoom.id });
+      toast.success(`${inst.first_name} assigned to this office.`);
+      setShowAddProf(false);
+      setInstSearch('');
+      setInstSearchResults([]);
+      await loadOfficeInstructors();
+    } catch (err) {
+      toast.error(getBackendErrorMessage(err));
+    }
+  };
+
+  const handleRemoveProf = async (inst) => {
+    try {
+      await instructorAPI.update(inst.id, { office_room_id: null });
+      toast.success(`${inst.first_name} removed from this office.`);
+      await loadOfficeInstructors();
+    } catch (err) {
+      toast.error(getBackendErrorMessage(err));
+    }
+  };
 
   const set = key => event => {
     const value =
@@ -626,6 +693,93 @@ if (
           />
           Wheelchair accessible
         </label>
+
+        {isEdit && cleanRoomType(form.type) === 'office' && (
+          <div className="office-assign-section">
+            <div className="office-assign-header">
+              <span className="office-assign-title">Assigned Professors</span>
+              <button
+                type="button"
+                className="btn btn--ghost btn--sm"
+                onClick={() => {
+                  setShowAddProf(v => !v);
+                  setInstSearch('');
+                  setInstSearchResults([]);
+                }}
+              >
+                {showAddProf ? 'Cancel' : '+ Add Professor'}
+              </button>
+            </div>
+
+            {showAddProf && (
+              <div className="office-assign-search">
+                <input
+                  className="form-input"
+                  placeholder="Search by name, email, or doctor number…"
+                  value={instSearch}
+                  onChange={e => handleInstSearch(e.target.value)}
+                  autoFocus
+                />
+                {instSearchLoading && (
+                  <div className="office-assign-hint">Searching…</div>
+                )}
+                {!instSearchLoading && instSearch && instSearchResults.length === 0 && (
+                  <div className="office-assign-hint">No results found.</div>
+                )}
+                {instSearchResults.length > 0 && (
+                  <div className="office-assign-results">
+                    {instSearchResults.map(inst => (
+                      <button
+                        type="button"
+                        key={inst.id}
+                        className="office-assign-result-item"
+                        onClick={() => handleAssignProf(inst)}
+                      >
+                        <span className="office-assign-result-name">
+                          {[inst.title, inst.first_name, inst.last_name].filter(Boolean).join(' ')}
+                        </span>
+                        <span className="office-assign-result-meta">
+                          {inst.doctor_number && <span>#{inst.doctor_number}</span>}
+                          {inst.email && <span>{inst.email}</span>}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {officeInstLoading ? (
+              <div className="office-assign-hint">Loading…</div>
+            ) : officeInstructors.length === 0 ? (
+              <div className="office-assign-hint office-assign-hint--empty">No professors assigned to this office yet.</div>
+            ) : (
+              <div className="office-assign-list">
+                {officeInstructors.map(inst => (
+                  <div key={inst.id} className="office-assign-item">
+                    <div className="office-assign-item-info">
+                      <span className="office-assign-item-name" dir="rtl">
+                        {[inst.title, inst.first_name, inst.last_name].filter(Boolean).join(' ')}
+                      </span>
+                      <span className="office-assign-item-meta">
+                        {inst.doctor_number && <span>#{inst.doctor_number}</span>}
+                        {inst.email && <span>{inst.email}</span>}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn btn--ghost btn--sm"
+                      style={{ color: 'var(--red)', flexShrink: 0 }}
+                      onClick={() => handleRemoveProf(inst)}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </Modal>
   );

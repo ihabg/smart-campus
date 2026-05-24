@@ -41,6 +41,7 @@ async function getAllInstructors(req, res, next) {
           OR i.email ILIKE $${idx}
           OR i.department ILIKE $${idx}
           OR CONCAT(i.title, ' ', i.first_name, ' ', i.last_name) ILIKE $${idx}
+          OR i.doctor_number::text ILIKE $${idx}
         )
       `);
       idx++;

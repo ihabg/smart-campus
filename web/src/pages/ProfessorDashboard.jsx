@@ -245,11 +245,11 @@ export default function ProfessorDashboard() {
   const [officeLoading, setOfficeLoading] = useState(false);
   const [officeSaving, setOfficeSaving] = useState(false);
   const [editingOfficeId, setEditingOfficeId] = useState(null);
+  const [assignedOffice, setAssignedOffice] = useState(undefined);
   const [officeForm, setOfficeForm] = useState({
     day_of_week: String(new Date().getDay()),
     start_time: '10:00',
     end_time: '11:00',
-    office_room: '',
     note: '',
     notify_students: false
   });
@@ -379,12 +379,11 @@ export default function ProfessorDashboard() {
   }, [semester, academicYear, hasTerm, showToast]);
 
   const loadOfficeHoursPage = useCallback(async () => {
-    // Load office hours and bookings independently so a bookings failure
-    // does not prevent the office hours list from showing.
     setOfficeLoading(true);
     try {
       const hoursRes = await axiosInstance.get('/professor/office-hours');
       setOfficeRows(hoursRes.data.data.office_hours || []);
+      setAssignedOffice(hoursRes.data.data.assigned_office ?? null);
     } catch {
       showToast('Failed to load office hours', 'error');
     } finally {
@@ -756,7 +755,6 @@ export default function ProfessorDashboard() {
       day_of_week: String(new Date().getDay()),
       start_time: '10:00',
       end_time: '11:00',
-      office_room: '',
       note: '',
       notify_students: false
     });
@@ -767,8 +765,11 @@ export default function ProfessorDashboard() {
     try {
       await axiosInstance.post('/professor/office-hours', {
         id: editingOfficeId,
-        ...officeForm,
-        day_of_week: Number(officeForm.day_of_week)
+        day_of_week: Number(officeForm.day_of_week),
+        start_time:  officeForm.start_time,
+        end_time:    officeForm.end_time,
+        note:        officeForm.note,
+        notify_students: officeForm.notify_students
       });
       showToast(editingOfficeId ? '✅ Office hour updated' : '✅ Office hour added');
       resetOfficeForm();
@@ -784,11 +785,10 @@ export default function ProfessorDashboard() {
   const editOfficeHour = (row) => {
     setEditingOfficeId(row.id);
     setOfficeForm({
-      day_of_week: String(row.day_of_week ?? 0),
-      start_time: formatTime24(row.start_time),
-      end_time: formatTime24(row.end_time),
-      office_room: row.office_room || row.location || '',
-      note: row.note || '',
+      day_of_week:     String(row.day_of_week ?? 0),
+      start_time:      formatTime24(row.start_time),
+      end_time:        formatTime24(row.end_time),
+      note:            row.note || '',
       notify_students: false
     });
   };
@@ -1296,18 +1296,20 @@ export default function ProfessorDashboard() {
       {mode === 'schedule' && (
         <div className="prof-schedule-page">
           <div className="prof-schedule-toolbar">
-            <button
-              className={`prof-view-btn ${scheduleView === 'text' ? 'prof-view-btn--active' : ''}`}
-              onClick={() => setScheduleView('text')}
-            >
-              Text View
-            </button>
-            <button
-              className={`prof-view-btn ${scheduleView === 'table' ? 'prof-view-btn--active' : ''}`}
-              onClick={() => setScheduleView('table')}
-            >
-              Table View
-            </button>
+            <div className="prof-view-toggle">
+              <button
+                className={`prof-view-btn ${scheduleView === 'text' ? 'prof-view-btn--active' : ''}`}
+                onClick={() => setScheduleView('text')}
+              >
+                Text View
+              </button>
+              <button
+                className={`prof-view-btn ${scheduleView === 'table' ? 'prof-view-btn--active' : ''}`}
+                onClick={() => setScheduleView('table')}
+              >
+                Table View
+              </button>
+            </div>
             <select className="prof-select" value={semester} onChange={(e) => setTerm(e.target.value, academicYear)}>
               {SEMESTERS.map((s) => (
                 <option key={s.value} value={s.value}>{s.label}</option>
@@ -1791,24 +1793,46 @@ export default function ProfessorDashboard() {
             <div className="card prof-feature-form-card">
               <div className="prof-card-hdr"><h3>🕓 Office Hours</h3><span className="prof-muted">Shown to your students</span></div>
 
+              {/* Assigned office room — read-only, set by admin */}
+              {assignedOffice === undefined ? null : assignedOffice ? (
+                <div className="prof-office-assigned prof-office-assigned--set">
+                  <span className="prof-office-assigned__icon">🏢</span>
+                  <div>
+                    <span className="prof-office-assigned__label">Assigned office</span>
+                    <strong className="prof-office-assigned__room">
+                      Room {assignedOffice.room_number}{assignedOffice.room_name ? ` — ${assignedOffice.room_name}` : ''}
+                    </strong>
+                  </div>
+                </div>
+              ) : (
+                <div className="prof-office-assigned prof-office-assigned--none">
+                  <span className="prof-office-assigned__icon">⚠️</span>
+                  <div>
+                    <strong className="prof-office-assigned__label">No office room assigned</strong>
+                    <span className="prof-office-assigned__sub">Please contact admin to assign your office.</span>
+                  </div>
+                </div>
+              )}
+
               <label className="prof-field">
                 <span>Day</span>
-                <select value={officeForm.day_of_week} onChange={(e) => setOfficeForm((p) => ({ ...p, day_of_week: e.target.value }))}>
+                <select value={officeForm.day_of_week} onChange={(e) => setOfficeForm((p) => ({ ...p, day_of_week: e.target.value }))} disabled={!assignedOffice}>
                   {DAYS_AR.map((d, idx) => <option key={d} value={idx}>{d}</option>)}
                 </select>
               </label>
 
               <div className="prof-form-row">
-                <label className="prof-field"><span>Start</span><input type="time" value={officeForm.start_time} onChange={(e) => setOfficeForm((p) => ({ ...p, start_time: e.target.value }))} /></label>
-                <label className="prof-field"><span>End</span><input type="time" value={officeForm.end_time} onChange={(e) => setOfficeForm((p) => ({ ...p, end_time: e.target.value }))} /></label>
+                <label className="prof-field"><span>Start</span><input type="time" value={officeForm.start_time} onChange={(e) => setOfficeForm((p) => ({ ...p, start_time: e.target.value }))} disabled={!assignedOffice} /></label>
+                <label className="prof-field"><span>End</span><input type="time" value={officeForm.end_time} onChange={(e) => setOfficeForm((p) => ({ ...p, end_time: e.target.value }))} disabled={!assignedOffice} /></label>
               </div>
 
-              <label className="prof-field"><span>Location / room</span><input value={officeForm.office_room} onChange={(e) => setOfficeForm((p) => ({ ...p, office_room: e.target.value }))} placeholder="Office number or Online" /></label>
-              <label className="prof-field"><span>Note</span><textarea rows="3" value={officeForm.note} onChange={(e) => setOfficeForm((p) => ({ ...p, note: e.target.value }))} placeholder="Example: by appointment" /></label>
-              <div className="prof-check-row"><label><input type="checkbox" checked={officeForm.notify_students} onChange={(e) => setOfficeForm((p) => ({ ...p, notify_students: e.target.checked }))} /> Notify my students</label></div>
+              <label className="prof-field"><span>Note</span><textarea rows="3" value={officeForm.note} onChange={(e) => setOfficeForm((p) => ({ ...p, note: e.target.value }))} placeholder="Example: by appointment" disabled={!assignedOffice} /></label>
+              <div className="prof-check-row"><label><input type="checkbox" checked={officeForm.notify_students} onChange={(e) => setOfficeForm((p) => ({ ...p, notify_students: e.target.checked }))} disabled={!assignedOffice} /> Notify my students</label></div>
               <div className="prof-form-actions">
                 {editingOfficeId && <button className="btn btn--secondary" onClick={resetOfficeForm}>Cancel edit</button>}
-                <button className="btn btn--primary" onClick={saveOfficeHour} disabled={officeSaving}>{officeSaving ? 'Saving...' : editingOfficeId ? 'Update office hour' : 'Add office hour'}</button>
+                <button className="btn btn--primary" onClick={saveOfficeHour} disabled={officeSaving || !assignedOffice}>
+                  {officeSaving ? 'Saving...' : editingOfficeId ? 'Update office hour' : 'Add office hour'}
+                </button>
               </div>
             </div>
 

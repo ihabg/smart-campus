@@ -1757,28 +1757,57 @@ async function getOfficeHours(req, res, next) {
     const instructorId = await requireInstructor(req, res);
     if (!instructorId) return;
 
-    const result = await query(
-      `
-      SELECT
-        id,
-        instructor_id,
-        instructor_email,
-        day_of_week,
-        start_time,
-        end_time,
-        office_room,
-        note,
-        is_active,
-        created_at
-      FROM office_hours
-      WHERE instructor_id = $1
-        AND COALESCE(is_active, TRUE) = TRUE
-      ORDER BY day_of_week, start_time
-      `,
-      [instructorId]
-    );
+    const [hoursResult, instructorResult] = await Promise.all([
+      query(
+        `
+        SELECT
+          id,
+          instructor_id,
+          instructor_email,
+          day_of_week,
+          start_time,
+          end_time,
+          office_room,
+          note,
+          is_active,
+          created_at
+        FROM office_hours
+        WHERE instructor_id = $1
+          AND COALESCE(is_active, TRUE) = TRUE
+        ORDER BY day_of_week, start_time
+        `,
+        [instructorId]
+      ),
+      query(
+        `
+        SELECT
+          i.office_room_id,
+          r.room_number,
+          r.name AS room_name
+        FROM instructors i
+        LEFT JOIN rooms r ON r.id = i.office_room_id
+        WHERE i.id = $1
+        `,
+        [instructorId]
+      )
+    ]);
 
-    res.json({ success: true, data: { office_hours: result.rows } });
+    const inst = instructorResult.rows[0] || {};
+    const assignedOffice = inst.office_room_id
+      ? {
+          room_id:     inst.office_room_id,
+          room_number: inst.room_number || null,
+          room_name:   inst.room_name   || null
+        }
+      : null;
+
+    res.json({
+      success: true,
+      data: {
+        office_hours:    hoursResult.rows,
+        assigned_office: assignedOffice
+      }
+    });
   } catch (e) {
     next(e);
   }
@@ -1789,12 +1818,32 @@ async function saveOfficeHour(req, res, next) {
     const instructorId = await requireInstructor(req, res);
     if (!instructorId) return;
 
+    // Look up the instructor's assigned office room — ignore any room submitted by the client.
+    const instResult = await query(
+      `
+      SELECT i.office_room_id, r.room_number
+      FROM instructors i
+      LEFT JOIN rooms r ON r.id = i.office_room_id
+      WHERE i.id = $1
+      `,
+      [instructorId]
+    );
+
+    const assignedRoomNumber = instResult.rows[0]?.room_number || null;
+    const assignedRoomId     = instResult.rows[0]?.office_room_id || null;
+
+    if (!assignedRoomId) {
+      return res.status(400).json({
+        success: false,
+        message: 'No office room assigned. Please contact admin.'
+      });
+    }
+
     const {
       id,
       day_of_week,
       start_time,
       end_time,
-      office_room,
       note,
       notify_students = false
     } = req.body;
@@ -1828,7 +1877,7 @@ async function saveOfficeHour(req, res, next) {
           AND instructor_id = $7
         RETURNING *
         `,
-        [Number(day_of_week), start_time, end_time, office_room || null, note || null, id, instructorId]
+        [Number(day_of_week), start_time, end_time, assignedRoomNumber, note || null, id, instructorId]
       );
 
       if (!result.rows.length) {
@@ -1852,7 +1901,7 @@ async function saveOfficeHour(req, res, next) {
         VALUES ($1,$2,$3,$4,$5,$6,$7,TRUE)
         RETURNING *
         `,
-        [instructorId, req.user.email, Number(day_of_week), start_time, end_time, office_room || null, note || null]
+        [instructorId, req.user.email, Number(day_of_week), start_time, end_time, assignedRoomNumber, note || null]
       );
 
       saved = result.rows[0];
@@ -1865,14 +1914,14 @@ async function saveOfficeHour(req, res, next) {
         instructorId,
         senderId: req.user.id,
         title: 'Office hours updated',
-        body: `Office hours were updated: day ${day_of_week}, ${start_time} - ${end_time}${office_room ? `, location: ${office_room}` : ''}.`,
+        body: `Office hours were updated: day ${day_of_week}, ${start_time} - ${end_time}${assignedRoomNumber ? `, location: ${assignedRoomNumber}` : ''}.`,
         type: 'custom',
         data: {
           office_hour_id: saved.id,
-          day_of_week: Number(day_of_week),
+          day_of_week:    Number(day_of_week),
           start_time,
           end_time,
-          office_room: office_room || null
+          office_room:    assignedRoomNumber
         }
       });
     }

@@ -742,6 +742,22 @@ async function getRoomsAvailableNow(req, res, next) {
   }
 }
 
+async function getAssignedInstructors(req, res, next) {
+  try {
+    const { id } = req.params;
+    const result = await query(
+      `SELECT i.id, i.title, i.first_name, i.last_name, i.email,
+              i.department, i.doctor_number
+       FROM instructors i
+       WHERE i.office_room_id = $1
+         AND i.is_active = TRUE
+       ORDER BY i.doctor_number NULLS LAST, i.first_name`,
+      [id]
+    );
+    res.json({ success: true, data: { instructors: result.rows } });
+  } catch (e) { next(e); }
+}
+
 module.exports = {
   getRoomsByFloor,
   getRoomById,
@@ -753,4 +769,5 @@ module.exports = {
   setAdjacency,
   getRoomLiveStatus,
   getRoomsAvailableNow,
+  getAssignedInstructors,
 };

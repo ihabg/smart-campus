@@ -181,7 +181,43 @@
   padding: 12px 14px;
 }
 
-.prof-view-btn,
+/* Segmented control wrapper */
+.prof-view-toggle {
+  display: inline-flex;
+  border: 1.5px solid var(--border);
+  border-radius: var(--r-md);
+  overflow: hidden;
+  background: var(--surface-2);
+  flex-shrink: 0;
+}
+
+.prof-view-btn {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-muted);
+  padding: 7px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--t-fast);
+  white-space: nowrap;
+}
+
+.prof-view-btn + .prof-view-btn {
+  border-left: 1.5px solid var(--border);
+}
+
+.prof-view-btn--active {
+  background: var(--navy);
+  color: #fff;
+}
+
+.prof-view-btn:not(.prof-view-btn--active):hover {
+  background: var(--bg-deep);
+  color: var(--text);
+}
+
 .prof-select {
   border: 1.5px solid var(--border);
   background: var(--surface-2);
@@ -189,17 +225,7 @@
   border-radius: var(--r-md);
   padding: 7px 12px;
   font-size: 13px;
-  font-weight: 600;
-}
-
-.prof-view-btn {
-  cursor: pointer;
-}
-
-.prof-view-btn--active {
-  background: var(--navy);
-  border-color: var(--navy);
-  color: #fff;
+  font-weight: 500;
 }
 
 .prof-student-like-schedule,
@@ -214,10 +240,11 @@
 .prof-schedule-title {
   display: flex;
   justify-content: flex-end;
-  color: #b10000;
-  font-weight: 800;
+  color: var(--navy);
+  font-weight: 700;
   margin-bottom: 12px;
-  font-size: 16px;
+  font-size: 14px;
+  opacity: .75;
 }
 
 .prof-schedule-text-table {
@@ -229,42 +256,50 @@
 }
 
 .prof-schedule-text-table th {
-  background: #e5eaef;
-  color: #111827;
+  background: #03184a;
+  color: #fff;
   font-weight: 700;
-  border: 1px solid #fff;
-  padding: 9px 8px;
+  border: 1px solid #0a2d6e;
+  padding: 10px 8px;
   text-align: center;
   white-space: nowrap;
+  font-size: 13px;
 }
 
 .prof-schedule-text-table td {
-  border: 1px solid #fff;
-  background: #f5f5f5;
+  border: 1px solid #e8edf6;
+  background: #fff;
   padding: 9px 8px;
   text-align: center;
   vertical-align: middle;
+  transition: background var(--t-fast);
 }
 
 .prof-schedule-text-table tbody tr:nth-child(even) td {
-  background: #fbf4ed;
+  background: #f5f8ff;
+}
+
+.prof-schedule-text-table tbody tr:hover td {
+  background: #eef2ff;
 }
 
 .prof-attendance-day-btn {
-  border: 1px solid #c9a84c;
-  background: #fff8dc;
-  color: #7a4d00;
+  border: 1.5px solid #c9a84c;
+  background: #fffbeb;
+  color: #78350f;
   border-radius: 999px;
-  padding: 5px 10px;
-  font-size: 12px;
-  font-weight: 800;
+  padding: 5px 11px;
+  font-size: 11px;
+  font-weight: 700;
   cursor: pointer;
   white-space: nowrap;
+  transition: all var(--t-fast);
 }
 
 .prof-attendance-day-btn:hover {
-  background: #c9a84c;
-  color: #02163f;
+  background: #fef3c7;
+  border-color: #b45309;
+  color: #451a03;
 }
 
 .prof-link-btn {
@@ -287,9 +322,10 @@
 
 .prof-grid-title h3 {
   margin: 0;
-  color: #b10000;
-  font-size: 20px;
-  font-weight: 800;
+  color: var(--navy);
+  font-size: 16px;
+  font-weight: 700;
+  font-family: var(--font-display);
 }
 
 .prof-grid-title p {
@@ -300,6 +336,8 @@
 
 .prof-week-table-wrap {
   overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  border-radius: 0 0 var(--r-xl) var(--r-xl);
 }
 
 .prof-week-table {
@@ -313,75 +351,98 @@
 
 .prof-week-table th,
 .prof-week-table td {
-  border: 2px solid #222;
+  border: 1px solid #d9e1ef;
   text-align: center;
   vertical-align: top;
 }
 
 .prof-week-table th {
-  background: #fff;
-  padding: 8px;
-  font-size: 14px;
-  font-weight: 800;
+  background: #03184a;
+  color: #fff;
+  padding: 9px 6px;
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .prof-week-day-head {
-  width: 95px;
+  width: 90px;
+  background: #03184a;
+  color: #fff;
 }
 
 .prof-week-day {
-  width: 85px;
+  width: 80px;
   font-size: 13px;
-  font-weight: 800;
-  background: #fff;
+  font-weight: 700;
+  background: #eef1f9;
+  color: #1c3a72;
+  padding: 8px 4px;
 }
 
 .prof-week-cell {
-  height: 92px;
-  padding: 2px;
-  background: #fff;
+  height: 90px;
+  padding: 3px;
+  background: #fafbfd;
 }
 
 .prof-week-cell--busy {
-  background: #fff9fd;
+  background: #f4f0fe;
 }
 
 .prof-week-class {
   width: 100%;
-  min-height: 72px;
-  border: 1px solid #b05c90;
-  background: #f1bedc;
-  color: #111827;
-  border-radius: 0;
-  padding: 4px;
-  cursor: pointer;
-  font-size: 11px;
-  line-height: 1.15;
+  height: 100%;
+  min-height: 82px;
+  border: 1.5px solid #c4b5fd;
+  background: #ede9fe;
+  color: #3730a3;
+  border-radius: 8px;
+  padding: 5px 4px;
+  cursor: default;
+  font-size: 10px;
+  line-height: 1.3;
   display: flex;
   flex-direction: column;
   justify-content: center;
+  align-items: center;
   gap: 2px;
+  text-align: center;
+  box-sizing: border-box;
 }
 
 .prof-week-class span {
-  font-weight: 700;
+  font-weight: 600;
+  font-size: 10px;
+  color: #4c1d95;
+  overflow: hidden;
+  max-height: 30px;
 }
 
 .prof-week-class strong {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #2e1065;
 }
 
 .prof-week-class small {
-  color: #b10000;
-  font-weight: 800;
+  color: #6d28d9;
+  font-weight: 600;
+  font-size: 10px;
 }
 
 .prof-office-hour {
-  color: green;
-  font-weight: 900;
-  font-size: 18px;
-  margin-top: 20px;
+  background: #d1fae5;
+  color: #065f46;
+  font-weight: 700;
+  font-size: 11px;
+  border-radius: 6px;
+  border: 1.5px solid #6ee7b7;
+  padding: 5px 4px;
+  text-align: center;
+  line-height: 1.4;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 @media(max-width: 900px) {
@@ -392,6 +453,32 @@
   .prof-section-actions {
     width: 100%;
     justify-content: flex-start;
+  }
+
+  .prof-schedule-toolbar {
+    gap: 8px;
+  }
+}
+
+@media(max-width: 640px) {
+  .prof-view-toggle {
+    width: 100%;
+  }
+
+  .prof-view-btn {
+    flex: 1;
+    text-align: center;
+    justify-content: center;
+    padding: 8px 10px;
+  }
+
+  .prof-select {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .prof-schedule-toolbar .btn {
+    width: 100%;
   }
 }
 
@@ -758,34 +845,30 @@
   transform: translateY(-1px);
 }
 
-.prof-week-class {
-  display: block;
-  width: 100%;
-  padding: 6px 4px;
-  border-radius: 8px;
-  background: #f8d6e8;
-  color: #111827;
-  border: 1px solid #f0b8d5;
-  text-align: center;
-  font-size: 11px;
-}
-
 .prof-week-class-actions {
   display: flex;
-  gap: 4px;
+  gap: 3px;
   justify-content: center;
-  margin-top: 5px;
+  margin-top: 4px;
+  flex-wrap: wrap;
 }
 
 .prof-week-class-actions button {
-  border: 1px solid rgba(3, 24, 74, .16);
-  background: #fff;
-  color: var(--navy);
+  border: 1px solid rgba(109, 40, 217, .28);
+  background: rgba(255, 255, 255, .82);
+  color: #4c1d95;
   border-radius: 999px;
-  padding: 2px 7px;
+  padding: 3px 8px;
   font-size: 10px;
-  font-weight: 800;
+  font-weight: 700;
   cursor: pointer;
+  min-height: 22px;
+  transition: background var(--t-fast);
+}
+
+.prof-week-class-actions button:hover {
+  background: #fff;
+  border-color: #7c3aed;
 }
 
 .prof-modal-backdrop {
@@ -1521,5 +1604,74 @@
 
   .prof-term-bar .prof-select {
     width: 100%;
+  }
+}
+
+
+/* ── Assigned office room banner (Office Hours form) ─────── */
+.prof-office-assigned {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-radius: var(--r-lg);
+  padding: 12px 14px;
+  margin-bottom: 16px;
+  border: 1.5px solid;
+}
+
+.prof-office-assigned--set {
+  background: #f0fdf4;
+  border-color: #86efac;
+}
+
+.prof-office-assigned--none {
+  background: #fffbeb;
+  border-color: #fcd34d;
+}
+
+.prof-office-assigned__icon {
+  font-size: 20px;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.prof-office-assigned__label {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--text-muted);
+  margin-bottom: 2px;
+}
+
+.prof-office-assigned--none .prof-office-assigned__label {
+  color: #92400e;
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.prof-office-assigned__room {
+  display: block;
+  font-size: 14px;
+  font-weight: 700;
+  color: #065f46;
+  font-family: var(--font-mono);
+}
+
+.prof-office-assigned__sub {
+  display: block;
+  font-size: 12px;
+  color: #78350f;
+  margin-top: 2px;
+}
+
+@media (max-width: 480px) {
+  .prof-office-assigned {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
   }
 }

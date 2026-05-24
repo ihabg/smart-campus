@@ -373,19 +373,7 @@ function getRoomInfoItems(block, floorTitle) {
       },
       {
         label: 'Department',
-        value: 'كلية الهندسة',
-      },
-      {
-        label: 'Lecturer Number',
-        value: block?.lecturerNumber || block?.lecturer_number || '—',
-      },
-      {
-        label: 'Lecturer',
-        value: block?.lecturerName || '—',
-      },
-      {
-        label: 'Email',
-        value: block?.lecturerEmail || '—',
+        value: block?.department || 'كلية الهندسة',
       },
     ];
   }
@@ -632,6 +620,37 @@ function LiveStatusPanel({ status, loading }) {
   );
 }
 
+function OfficeInstructorsPanel({ instructors, loading }) {
+  if (loading) {
+    return <div className="office-instructors-loading">Loading assigned professors…</div>;
+  }
+  return (
+    <div className="office-instructors-section">
+      <div className="office-instructors-label">Assigned Professors</div>
+      {instructors.length === 0 ? (
+        <div className="office-instructors-empty">No professor assigned to this office yet.</div>
+      ) : (
+        <div className="office-instructors-list">
+          {instructors.map(inst => (
+            <div className="office-instructor-card" key={inst.id}>
+              <div className="office-instructor-name">
+                {[inst.title, inst.first_name, inst.last_name].filter(Boolean).join(' ')}
+              </div>
+              <div className="office-instructor-meta">
+                {inst.doctor_number && <span className="office-instructor-num">#{inst.doctor_number}</span>}
+                {inst.department && <span className="office-instructor-dept">{inst.department}</span>}
+              </div>
+              {inst.email && (
+                <a href={`mailto:${inst.email}`} className="office-instructor-email">{inst.email}</a>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const MIN_MAP_ZOOM = 1;
 const MAX_MAP_ZOOM = 3;
 const MAP_ZOOM_STEP = 0.12;
@@ -687,6 +706,8 @@ useEffect(() => {
 
   const [liveStatus, setLiveStatus] = useState(null);
   const [liveStatusLoading, setLiveStatusLoading] = useState(false);
+  const [officeInstructors, setOfficeInstructors] = useState([]);
+  const [officeInstructorsLoading, setOfficeInstructorsLoading] = useState(false);
 
   const [dbRoomsByFloor, setDbRoomsByFloor] = useState({});
   const [dbRoomsLoaded, setDbRoomsLoaded] = useState(false);
@@ -889,6 +910,22 @@ useEffect(() => {
       })
       .catch(() => setLiveStatus(null))
       .finally(() => setLiveStatusLoading(false));
+  }, [selectedBlock]);
+
+  useEffect(() => {
+    if (!selectedBlock?.dbId || !isOffice(selectedBlock)) {
+      setOfficeInstructors([]);
+      setOfficeInstructorsLoading(false);
+      return;
+    }
+    setOfficeInstructorsLoading(true);
+    roomAPI.getAssignedInstructors(selectedBlock.dbId)
+      .then(res => {
+        const payload = res?.data?.data || res?.data || {};
+        setOfficeInstructors(payload.instructors || []);
+      })
+      .catch(() => setOfficeInstructors([]))
+      .finally(() => setOfficeInstructorsLoading(false));
   }, [selectedBlock]);
 
   function clearRoute() {
@@ -1343,6 +1380,13 @@ setSelectedNeed('all');
               </div>
             ))}
           </div>
+
+          {isOffice(selectedBlock) && (
+            <OfficeInstructorsPanel
+              instructors={officeInstructors}
+              loading={officeInstructorsLoading}
+            />
+          )}
 
           <button
             type="button"

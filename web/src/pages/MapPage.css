@@ -935,6 +935,106 @@
   transform: translateY(-1px);
 }
 
+/* ─── Office Instructors Panel ───────────────────────────── */
+.office-instructors-section {
+  margin: 0 18px 14px;
+  border: 1.5px solid #e2e9f4;
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.office-instructors-label {
+  background: #f0f5ff;
+  color: #1e3a6e;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  padding: 8px 14px;
+  border-bottom: 1px solid #e2e9f4;
+}
+
+.office-instructors-empty {
+  padding: 14px;
+  font-size: 13px;
+  color: var(--text-muted, #8a9bb5);
+  text-align: center;
+}
+
+.office-instructors-loading {
+  margin: 0 18px 14px;
+  padding: 12px 14px;
+  font-size: 13px;
+  color: var(--text-muted, #8a9bb5);
+  text-align: center;
+}
+
+.office-instructors-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.office-instructor-card {
+  padding: 11px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  border-bottom: 1px solid #f0f4fc;
+}
+
+.office-instructor-card:last-child {
+  border-bottom: none;
+}
+
+.office-instructor-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: #1a2e50;
+  direction: rtl;
+  text-align: right;
+}
+
+.office-instructor-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.office-instructor-num {
+  font-size: 11px;
+  font-family: monospace;
+  color: #4b6aaa;
+  background: #eef2ff;
+  padding: 2px 7px;
+  border-radius: 99px;
+  font-weight: 700;
+}
+
+.office-instructor-dept {
+  font-size: 11px;
+  color: #6b7fa8;
+}
+
+.office-instructor-email {
+  font-size: 12px;
+  color: #4b6aaa;
+  text-decoration: none;
+  display: inline-block;
+  word-break: break-all;
+}
+
+.office-instructor-email:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 480px) {
+  .office-instructors-section {
+    margin: 0 10px 12px;
+  }
+}
+
 .map-canvas-touch {
   position: relative;
   overflow: hidden;

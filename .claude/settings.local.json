@@ -29,7 +29,16 @@
       "Bash(node -e \"require\\('dotenv'\\).config\\(\\); const {pool} = require\\('./config/db'\\); pool.query\\(\\\\\"SELECT column_name, data_type FROM information_schema.columns WHERE table_name='professor_course_materials' ORDER BY ordinal_position\\\\\"\\).then\\(r=>{ console.log\\(r.rows.map\\(c=>c.column_name+' \\('+c.data_type+'\\)'\\).join\\('\\\\n'\\)\\); pool.end\\(\\); }\\).catch\\(e=>{ console.error\\(e.message\\); pool.end\\(\\); }\\);\")",
       "Bash(node -e \"require\\('dotenv'\\).config\\(\\); const {pool} = require\\('./config/db'\\); Promise.all\\([pool.query\\(\\\\\"SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_name='office_hour_bookings'\\\\\"\\), pool.query\\(\\\\\"SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_name='course_messages'\\\\\"\\)]\\).then\\(\\([a,b]\\)=>{ console.log\\('office_hour_bookings:', a.rows.length ? 'EXISTS' : 'MISSING'\\); console.log\\('course_messages:', b.rows.length ? 'EXISTS' : 'MISSING'\\); pool.end\\(\\); }\\).catch\\(e=>{ console.error\\(e.message\\); pool.end\\(\\); }\\);\")",
       "Bash(node -e \"require\\('dotenv'\\).config\\(\\); const {pool} = require\\('./config/db'\\); pool.query\\(\\\\\"SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_name IN \\('section_messages','professor_material_access_logs'\\) ORDER BY table_name\\\\\"\\).then\\(r=>{ console.log\\(r.rows.length ? r.rows.map\\(x=>x.table_name\\).join\\(', '\\) : 'NONE EXIST'\\); pool.end\\(\\); }\\).catch\\(e=>{ console.error\\(e.message\\); pool.end\\(\\); }\\);\")",
-      "Bash(node -e \"try { require\\('./controllers/professorController'\\); console.log\\('OK'\\); } catch\\(e\\) { console.error\\(e.message\\); }\")"
+      "Bash(node -e \"try { require\\('./controllers/professorController'\\); console.log\\('OK'\\); } catch\\(e\\) { console.error\\(e.message\\); }\")",
+      "Bash(cat backend/.env)",
+      "Bash(cat backend/.env.local)",
+      "Bash(ls backend/*.env)",
+      "Bash(ls backend/.env*)",
+      "Bash(PGPASSWORD=ihab1234 psql -U postgres -d smart_campus -c \"\\\\d instructors\")",
+      "Bash(node -e \"require\\('./controllers/roomController'\\); console.log\\('roomController OK'\\);\")",
+      "Bash(node -e \"require\\('./routes/rooms'\\); console.log\\('rooms route OK'\\);\")",
+      "Bash(node -e \"require\\('./controllers/instructorController'\\); console.log\\('instructorController OK'\\);\")",
+      "Bash(node -c scripts/migrate_office_rooms.js)"
     ]
   }
 }
