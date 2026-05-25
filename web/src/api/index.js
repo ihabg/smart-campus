@@ -307,7 +307,9 @@ export const instructorAPI = {
 
   update: (id, data) => api.patch(`/instructors/${id}`, data),
 
-  delete: (id) => api.delete(`/instructors/${id}`)
+  delete: (id) => api.delete(`/instructors/${id}`),
+
+  linkUser: (id) => api.post(`/instructors/${id}/link-user`),
 };
 // ─── professorAPI ─────────────────────────────────────────────
 export const professorAPI = {
