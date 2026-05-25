@@ -232,12 +232,21 @@
 .sc-grid-table tbody tr:nth-child(7) .sc-day-name::before { content: "سبت";    font-size: 13px; }
 
 .sc-slot {
-  width: 52px;
-  min-width: 52px;
+  width: 26px;
+  min-width: 26px;
   height: 80px;
   background: #fafbfd;
   padding: 3px;
   position: relative;
+}
+
+/* Hides the half-hour divider inside each hour column.
+   Only empty :30 cells get this class; meeting cells always keep their full border.
+   RTL note: in direction:rtl the :30 cell sits to the LEFT of the :00 cell, so
+   the shared collapsed border is :30's physical border-RIGHT (not border-left).
+   Specificity must beat .sc-grid-table td (0,1,1), so we use .sc-grid-table .sc-slot--half (0,2,0). */
+.sc-grid-table .sc-slot--half {
+  border-right-style: hidden;
 }
 
 .sc-course {
@@ -277,7 +286,14 @@
 }
 
 .sc-course small {
-  display: none;
+  display: block;
+  font-size: 10px;
+  order: 0;
+  opacity: 0.8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
 
 .sc-course em {
@@ -679,9 +695,14 @@
 
 .prof-slot {
   height: 82px;
-  width: 58px;
-  min-width: 58px;
+  width: 29px;
+  min-width: 29px;
   background: #fafbfd;
+}
+
+/* Same half-hour cleanup for the professor schedule grid (RTL + specificity fix) */
+.prof-grid-table .prof-slot--half {
+  border-right-style: hidden;
 }
 
 .prof-block {
@@ -794,7 +815,7 @@
 
   .sc-grid-table th,
   .sc-grid-table td {
-    min-width: 52px;
+    min-width: 26px;
   }
 
   .sc-day-time,

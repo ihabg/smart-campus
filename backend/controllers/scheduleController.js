@@ -734,22 +734,29 @@ async function updateSection(req, res, next) {
       academic_year: req.body.academic_year || current.academic_year,
     };
 
-    const conflictMessage = await checkSectionConflicts({
-      room_id: merged.room_id,
-      instructor_id: merged.instructor_id,
-      semester: merged.semester,
-      academic_year: merged.academic_year,
-      day_of_week: merged.day_of_week,
-      start_time: merged.start_time,
-      end_time: merged.end_time,
-      excludeSectionId: id,
-    });
+    const scheduleChanged =
+      req.body.instructor_id  !== undefined ||
+      req.body.room_id        !== undefined ||
+      req.body.day_of_week    !== undefined ||
+      req.body.start_time     !== undefined ||
+      req.body.end_time       !== undefined ||
+      req.body.semester       !== undefined ||
+      req.body.academic_year  !== undefined;
 
-    if (conflictMessage) {
-      return res.status(409).json({
-        success: false,
-        message: conflictMessage,
+    if (scheduleChanged) {
+      const conflictMessage = await checkSectionConflicts({
+        room_id:          merged.room_id,
+        instructor_id:    merged.instructor_id,
+        semester:         merged.semester,
+        academic_year:    merged.academic_year,
+        day_of_week:      merged.day_of_week,
+        start_time:       merged.start_time,
+        end_time:         merged.end_time,
+        excludeSectionId: id,
       });
+      if (conflictMessage) {
+        return res.status(409).json({ success: false, message: conflictMessage });
+      }
     }
 
     const allowed = [

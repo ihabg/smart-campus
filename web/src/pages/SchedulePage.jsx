@@ -16,24 +16,32 @@ const DAYS = [
   { id: 6, en: 'Saturday', ar: 'سبت' }
 ];
 
+// Half-hour slots used by buildDayCells to place and span meetings precisely
 const TIME_SLOTS = [
- '07:00',
-  '08:00',
-  '09:00',
-  '10:00',
-  '11:00',
-  '12:00',
-  '13:00',
-  '14:00',
-  '15:00',
-  '16:00',
-  '17:00',
-  '18:00',
-  '19:00',
-  '20:00',
-  '21:00',
-  '22:00',
-  '23:00'
+  '07:00', '07:30',
+  '08:00', '08:30',
+  '09:00', '09:30',
+  '10:00', '10:30',
+  '11:00', '11:30',
+  '12:00', '12:30',
+  '13:00', '13:30',
+  '14:00', '14:30',
+  '15:00', '15:30',
+  '16:00', '16:30',
+  '17:00', '17:30',
+  '18:00', '18:30',
+  '19:00', '19:30',
+  '20:00', '20:30',
+  '21:00', '21:30',
+  '22:00', '22:30',
+  '23:00', '23:30',
+];
+
+// Whole-hour labels for the thead — each header cell spans 2 half-hour columns
+const HOUR_SLOTS = [
+  '07:00', '08:00', '09:00', '10:00', '11:00', '12:00', '13:00',
+  '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00',
+  '21:00', '22:00', '23:00',
 ];
 
 export default function SchedulePage() {
@@ -198,6 +206,16 @@ function TableSchedule({ byDay }) {
   return (
     <div className="sc-table-wrapper">
       <table className="sc-grid-table">
+        {/* colgroup pins each half-hour sub-column to 26 px; table-layout:fixed uses these */}
+        <colgroup>
+          <col style={{ width: 70 }} />
+          {HOUR_SLOTS.map(t => (
+            <React.Fragment key={t}>
+              <col style={{ width: 26 }} />
+              <col style={{ width: 26 }} />
+            </React.Fragment>
+          ))}
+        </colgroup>
         <thead>
           <tr>
             <th className="sc-day-time">
@@ -205,8 +223,9 @@ function TableSchedule({ byDay }) {
               <div>Time</div>
             </th>
 
-            {TIME_SLOTS.map((time) => (
-              <th key={time}>{formatHour(time)}</th>
+            {/* Each hour label spans 2 half-hour sub-columns */}
+            {HOUR_SLOTS.map((time) => (
+              <th key={time} colSpan={2}>{formatHour(time)}</th>
             ))}
           </tr>
         </thead>
@@ -225,7 +244,7 @@ function TableSchedule({ byDay }) {
                     return (
                       <td
                         key={`${day.id}-${cell.time}`}
-                        className="sc-slot"
+                        className={`sc-slot${cell.time.endsWith(':30') ? ' sc-slot--half' : ' sc-slot--hour-start'}`}
                       />
                     );
                   }
@@ -288,11 +307,11 @@ function buildDayCells(dayMeetings) {
 }
 function getSlotSpan(startTime, endTime) {
   const start = toMinutes(startTime);
-  const end = toMinutes(endTime);
-
-  const diff = Math.max(end - start, 60);
-
-  return Math.ceil(diff / 60);
+  const end   = toMinutes(endTime);
+  // Return number of 30-minute half-hour slots the meeting occupies.
+  // Math.round avoids floating-point drift; min 1 slot so nothing collapses.
+  const durationMinutes = Math.max(end - start, 30);
+  return Math.round(durationMinutes / 30);
 }
 
 function toMinutes(time) {
@@ -603,11 +622,20 @@ function ProfessorScheduleGrid({ schedule, officeHours }) {
   return (
     <div className="prof-grid-wrapper">
       <table className="prof-grid-table">
+        <colgroup>
+          <col style={{ width: 70 }} />
+          {PROF_HOUR_SLOTS.map(t => (
+            <React.Fragment key={t}>
+              <col style={{ width: 29 }} />
+              <col style={{ width: 29 }} />
+            </React.Fragment>
+          ))}
+        </colgroup>
         <thead>
           <tr>
             <th className="prof-day-time">اليوم/<br />الوقت</th>
-            {PROF_TIME_SLOTS.map((time) => (
-              <th key={time}>{formatHour(time)}</th>
+            {PROF_HOUR_SLOTS.map((time) => (
+              <th key={time} colSpan={2}>{formatHour(time)}</th>
             ))}
           </tr>
         </thead>
@@ -627,7 +655,7 @@ function ProfessorScheduleGrid({ schedule, officeHours }) {
                     return (
                       <td
                         key={`${day.id}-${cell.time}-${index}`}
-                        className="prof-slot"
+                        className={`prof-slot${cell.time.endsWith(':30') ? ' prof-slot--half' : ' prof-slot--hour-start'}`}
                       />
                     );
                   }
@@ -672,22 +700,28 @@ function ProfessorScheduleGrid({ schedule, officeHours }) {
   );
 }
 const PROF_TIME_SLOTS = [
-  '08:00',
-  '09:00',
-  '10:00',
-  '11:00',
-  '12:00',
-  '13:00',
-  '14:00',
-  '15:00',
-  '16:00',
-  '17:00',
-  '18:00',
-  '19:00',
-  '20:00',
-  '21:00',
-  '22:00',
-  '23:00'
+  '08:00', '08:30',
+  '09:00', '09:30',
+  '10:00', '10:30',
+  '11:00', '11:30',
+  '12:00', '12:30',
+  '13:00', '13:30',
+  '14:00', '14:30',
+  '15:00', '15:30',
+  '16:00', '16:30',
+  '17:00', '17:30',
+  '18:00', '18:30',
+  '19:00', '19:30',
+  '20:00', '20:30',
+  '21:00', '21:30',
+  '22:00', '22:30',
+  '23:00', '23:30',
+];
+
+const PROF_HOUR_SLOTS = [
+  '08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00',
+  '15:00', '16:00', '17:00', '18:00', '19:00', '20:00', '21:00',
+  '22:00', '23:00',
 ];
 
 function buildProfessorDayCells(dayItems) {
