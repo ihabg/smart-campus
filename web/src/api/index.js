@@ -352,6 +352,10 @@ export const studyPlanAPI = {
   addCourse:         (id, data)           => api.post(`/admin/study-plans/${id}/courses`, data),
   updateCourse:      (id, courseId, data) => api.patch(`/admin/study-plans/${id}/courses/${courseId}`, data),
   removeCourse:      (id, courseId)       => api.delete(`/admin/study-plans/${id}/courses/${courseId}`),
+  // Batch assignments
+  listBatchAssignments: (id)       => api.get(`/admin/study-plans/${id}/batch-assignments`),
+  assignBatch:          (id, data) => api.post(`/admin/study-plans/${id}/batch-assignments`, data),
+  removeBatchAssignment:(id, year) => api.delete(`/admin/study-plans/${id}/batch-assignments/${year}`),
 };
 
 export default api;

@@ -165,22 +165,50 @@ async function getStudyPlan(req, res, next) {
     let plan_courses      = [];
 
     if (student.department_id && student.registration_year) {
-      const planRes = await query(`
+      // Step 1: explicit batch assignment lookup
+      let planRow = null;
+      const explicitRes = await query(`
         SELECT
           sp.id,
           sp.plan_year,
           sp.label,
           d.name_en AS department_name,
-          d.name_ar AS department_name_ar
-        FROM study_plans sp
-        JOIN departments d ON d.id = sp.department_id
-        WHERE sp.department_id = $1 AND sp.plan_year = $2
+          d.name_ar AS department_name_ar,
+          'explicit' AS match_type
+        FROM study_plan_batch_assignments spba
+        JOIN study_plans sp ON sp.id = spba.plan_id
+        JOIN departments d  ON d.id  = sp.department_id
+        WHERE spba.department_id     = $1
+          AND spba.registration_year = $2
+          AND spba.is_active         = TRUE
         LIMIT 1
       `, [student.department_id, student.registration_year]);
 
-      if (planRes.rows[0]) {
+      planRow = explicitRes.rows[0] || null;
+
+      // Step 2: fallback — latest plan where plan_year <= registration_year
+      if (!planRow) {
+        const fallbackRes = await query(`
+          SELECT
+            sp.id,
+            sp.plan_year,
+            sp.label,
+            d.name_en AS department_name,
+            d.name_ar AS department_name_ar,
+            'latest_fallback' AS match_type
+          FROM study_plans sp
+          JOIN departments d ON d.id = sp.department_id
+          WHERE sp.department_id = $1
+            AND sp.plan_year    <= $2
+          ORDER BY sp.plan_year DESC
+          LIMIT 1
+        `, [student.department_id, student.registration_year]);
+        planRow = fallbackRes.rows[0] || null;
+      }
+
+      if (planRow) {
         has_official_plan = true;
-        plan_meta         = planRes.rows[0];
+        plan_meta         = planRow;
 
         const planCoursesRes = await query(`
           SELECT
