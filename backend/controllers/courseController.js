@@ -26,7 +26,10 @@ async function getAllCourses(req, res, next) {
 
     if (active_only === 'true') {
       where.push('c.is_active = TRUE');
+    } else if (active_only === 'false') {
+      where.push('c.is_active = FALSE');
     }
+    // 'all' or any other value: no filter (show all)
 
     if (department) {
       params.push(department);
@@ -272,9 +275,10 @@ async function deleteCourse(req, res, next) {
 
     const used = await query(
       `
-      SELECT COUNT(*)::int AS count
-      FROM sections
-      WHERE course_id = $1
+      SELECT (
+        (SELECT COUNT(*)::int FROM sections           WHERE course_id = $1) +
+        (SELECT COUNT(*)::int FROM study_plan_courses WHERE course_id = $1)
+      ) AS count
       `,
       [id]
     );
@@ -300,7 +304,7 @@ async function deleteCourse(req, res, next) {
 
       return res.json({
         success: true,
-        message: 'Course is used by sections, so it was deactivated instead of deleted.'
+        message: 'Course is used by sections or study plans and was deactivated instead of deleted.'
       });
     }
 

@@ -174,6 +174,7 @@ async function getAvailableCourses(req, res, next) {
       WHERE c.id NOT IN (
         SELECT course_id FROM study_plan_courses WHERE plan_id = $1
       )
+      AND c.is_active = TRUE
       AND (
         $2 = ''
         OR c.code ILIKE $3
