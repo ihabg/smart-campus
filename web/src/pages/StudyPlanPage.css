@@ -354,6 +354,12 @@
   border: 1px solid var(--border);
 }
 
+.sp-badge--not_taken {
+  background: var(--surface-2, #f8f9fd);
+  color: var(--text-muted);
+  border: 1px dashed var(--border-strong, #b0bed8);
+}
+
 /* ── Mobile course cards (hidden on desktop) ─────────────────── */
 
 .sp-card-list {
@@ -448,6 +454,112 @@
   .sp-student-bar__name {
     font-size: 16px;
   }
+}
+
+/* ── Official Study Plan section (Phase 2) ───────────────────── */
+
+.sp-official-plan {
+  margin-bottom: 28px;
+}
+
+.sp-official-plan__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 20px;
+  background: var(--najah-light, #dce8ff);
+  border: 1px solid var(--navy-light, #b0c4f0);
+  border-radius: var(--r-xl, 20px);
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.sp-official-plan__title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--navy);
+  margin-bottom: 2px;
+}
+
+.sp-official-plan__meta {
+  font-size: 12px;
+  color: var(--navy);
+  opacity: 0.75;
+}
+
+.sp-official-plan__progress {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.sp-official-plan__progress-val {
+  font-size: 22px;
+  font-weight: 700;
+  color: #16a34a;
+  font-family: var(--font-mono);
+}
+
+.sp-official-plan__progress-sep {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+.sp-official-plan__progress-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  display: block;
+}
+
+/* ── Category tag ────────────────────────────────────────────── */
+
+.sp-cat-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: var(--r-full, 9999px);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: var(--surface-2, #f8f9fd);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+/* ── History toggle (Phase 2 collapsible) ────────────────────── */
+
+.sp-history-toggle {
+  margin-bottom: 16px;
+}
+
+.sp-history-toggle__btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: var(--surface, #fff);
+  border: 1px solid var(--border);
+  border-radius: var(--r-xl, 20px);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+  font-family: var(--font-body);
+  transition: background var(--t-fast, 120ms);
+}
+
+.sp-history-toggle__btn:hover {
+  background: var(--surface-2, #f8f9fd);
+}
+
+.sp-history-toggle__count {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 500;
 }
 
 /* Mobile: single-column everything */

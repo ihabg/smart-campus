@@ -340,6 +340,20 @@ export const studentAPI = {
   getStudyPlan: () => api.get('/student/study-plan'),
 };
 
+// ─── studyPlanAPI ─────────────────────────────────────────────
+export const studyPlanAPI = {
+  list:              ()           => api.get('/admin/study-plans'),
+  getDepartments:    ()           => api.get('/admin/study-plans/departments'),
+  create:            (data)       => api.post('/admin/study-plans', data),
+  getById:           (id)         => api.get(`/admin/study-plans/${id}`),
+  update:            (id, data)   => api.patch(`/admin/study-plans/${id}`, data),
+  delete:            (id)         => api.delete(`/admin/study-plans/${id}`),
+  getAvailableCourses: (id, params = {}) => api.get(`/admin/study-plans/${id}/available-courses`, { params }),
+  addCourse:         (id, data)           => api.post(`/admin/study-plans/${id}/courses`, data),
+  updateCourse:      (id, courseId, data) => api.patch(`/admin/study-plans/${id}/courses/${courseId}`, data),
+  removeCourse:      (id, courseId)       => api.delete(`/admin/study-plans/${id}/courses/${courseId}`),
+};
+
 export default api;
 // ─── assessmentAPI ──────────────────────────────────────────
 function assessmentFormData(data = {}, file) {

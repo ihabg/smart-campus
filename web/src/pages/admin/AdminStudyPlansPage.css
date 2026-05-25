@@ -1,0 +1,663 @@
+/* ── Study Plan Management Page ───────────────────────────────
+   Class prefix: spm-
+   Layout: two-panel (left list + right detail), responsive.
+   ──────────────────────────────────────────────────────────── */
+
+.spm-page {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding-bottom: 48px;
+}
+
+.spm-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 80px 24px;
+}
+
+/* ── Two-panel layout ────────────────────────────────────────── */
+
+.spm-layout {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  gap: 20px;
+  align-items: start;
+}
+
+/* ── Left: plan list panel ───────────────────────────────────── */
+
+.spm-plans-panel {
+  padding: 8px 0;
+  position: sticky;
+  top: 16px;
+  max-height: calc(100vh - 120px);
+  overflow-y: auto;
+}
+
+.spm-plan-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 12px 16px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  transition: background var(--t-fast, 120ms);
+}
+
+.spm-plan-item:last-child { border-bottom: none; }
+
+.spm-plan-item:hover:not(.spm-plan-item--active) {
+  background: var(--surface-2, #f8f9fd);
+}
+
+.spm-plan-item--active {
+  background: var(--najah-light, #dce8ff);
+  border-left: 3px solid var(--navy);
+}
+
+.spm-plan-item__dept {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 3px;
+}
+
+.spm-plan-item__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.spm-plan-item__year {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--navy);
+  font-family: var(--font-mono);
+}
+
+.spm-plan-item__count {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.spm-plan-item__label {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
+  margin-top: 2px;
+}
+
+/* ── Right: detail panel ─────────────────────────────────────── */
+
+.spm-detail-panel {
+  min-width: 0;
+}
+
+.spm-detail-empty {
+  text-align: center;
+  padding: 56px 24px;
+  color: var(--text-muted);
+  font-size: 13.5px;
+}
+
+.spm-detail-empty__icon {
+  font-size: 36px;
+  margin-bottom: 12px;
+}
+
+.spm-detail-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 20px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.spm-detail-head__title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 2px;
+}
+
+.spm-detail-head__sub {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-style: italic;
+  margin-bottom: 4px;
+}
+
+.spm-detail-head__count {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* ── Controls bar ────────────────────────────────────────────── */
+
+.spm-detail-controls {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.spm-detail-search {
+  flex: 1;
+  min-width: 180px;
+}
+
+/* ── Year groups ─────────────────────────────────────────────── */
+
+.spm-year-group {
+  margin-bottom: 24px;
+}
+
+.spm-year-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 0 8px;
+  border-bottom: 2px solid var(--border);
+  margin-bottom: 10px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--navy);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.spm-year-head__count {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: none;
+  font-weight: 500;
+}
+
+/* ── Course table ────────────────────────────────────────────── */
+
+.spm-table-wrap {
+  overflow-x: auto;
+}
+
+.spm-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.spm-table th {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+  padding: 0 12px 8px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.spm-table td {
+  padding: 10px 12px;
+  font-size: 13px;
+  color: var(--text);
+  vertical-align: middle;
+  border-top: 1px solid var(--border);
+}
+
+.spm-table tr:hover td {
+  background: var(--surface-2, #f8f9fd);
+}
+
+.spm-code {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--navy);
+  white-space: nowrap;
+}
+
+.spm-course-name {
+  font-weight: 500;
+  color: var(--text);
+}
+
+.spm-course-name-ar {
+  font-size: 11px;
+  color: var(--text-muted);
+  direction: rtl;
+  margin-top: 2px;
+}
+
+/* ── Category badges ─────────────────────────────────────────── */
+
+.spm-cat {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 9px;
+  border-radius: var(--r-full, 9999px);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.spm-cat--required {
+  background: var(--najah-light, #dce8ff);
+  color: var(--navy);
+}
+
+.spm-cat--elective {
+  background: #fef9c3;
+  color: #92400e;
+}
+
+.spm-cat--general {
+  background: #dcfce7;
+  color: #166534;
+}
+
+/* ── Required indicator ──────────────────────────────────────── */
+
+.spm-req {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: var(--r-full, 9999px);
+}
+
+.spm-req--yes {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.spm-req--no {
+  background: var(--surface-2, #f8f9fd);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+
+/* ── Action buttons ──────────────────────────────────────────── */
+
+.spm-icon-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 6px;
+  font-size: 14px;
+  transition: background var(--t-fast, 120ms);
+  margin-left: 2px;
+}
+
+.spm-icon-btn:hover {
+  background: var(--surface-2, #f8f9fd);
+}
+
+.spm-icon-btn--danger:hover {
+  background: #fee2e2;
+}
+
+.spm-btn--danger {
+  background: #dc2626;
+  color: #fff;
+  border: none;
+  border-radius: var(--r-md, 8px);
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: var(--font-body);
+  transition: background var(--t-fast, 120ms);
+}
+
+.spm-btn--danger:hover {
+  background: #b91c1c;
+}
+
+.spm-sm-btn {
+  padding: 6px 12px;
+  font-size: 12px;
+}
+
+/* ── Mobile cards (hidden on desktop) ───────────────────────── */
+
+.spm-mob-cards { display: none; }
+
+.spm-mob-card {
+  background: var(--surface, #fff);
+  border: 1px solid var(--border);
+  border-radius: var(--r-xl, 20px);
+  padding: 14px 16px;
+  margin-bottom: 10px;
+}
+
+.spm-mob-card__top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.spm-mob-card__meta {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+
+.spm-mob-card__actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* ── Empty state ─────────────────────────────────────────────── */
+
+.spm-empty-msg {
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.55;
+  padding: 20px 16px;
+}
+
+/* ── Form helpers ────────────────────────────────────────────── */
+
+.spm-input {
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md, 8px);
+  font-size: 13px;
+  background: var(--surface, #fff);
+  color: var(--text);
+  outline: none;
+  font-family: var(--font-body);
+  transition: border-color var(--t-fast, 120ms);
+  box-sizing: border-box;
+}
+
+.spm-input:focus {
+  border-color: var(--navy);
+  box-shadow: 0 0 0 3px rgba(3, 24, 74, 0.08);
+}
+
+.spm-select {
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md, 8px);
+  font-size: 13px;
+  background: var(--surface, #fff);
+  color: var(--text);
+  outline: none;
+  font-family: var(--font-body);
+  cursor: pointer;
+  box-sizing: border-box;
+}
+
+.spm-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin: 12px 0 5px;
+}
+
+.spm-label:first-child { margin-top: 0; }
+
+.spm-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 14px;
+}
+
+.spm-checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+  margin-top: 14px;
+}
+
+.spm-checkbox-row input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+/* ── Modal ───────────────────────────────────────────────────── */
+
+.spm-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(3, 24, 74, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 16px;
+}
+
+.spm-modal {
+  background: var(--surface, #fff);
+  border-radius: var(--r-xl, 20px);
+  box-shadow: 0 16px 48px rgba(3, 24, 74, 0.18);
+  width: 100%;
+  max-width: 440px;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.spm-modal--wide {
+  max-width: 560px;
+}
+
+.spm-modal__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.spm-modal__title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.spm-modal__close {
+  background: none;
+  border: none;
+  font-size: 20px;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+}
+
+.spm-modal__body {
+  padding: 18px 20px 20px;
+}
+
+.spm-modal__actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 20px;
+}
+
+.spm-confirm-text {
+  font-size: 13.5px;
+  color: var(--text);
+  line-height: 1.55;
+  margin: 0 0 4px;
+}
+
+/* ── Available course search list ────────────────────────────── */
+
+.spm-avail-list {
+  max-height: 260px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md, 8px);
+  margin-top: 8px;
+}
+
+.spm-avail-list__empty {
+  padding: 20px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.spm-avail-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  padding: 10px 14px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  transition: background var(--t-fast, 120ms);
+}
+
+.spm-avail-item:last-child { border-bottom: none; }
+
+.spm-avail-item:hover {
+  background: var(--najah-light, #dce8ff);
+}
+
+.spm-avail-item__code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--navy);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.spm-avail-item__name {
+  font-size: 13px;
+  color: var(--text);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.spm-avail-item__hrs {
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+}
+
+.spm-selected-course {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: var(--najah-light, #dce8ff);
+  border-radius: var(--r-md, 8px);
+  padding: 10px 14px;
+  margin-bottom: 4px;
+}
+
+.spm-link-btn {
+  background: none;
+  border: none;
+  color: var(--navy);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+  flex-shrink: 0;
+  font-family: var(--font-body);
+}
+
+/* ── Responsive ──────────────────────────────────────────────── */
+
+@media (max-width: 900px) {
+  .spm-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .spm-plans-panel {
+    position: static;
+    max-height: 220px;
+    display: flex;
+    flex-direction: row;
+    overflow-x: auto;
+    padding: 8px;
+    gap: 8px;
+  }
+
+  .spm-plan-item {
+    border-bottom: none;
+    border: 1.5px solid var(--border);
+    border-radius: var(--r-xl, 20px);
+    min-width: 160px;
+    flex-shrink: 0;
+  }
+
+  .spm-plan-item--active {
+    border-color: var(--navy);
+    border-left-width: 1.5px;
+  }
+}
+
+@media (max-width: 640px) {
+  .spm-table-wrap { display: none; }
+  .spm-mob-cards  { display: block; }
+
+  .spm-detail-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .spm-detail-search {
+    min-width: 0;
+  }
+
+  .spm-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .spm-modal__actions {
+    flex-direction: column-reverse;
+  }
+
+  .spm-modal__actions .btn {
+    width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .spm-plans-panel {
+    max-height: 180px;
+  }
+
+  .spm-plan-item {
+    min-width: 140px;
+  }
+
+  .spm-detail-head {
+    flex-direction: column;
+  }
+}

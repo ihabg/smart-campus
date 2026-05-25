@@ -23,7 +23,8 @@ async function getStudyPlan(req, res, next) {
         u.year_of_study,
         u.email,
         sp.registration_year,
-        sp.registration_number
+        sp.registration_number,
+        sp.department_id
       FROM users u
       LEFT JOIN student_profiles sp ON sp.user_id = u.id
       WHERE u.id = $1
@@ -41,6 +42,7 @@ async function getStudyPlan(req, res, next) {
         e.status          AS enrollment_status,
         e.enrolled_at,
         s.id              AS section_id,
+        s.is_active,
         s.semester,
         s.academic_year,
         s.section_number,
@@ -81,10 +83,19 @@ async function getStudyPlan(req, res, next) {
     `, [studentId]);
 
     // ── 3. Compute status per enrollment row ──────────────────
-    // grades table is authoritative; enrollment.status is fallback
-    function computeStatus(enrollmentStatus, letterGrade) {
+    // Grade is authoritative and always preserved, even on inactive sections.
+    // Inactive sections with no grade return null → excluded from results.
+    function computeStatus(enrollmentStatus, letterGrade, isActive) {
       if (letterGrade) {
+        // Real grade exists: preserve the historical record regardless of
+        // whether the section is still active.
         return letterGrade === 'E' ? 'failed' : 'completed';
+      }
+      if (!isActive) {
+        // Section was deactivated and no grade was ever recorded.
+        // Return null so the row is filtered out before being sent to
+        // the frontend — it should not count as In Progress.
+        return null;
       }
       switch (enrollmentStatus) {
         case 'completed': return 'completed';
@@ -94,10 +105,14 @@ async function getStudyPlan(req, res, next) {
       }
     }
 
-    const enrollments = enrollRes.rows.map(row => ({
+    const allEnrollments = enrollRes.rows.map(row => ({
       ...row,
-      computed_status: computeStatus(row.enrollment_status, row.letter_grade),
+      computed_status: computeStatus(row.enrollment_status, row.letter_grade, row.is_active),
     }));
+
+    // Drop inactive no-grade rows — they must not appear in the Study Plan
+    // or contribute to any summary stat.
+    const enrollments = allEnrollments.filter(row => row.computed_status !== null);
 
     // ── 4. Deduplicated summary stats ─────────────────────────
     // Per distinct course, use the best status achieved.
@@ -144,6 +159,71 @@ async function getStudyPlan(req, res, next) {
       }
     }
 
+    // ── 5. Phase 2: look up official study plan ───────────────
+    let has_official_plan = false;
+    let plan_meta         = null;
+    let plan_courses      = [];
+
+    if (student.department_id && student.registration_year) {
+      const planRes = await query(`
+        SELECT
+          sp.id,
+          sp.plan_year,
+          sp.label,
+          d.name_en AS department_name,
+          d.name_ar AS department_name_ar
+        FROM study_plans sp
+        JOIN departments d ON d.id = sp.department_id
+        WHERE sp.department_id = $1 AND sp.plan_year = $2
+        LIMIT 1
+      `, [student.department_id, student.registration_year]);
+
+      if (planRes.rows[0]) {
+        has_official_plan = true;
+        plan_meta         = planRes.rows[0];
+
+        const planCoursesRes = await query(`
+          SELECT
+            spc.id                AS plan_course_id,
+            spc.category,
+            spc.recommended_year,
+            spc.recommended_semester,
+            spc.is_required,
+            spc.sort_order,
+            c.id                  AS course_id,
+            c.code                AS course_code,
+            c.name                AS course_name,
+            c.name_ar             AS course_name_ar,
+            c.credit_hours
+          FROM study_plan_courses spc
+          JOIN courses c ON c.id = spc.course_id
+          WHERE spc.plan_id = $1
+          ORDER BY spc.sort_order ASC, c.code ASC
+        `, [plan_meta.id]);
+
+        // Build course_id → best enrollment history entry map
+        const courseHistory = new Map();
+        for (const e of enrollments) {
+          const existing = courseHistory.get(e.course_id);
+          const curP     = priority[e.computed_status] || 0;
+          const prevP    = existing ? (priority[existing.computed_status] || 0) : -1;
+          if (!existing || curP > prevP) {
+            courseHistory.set(e.course_id, e);
+          }
+        }
+
+        plan_courses = planCoursesRes.rows.map(pc => {
+          const hist = courseHistory.get(pc.course_id);
+          return {
+            ...pc,
+            computed_status: hist?.computed_status || 'not_taken',
+            letter_grade:    hist?.letter_grade    || null,
+            total_grade:     hist?.total_grade != null ? hist.total_grade : null,
+          };
+        });
+      }
+    }
+
     return res.json({
       success: true,
       data: {
@@ -167,10 +247,10 @@ async function getStudyPlan(req, res, next) {
           dropped_courses:          droppedCourses,
           total_distinct_courses:   courseMap.size,
         },
-        // All individual enrollment rows — frontend groups by semester
         enrollments,
-        // Phase 2 sets this true once study_plan_courses tables exist + have data
-        has_official_plan: false,
+        has_official_plan,
+        plan_meta,
+        plan_courses,
       },
     });
   } catch (err) {
