@@ -35,6 +35,7 @@ function defaultForm(sectionId = '') {
     duration_minutes: 30,
     points: 100,
     allow_late: false,
+    allow_review: false,
     is_published: true
   };
 }
@@ -44,6 +45,8 @@ function defaultQuestion(position = 1) {
     question_text: '',
     question_type: 'single_choice',
     points: 1,
+    image_file: null,
+    image_preview_url: '',
     options: [
       { option_text: '', is_correct: true },
       { option_text: '', is_correct: false },
@@ -89,6 +92,8 @@ export default function ProfessorAssessmentsPage() {
   const [questions, setQuestions] = useState([defaultQuestion(1)]);
   const [assignmentFile, setAssignmentFile] = useState(null);
   const [results, setResults] = useState(null);
+  const [quizReview, setQuizReview] = useState(null);
+  const [reviewLoading, setReviewLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -155,10 +160,54 @@ export default function ProfessorAssessmentsPage() {
     setForm((current) => ({ ...current, [name]: value }));
   }
 
+  function normalizeQuestionOptions(questionType, options) {
+    const list = Array.isArray(options) && options.length ? options : [
+      { option_text: '', is_correct: true },
+      { option_text: '', is_correct: false }
+    ];
+
+    if (questionType !== 'single_choice') return list;
+
+    let firstCorrectFound = false;
+    const normalized = list.map((option, index) => {
+      const shouldStayCorrect = option.is_correct && !firstCorrectFound;
+      if (shouldStayCorrect) firstCorrectFound = true;
+      return { ...option, is_correct: shouldStayCorrect };
+    });
+
+    if (!firstCorrectFound && normalized.length) {
+      normalized[0] = { ...normalized[0], is_correct: true };
+    }
+
+    return normalized;
+  }
+
   function updateQuestion(index, key, value) {
-    setQuestions((current) => current.map((question, i) => (
-      i === index ? { ...question, [key]: value } : question
-    )));
+    setQuestions((current) => current.map((question, i) => {
+      if (i !== index) return question;
+
+      if (key === 'question_type') {
+        return {
+          ...question,
+          question_type: value,
+          options: normalizeQuestionOptions(value, question.options)
+        };
+      }
+
+      return { ...question, [key]: value };
+    }));
+  }
+
+  function updateQuestionImage(index, file) {
+    setQuestions((current) => current.map((question, i) => {
+      if (i !== index) return question;
+      if (question.image_preview_url) URL.revokeObjectURL(question.image_preview_url);
+      return {
+        ...question,
+        image_file: file || null,
+        image_preview_url: file ? URL.createObjectURL(file) : ''
+      };
+    }));
   }
 
   function updateOption(questionIndex, optionIndex, key, value) {
@@ -173,7 +222,36 @@ export default function ProfessorAssessmentsPage() {
         }
         return { ...option, [key]: value };
       });
-      return { ...question, options: nextOptions };
+      return { ...question, options: normalizeQuestionOptions(question.question_type, nextOptions) };
+    }));
+  }
+
+  function addOption(questionIndex) {
+    setQuestions((current) => current.map((question, i) => {
+      if (i !== questionIndex) return question;
+      return {
+        ...question,
+        options: [
+          ...question.options,
+          { option_text: '', is_correct: false }
+        ]
+      };
+    }));
+  }
+
+  function removeOption(questionIndex, optionIndex) {
+    setQuestions((current) => current.map((question, i) => {
+      if (i !== questionIndex) return question;
+
+      if ((question.options || []).length <= 2) {
+        return question;
+      }
+
+      const nextOptions = question.options.filter((_, j) => j !== optionIndex);
+      return {
+        ...question,
+        options: normalizeQuestionOptions(question.question_type, nextOptions)
+      };
     }));
   }
 
@@ -192,22 +270,64 @@ export default function ProfessorAssessmentsPage() {
     setMessage('');
 
     try {
+      const questionImageFiles = [];
+      const preparedQuestions = form.assessment_type === 'quiz'
+        ? questions.map((question, index) => {
+          const { image_file, image_preview_url, ...cleanQuestion } = question;
+          const questionType = cleanQuestion.question_type || 'single_choice';
+          const questionText = String(cleanQuestion.question_text || '').trim();
+
+          if (!questionText) {
+            throw new Error(`Question ${index + 1} is empty.`);
+          }
+
+          if (questionType !== 'text') {
+            const cleanOptions = (cleanQuestion.options || [])
+              .map((option) => ({
+                option_text: String(option.option_text || '').trim(),
+                is_correct: !!option.is_correct
+              }))
+              .filter((option) => option.option_text);
+
+            if (cleanOptions.length < 2) {
+              throw new Error(`Question ${index + 1} needs at least 2 options.`);
+            }
+
+            if (!cleanOptions.some((option) => option.is_correct)) {
+              throw new Error(`Question ${index + 1} needs at least one correct option.`);
+            }
+
+            cleanQuestion.options = normalizeQuestionOptions(questionType, cleanOptions);
+          }
+
+          if (image_file) {
+            cleanQuestion.image_file_index = questionImageFiles.length;
+            questionImageFiles.push(image_file);
+          }
+          return cleanQuestion;
+        })
+        : [];
+
       const payload = {
         ...form,
         points: Number(form.points || 100),
         week_number: form.week_number ? Number(form.week_number) : null,
         duration_minutes: form.assessment_type === 'quiz' ? Number(form.duration_minutes || 30) : null,
-        questions: form.assessment_type === 'quiz' ? questions : undefined
+        questions: form.assessment_type === 'quiz' ? preparedQuestions : undefined
       };
 
-      await assessmentAPI.professorCreate(payload, form.assessment_type === 'assignment' ? assignmentFile : null);
+      await assessmentAPI.professorCreate(
+        payload,
+        form.assessment_type === 'assignment' ? assignmentFile : null,
+        form.assessment_type === 'quiz' ? questionImageFiles : []
+      );
       setMessage(`${form.assessment_type === 'quiz' ? 'Quiz' : 'Assignment'} created successfully.`);
       setForm(defaultForm(selectedSection));
       setQuestions([defaultQuestion(1)]);
       setAssignmentFile(null);
       await loadAssessments(selectedSection);
     } catch (err) {
-      setError(err?.response?.data?.message || 'Could not save assessment.');
+      setError(err?.response?.data?.message || err?.message || 'Could not save assessment.');
     } finally {
       setSaving(false);
     }
@@ -220,7 +340,10 @@ export default function ProfessorAssessmentsPage() {
     try {
       await assessmentAPI.professorDelete(item.id);
       setMessage('Assessment deleted.');
-      if (results?.assessment?.id === item.id) setResults(null);
+      if (results?.assessment?.id === item.id) {
+        setResults(null);
+        setQuizReview(null);
+      }
       await loadAssessments(selectedSection);
     } catch (err) {
       setError(err?.response?.data?.message || 'Could not delete assessment.');
@@ -232,6 +355,7 @@ export default function ProfessorAssessmentsPage() {
     try {
       const response = await assessmentAPI.professorResults(item.id);
       setResults(response.data?.data || null);
+      setQuizReview(null);
     } catch (err) {
       setError(err?.response?.data?.message || 'Could not load results.');
     }
@@ -245,6 +369,38 @@ export default function ProfessorAssessmentsPage() {
       setMessage('Grade saved.');
     } catch (err) {
       setError(err?.response?.data?.message || 'Could not save grade.');
+    }
+  }
+
+  async function toggleQuizReview(item, nextValue = !item.allow_review) {
+    if (item.assessment_type !== 'quiz') return;
+    setError('');
+    setMessage('');
+    try {
+      const response = await assessmentAPI.setQuizReviewAccess(item.id, nextValue);
+      const updated = response.data?.data;
+      setMessage(nextValue ? 'Students can now review this quiz.' : 'Student quiz review is now disabled.');
+      setAssessments((current) => current.map((entry) => (entry.id === item.id ? { ...entry, allow_review: updated?.allow_review ?? nextValue } : entry)));
+      setResults((current) => (current?.assessment?.id === item.id ? {
+        ...current,
+        assessment: { ...current.assessment, allow_review: updated?.allow_review ?? nextValue }
+      } : current));
+    } catch (err) {
+      setError(err?.response?.data?.message || 'Could not update quiz review access.');
+    }
+  }
+
+  async function openQuizAttemptReview(row) {
+    if (!results?.assessment?.id || !row.attempt_id) return;
+    setReviewLoading(true);
+    setError('');
+    try {
+      const response = await assessmentAPI.professorQuizAttemptReview(results.assessment.id, row.attempt_id);
+      setQuizReview(response.data?.data || null);
+    } catch (err) {
+      setError(err?.response?.data?.message || 'Could not load student quiz answers.');
+    } finally {
+      setReviewLoading(false);
     }
   }
 
@@ -376,6 +532,9 @@ export default function ProfessorAssessmentsPage() {
             {form.assessment_type === 'assignment' && (
               <label><input type="checkbox" checked={form.allow_late} onChange={(e) => changeForm('allow_late', e.target.checked)} /> Allow late submissions</label>
             )}
+            {form.assessment_type === 'quiz' && (
+              <label><input type="checkbox" checked={form.allow_review} onChange={(e) => changeForm('allow_review', e.target.checked)} /> Allow students to review after submit</label>
+            )}
           </div>
 
           {form.assessment_type === 'quiz' && (
@@ -410,8 +569,39 @@ export default function ProfessorAssessmentsPage() {
                     <textarea value={question.question_text} onChange={(e) => updateQuestion(qIndex, 'question_text', e.target.value)} required rows="2" />
                   </label>
 
+                  <div className="question-image-field">
+                    <div className="question-image-field__head">
+                      <span>Optional question image</span>
+                      {question.image_file && (
+                        <button type="button" className="question-image-remove" onClick={() => updateQuestionImage(qIndex, null)}>
+                          Remove image
+                        </button>
+                      )}
+                    </div>
+                    <input
+                      id={`quiz-question-image-${qIndex}`}
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp,image/gif"
+                      onChange={(e) => updateQuestionImage(qIndex, e.target.files?.[0] || null)}
+                    />
+                    <label htmlFor={`quiz-question-image-${qIndex}`} className="question-image-picker">
+                      {question.image_file ? question.image_file.name : 'Choose image for this question'}
+                    </label>
+                    <small>Use this for diagrams, circuits, maps, code screenshots, or any visual question.</small>
+                    {question.image_preview_url && (
+                      <img className="question-image-preview" src={question.image_preview_url} alt={`Question ${qIndex + 1} preview`} />
+                    )}
+                  </div>
+
                   {question.question_type !== 'text' && (
                     <div className="options-box">
+                      <div className="options-box__head">
+                        <span>Answer options</span>
+                        <button type="button" className="option-add-btn" onClick={() => addOption(qIndex)}>
+                          + Add option
+                        </button>
+                      </div>
+
                       {question.options.map((option, optionIndex) => (
                         <div key={optionIndex} className="option-line">
                           <input
@@ -428,6 +618,15 @@ export default function ProfessorAssessmentsPage() {
                             />
                             Correct
                           </label>
+                          <button
+                            type="button"
+                            className="option-remove-btn"
+                            disabled={question.options.length <= 2}
+                            title={question.options.length <= 2 ? 'At least 2 options are required' : 'Remove option'}
+                            onClick={() => removeOption(qIndex, optionIndex)}
+                          >
+                            Delete
+                          </button>
                         </div>
                       ))}
                     </div>
@@ -461,6 +660,7 @@ export default function ProfessorAssessmentsPage() {
                   <span>{item.assessment_type}</span>
                   {item.week_number && <span>Week {item.week_number}</span>}
                   <span>{statusOf(item)}</span>
+                  {item.assessment_type === 'quiz' && item.allow_review && <span>Review allowed</span>}
                 </div>
                 <h3>{item.title}</h3>
                 <p>{item.description || 'No instructions.'}</p>
@@ -478,6 +678,14 @@ export default function ProfessorAssessmentsPage() {
               </div>
               <div className="assess-item__actions">
                 <button className="assess-btn assess-btn--secondary" onClick={() => openResults(item)}>Results</button>
+                {item.assessment_type === 'quiz' && (
+                  <button
+                    className={`assess-btn ${item.allow_review ? 'assess-btn--warning' : 'assess-btn--success'}`}
+                    onClick={() => toggleQuizReview(item)}
+                  >
+                    {item.allow_review ? 'Disable review' : 'Allow review'}
+                  </button>
+                )}
                 <button className="assess-btn assess-btn--danger" onClick={() => deleteAssessment(item)}>Delete</button>
               </div>
             </article>
@@ -488,8 +696,23 @@ export default function ProfessorAssessmentsPage() {
       {results && (
         <section className="assess-card results-card">
           <div className="assess-card__head">
-            <h2>Results — {results.assessment.title}</h2>
-            <button className="assess-btn assess-btn--secondary" onClick={() => setResults(null)}>Close</button>
+            <div>
+              <h2>Results — {results.assessment.title}</h2>
+              {results.assessment.assessment_type === 'quiz' && (
+                <small>{results.assessment.allow_review ? 'Student review is enabled.' : 'Student review is disabled.'}</small>
+              )}
+            </div>
+            <div className="results-actions">
+              {results.assessment.assessment_type === 'quiz' && (
+                <button
+                  className={`assess-btn ${results.assessment.allow_review ? 'assess-btn--warning' : 'assess-btn--success'}`}
+                  onClick={() => toggleQuizReview(results.assessment)}
+                >
+                  {results.assessment.allow_review ? 'Disable student review' : 'Allow student review'}
+                </button>
+              )}
+              <button className="assess-btn assess-btn--secondary" onClick={() => { setResults(null); setQuizReview(null); }}>Close</button>
+            </div>
           </div>
 
           <div className="results-table-wrap">
@@ -506,18 +729,29 @@ export default function ProfessorAssessmentsPage() {
               </thead>
               <tbody>
                 {results.rows.map((row) => (
-                  <ResultRow key={row.student_id} row={row} assessment={results.assessment} onGrade={gradeSubmission} />
+                  <ResultRow
+                    key={row.student_id}
+                    row={row}
+                    assessment={results.assessment}
+                    onGrade={gradeSubmission}
+                    onViewQuizAttempt={openQuizAttemptReview}
+                  />
                 ))}
               </tbody>
             </table>
           </div>
+
+          {reviewLoading && <div className="assess-empty">Loading quiz answers...</div>}
+          {quizReview && !reviewLoading && (
+            <QuizReviewPanel review={quizReview} onClose={() => setQuizReview(null)} />
+          )}
         </section>
       )}
     </div>
   );
 }
 
-function ResultRow({ row, assessment, onGrade }) {
+function ResultRow({ row, assessment, onGrade, onViewQuizAttempt }) {
   const [grade, setGrade] = useState(row.grade || '');
   const [feedback, setFeedback] = useState(row.feedback || '');
 
@@ -538,11 +772,94 @@ function ResultRow({ row, assessment, onGrade }) {
         ) : '—'}
       </td>
       <td>
-        {row.file_url && <a href={publicFileUrl(row.file_url)} target="_blank" rel="noreferrer">Open file</a>}
-        {assessment.assessment_type === 'assignment' && row.submission_id && (
-          <textarea value={feedback} onChange={(e) => setFeedback(e.target.value)} placeholder="Feedback" rows="2" />
+        {assessment.assessment_type === 'quiz' ? (
+          row.attempt_id ? (
+            <button className="assess-btn assess-btn--secondary" type="button" onClick={() => onViewQuizAttempt(row)}>
+              View answers
+            </button>
+          ) : '—'
+        ) : (
+          <>
+            {row.file_url && <a href={publicFileUrl(row.file_url)} target="_blank" rel="noreferrer">Open file</a>}
+            {row.submission_id && (
+              <textarea value={feedback} onChange={(e) => setFeedback(e.target.value)} placeholder="Feedback" rows="2" />
+            )}
+          </>
         )}
       </td>
     </tr>
+  );
+}
+
+
+function QuizReviewPanel({ review, onClose }) {
+  const { assessment, attempt, questions = [] } = review || {};
+  const maxScore = questions.reduce((sum, question) => sum + Number(question.points || 0), 0);
+
+  return (
+    <div className="quiz-review-card">
+      <div className="quiz-review-head">
+        <div>
+          <h3>Student answers — {attempt?.student_name}</h3>
+          <small>{attempt?.university_id || '—'} · {attempt?.email || ''}</small>
+        </div>
+        <div className="quiz-review-score">
+          <strong>{attempt?.score ?? 0} / {maxScore || assessment?.points || 0}</strong>
+          <span>Submitted {dateTimeLabel(attempt?.submitted_at)}</span>
+        </div>
+        <button className="assess-btn assess-btn--secondary" type="button" onClick={onClose}>Hide answers</button>
+      </div>
+
+      {questions.map((question, index) => (
+        <ReviewQuestion key={question.id} question={question} index={index} />
+      ))}
+    </div>
+  );
+}
+
+function ReviewQuestion({ question, index }) {
+  const answer = question.answer || {};
+  const selectedIds = Array.isArray(answer.selected_option_ids) ? answer.selected_option_ids : [];
+
+  return (
+    <div className="review-question">
+      <div className="review-question__head">
+        <strong>Question {index + 1}</strong>
+        <span>{answer.points_awarded ?? 0} / {question.points} pts</span>
+      </div>
+      <p>{question.question_text}</p>
+      {question.question_image_url && (
+        <img className="review-question-image" src={publicFileUrl(question.question_image_url)} alt={`Question ${index + 1}`} />
+      )}
+
+      {question.question_type === 'text' ? (
+        <div className="review-text-answer">
+          <strong>Student answer</strong>
+          <p>{answer.answer_text || 'No answer submitted.'}</p>
+        </div>
+      ) : (
+        <div className="review-options">
+          {(question.options || []).map((option) => {
+            const selected = selectedIds.includes(option.id);
+            const className = [
+              'review-option',
+              option.is_correct ? 'review-option--correct' : '',
+              selected ? 'review-option--selected' : '',
+              selected && !option.is_correct ? 'review-option--wrong' : ''
+            ].filter(Boolean).join(' ');
+
+            return (
+              <div key={option.id} className={className}>
+                <span>{option.option_text}</span>
+                <small>
+                  {option.is_correct ? 'Correct answer' : ''}
+                  {selected ? (option.is_correct ? ' · Student selected' : 'Student selected') : ''}
+                </small>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }

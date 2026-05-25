@@ -44,8 +44,17 @@ function studentFileUrl(req) {
   return req.file ? `/uploads/submissions/${req.file.filename}` : null;
 }
 
+function getUploadedFile(req, fieldName) {
+  if (req.file && (!fieldName || req.file.fieldname === fieldName)) return req.file;
+  if (req.files && Array.isArray(req.files[fieldName]) && req.files[fieldName][0]) {
+    return req.files[fieldName][0];
+  }
+  return null;
+}
+
 function assessmentAttachment(req) {
-  if (!req.file) {
+  const file = getUploadedFile(req, 'attachment');
+  if (!file) {
     return {
       attachment_url: null,
       attachment_name: null,
@@ -55,10 +64,33 @@ function assessmentAttachment(req) {
   }
 
   return {
-    attachment_url: `/uploads/assessments/${req.file.filename}`,
-    attachment_name: req.file.originalname,
-    attachment_type: req.file.mimetype,
-    attachment_size: req.file.size
+    attachment_url: `/uploads/assessments/${file.filename}`,
+    attachment_name: file.originalname,
+    attachment_type: file.mimetype,
+    attachment_size: file.size
+  };
+}
+
+function quizQuestionImageFiles(req) {
+  if (!req.files || !Array.isArray(req.files.question_images)) return [];
+  return req.files.question_images;
+}
+
+function questionImagePayload(file) {
+  if (!file) {
+    return {
+      question_image_url: null,
+      question_image_name: null,
+      question_image_type: null,
+      question_image_size: null
+    };
+  }
+
+  return {
+    question_image_url: `/uploads/assessments/questions/${file.filename}`,
+    question_image_name: file.originalname,
+    question_image_type: file.mimetype,
+    question_image_size: file.size
   };
 }
 
@@ -156,7 +188,7 @@ async function notifyStudents(sectionId, senderId, title, body, data = {}) {
   }
 }
 
-async function insertQuestions(client, assessmentId, questions) {
+async function insertQuestions(client, assessmentId, questions, questionImages = []) {
   for (let i = 0; i < questions.length; i += 1) {
     const q = questions[i] || {};
     const questionText = String(q.question_text || q.text || '').trim();
@@ -167,13 +199,30 @@ async function insertQuestions(client, assessmentId, questions) {
       : 'single_choice';
     const points = asNumber(q.points, 1) || 1;
 
+    const imageIndex = asNumber(q.image_file_index, null);
+    const imageFile = imageIndex !== null ? questionImages[imageIndex] : null;
+    const image = questionImagePayload(imageFile);
+
     const qRes = await client.query(
       `
-      INSERT INTO quiz_questions (assessment_id, question_text, question_type, points, position)
-      VALUES ($1, $2, $3, $4, $5)
+      INSERT INTO quiz_questions (
+        assessment_id, question_text, question_type, points, position,
+        question_image_url, question_image_name, question_image_type, question_image_size
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
       RETURNING id
       `,
-      [assessmentId, questionText, questionType, points, i + 1]
+      [
+        assessmentId,
+        questionText,
+        questionType,
+        points,
+        i + 1,
+        image.question_image_url,
+        image.question_image_name,
+        image.question_image_type,
+        image.question_image_size
+      ]
     );
 
     if (questionType !== 'text') {
@@ -314,9 +363,9 @@ async function createProfessorAssessment(req, res, next) {
         INSERT INTO course_assessments (
           instructor_id, section_id, course_id, title, description, assessment_type,
           week_number, opens_at, closes_at, duration_minutes, points, allow_late, is_published,
-          attachment_url, attachment_name, attachment_type, attachment_size
+          attachment_url, attachment_name, attachment_type, attachment_size, allow_review
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8::timestamptz, $9::timestamptz, $10, $11, $12, $13, $14, $15, $16, $17)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8::timestamptz, $9::timestamptz, $10, $11, $12, $13, $14, $15, $16, $17, $18)
         RETURNING *
         `,
         [
@@ -336,12 +385,13 @@ async function createProfessorAssessment(req, res, next) {
           attachment.attachment_url,
           attachment.attachment_name,
           attachment.attachment_type,
-          attachment.attachment_size
+          attachment.attachment_size,
+          assessmentType === 'quiz' ? asBool(req.body.allow_review, false) : false
         ]
       );
 
       if (assessmentType === 'quiz') {
-        await insertQuestions(client, assessmentRes.rows[0].id, questions);
+        await insertQuestions(client, assessmentRes.rows[0].id, questions, quizQuestionImageFiles(req));
       }
 
       return assessmentRes.rows[0];
@@ -394,11 +444,12 @@ async function updateProfessorAssessment(req, res, next) {
             points = $7,
             allow_late = $8,
             is_published = $9,
-            attachment_url = COALESCE($10, attachment_url),
-            attachment_name = COALESCE($11, attachment_name),
-            attachment_type = COALESCE($12, attachment_type),
-            attachment_size = COALESCE($13, attachment_size)
-        WHERE id = $14 AND instructor_id = $15
+            allow_review = $10,
+            attachment_url = COALESCE($11, attachment_url),
+            attachment_name = COALESCE($12, attachment_name),
+            attachment_type = COALESCE($13, attachment_type),
+            attachment_size = COALESCE($14, attachment_size)
+        WHERE id = $15 AND instructor_id = $16
         RETURNING *
         `,
         [
@@ -411,6 +462,7 @@ async function updateProfessorAssessment(req, res, next) {
           asNumber(req.body.points, existing.points) || existing.points,
           asBool(req.body.allow_late, existing.allow_late),
           asBool(req.body.is_published, existing.is_published),
+          existing.assessment_type === 'quiz' ? asBool(req.body.allow_review, existing.allow_review) : false,
           attachment.attachment_url,
           attachment.attachment_name,
           attachment.attachment_type,
@@ -422,7 +474,7 @@ async function updateProfessorAssessment(req, res, next) {
 
       if (existing.assessment_type === 'quiz' && req.body.questions !== undefined) {
         await client.query(`DELETE FROM quiz_questions WHERE assessment_id = $1`, [existing.id]);
-        await insertQuestions(client, existing.id, parseQuestions(req.body.questions));
+        await insertQuestions(client, existing.id, parseQuestions(req.body.questions), quizQuestionImageFiles(req));
       }
 
       return updateRes.rows[0];
@@ -558,6 +610,129 @@ async function gradeAssignmentSubmission(req, res, next) {
   }
 }
 
+
+async function setQuizReviewAccess(req, res, next) {
+  try {
+    const instructorId = await requireInstructor(req, res);
+    if (!instructorId) return;
+
+    const assessment = await assertAssessmentOwner(instructorId, req.params.assessmentId);
+    if (!assessment || assessment.assessment_type !== 'quiz') {
+      return res.status(404).json({ success: false, message: 'Quiz not found.' });
+    }
+
+    const allowReview = asBool(req.body.allow_review, false);
+    const result = await query(
+      `
+      UPDATE course_assessments
+      SET allow_review = $1, updated_at = NOW()
+      WHERE id = $2 AND instructor_id = $3 AND assessment_type = 'quiz'
+      RETURNING *
+      `,
+      [allowReview, assessment.id, instructorId]
+    );
+
+    res.json({
+      success: true,
+      message: allowReview ? 'Student quiz review enabled.' : 'Student quiz review disabled.',
+      data: result.rows[0]
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function buildQuizReviewData(assessment, attemptId, studentId = null) {
+  const params = [assessment.id];
+  let attemptWhere = 'att.assessment_id = $1';
+
+  if (attemptId) {
+    params.push(attemptId);
+    attemptWhere += ` AND att.id = $${params.length}`;
+  }
+
+  if (studentId) {
+    params.push(studentId);
+    attemptWhere += ` AND att.student_id = $${params.length}`;
+  }
+
+  const attemptRes = await query(
+    `
+    SELECT att.*, u.student_id AS university_id,
+           u.first_name || ' ' || u.last_name AS student_name,
+           u.email
+    FROM quiz_attempts att
+    JOIN users u ON u.id = att.student_id
+    WHERE ${attemptWhere}
+    LIMIT 1
+    `,
+    params
+  );
+
+  const attempt = attemptRes.rows[0];
+  if (!attempt) return null;
+
+  const questionsRes = await query(
+    `
+    SELECT q.id, q.assessment_id, q.question_text, q.question_type, q.points, q.position,
+           q.question_image_url, q.question_image_name, q.question_image_type, q.question_image_size,
+           COALESCE(
+             json_agg(
+               json_build_object(
+                 'id', o.id,
+                 'option_text', o.option_text,
+                 'is_correct', o.is_correct,
+                 'position', o.position
+               ) ORDER BY o.position
+             ) FILTER (WHERE o.id IS NOT NULL),
+             '[]'
+           ) AS options
+    FROM quiz_questions q
+    LEFT JOIN quiz_options o ON o.question_id = q.id
+    WHERE q.assessment_id = $1
+    GROUP BY q.id
+    ORDER BY q.position
+    `,
+    [assessment.id]
+  );
+
+  const answersRes = await query(
+    `
+    SELECT *
+    FROM quiz_answers
+    WHERE attempt_id = $1
+    `,
+    [attempt.id]
+  );
+
+  const answersByQuestion = new Map(answersRes.rows.map((answer) => [answer.question_id, answer]));
+  const questions = questionsRes.rows.map((question) => ({
+    ...question,
+    answer: answersByQuestion.get(question.id) || null
+  }));
+
+  return { assessment, attempt, questions };
+}
+
+async function getProfessorQuizAttemptReview(req, res, next) {
+  try {
+    const instructorId = await requireInstructor(req, res);
+    if (!instructorId) return;
+
+    const assessment = await assertAssessmentOwner(instructorId, req.params.assessmentId);
+    if (!assessment || assessment.assessment_type !== 'quiz') {
+      return res.status(404).json({ success: false, message: 'Quiz not found.' });
+    }
+
+    const data = await buildQuizReviewData(assessment, req.params.attemptId);
+    if (!data) return res.status(404).json({ success: false, message: 'Quiz attempt not found.' });
+
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+}
+
 async function listStudentAssessments(req, res, next) {
   try {
     const params = [req.user.id];
@@ -632,6 +807,7 @@ async function getStudentAssessment(req, res, next) {
       const questions = await query(
         `
         SELECT q.id, q.assessment_id, q.question_text, q.question_type, q.points, q.position,
+               q.question_image_url, q.question_image_name, q.question_image_type, q.question_image_size,
                COALESCE(json_agg(json_build_object('id', o.id, 'option_text', o.option_text, 'position', o.position) ORDER BY o.position)
                         FILTER (WHERE o.id IS NOT NULL), '[]') AS options
         FROM quiz_questions q
@@ -651,6 +827,29 @@ async function getStudentAssessment(req, res, next) {
     }
 
     res.json({ success: true, data: { ...assessment, ...extra } });
+  } catch (error) {
+    next(error);
+  }
+}
+
+
+async function getStudentQuizReview(req, res, next) {
+  try {
+    const assessment = await assertEnrolledAssessment(req.user.id, req.params.assessmentId);
+    if (!assessment || assessment.assessment_type !== 'quiz') {
+      return res.status(404).json({ success: false, message: 'Quiz not found.' });
+    }
+
+    if (!assessment.allow_review) {
+      return res.status(403).json({ success: false, message: 'The professor has not enabled quiz review for students yet.' });
+    }
+
+    const data = await buildQuizReviewData(assessment, null, req.user.id);
+    if (!data || data.attempt.status !== 'submitted') {
+      return res.status(400).json({ success: false, message: 'Submit the quiz before reviewing it.' });
+    }
+
+    res.json({ success: true, data });
   } catch (error) {
     next(error);
   }
@@ -830,8 +1029,11 @@ module.exports = {
   getProfessorAssessmentDetail,
   listProfessorResults,
   gradeAssignmentSubmission,
+  setQuizReviewAccess,
+  getProfessorQuizAttemptReview,
   listStudentAssessments,
   getStudentAssessment,
+  getStudentQuizReview,
   submitAssignment,
   startQuiz,
   submitQuiz

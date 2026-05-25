@@ -356,7 +356,7 @@ export const studyPlanAPI = {
 
 export default api;
 // ─── assessmentAPI ──────────────────────────────────────────
-function assessmentFormData(data = {}, file) {
+function assessmentFormData(data = {}, file, questionImageFiles = []) {
   const form = new FormData();
   Object.entries(data || {}).forEach(([key, value]) => {
     if (value === undefined || value === null) return;
@@ -367,6 +367,9 @@ function assessmentFormData(data = {}, file) {
     }
   });
   if (file) form.append('attachment', file);
+  questionImageFiles.forEach((imageFile) => {
+    if (imageFile) form.append('question_images', imageFile);
+  });
   return form;
 }
 
@@ -375,19 +378,25 @@ export const assessmentAPI = {
 
   professorList: (params = {}) => api.get('/assessments/professor', { params }),
 
-  professorCreate: (data, file) => api.post('/assessments/professor', assessmentFormData(data, file), {
+  professorCreate: (data, file, questionImageFiles = []) => api.post('/assessments/professor', assessmentFormData(data, file, questionImageFiles), {
     headers: { 'Content-Type': 'multipart/form-data' }
   }),
 
   professorDetail: (assessmentId) => api.get(`/assessments/professor/${assessmentId}`),
 
-  professorUpdate: (assessmentId, data, file) => api.patch(`/assessments/professor/${assessmentId}`, assessmentFormData(data, file), {
+  professorUpdate: (assessmentId, data, file, questionImageFiles = []) => api.patch(`/assessments/professor/${assessmentId}`, assessmentFormData(data, file, questionImageFiles), {
     headers: { 'Content-Type': 'multipart/form-data' }
   }),
 
   professorDelete: (assessmentId) => api.delete(`/assessments/professor/${assessmentId}`),
 
   professorResults: (assessmentId) => api.get(`/assessments/professor/${assessmentId}/results`),
+
+  setQuizReviewAccess: (assessmentId, allowReview) =>
+    api.patch(`/assessments/professor/${assessmentId}/review`, { allow_review: allowReview }),
+
+  professorQuizAttemptReview: (assessmentId, attemptId) =>
+    api.get(`/assessments/professor/${assessmentId}/attempts/${attemptId}/review`),
 
   gradeSubmission: (assessmentId, submissionId, data) =>
     api.patch(`/assessments/professor/${assessmentId}/submissions/${submissionId}/grade`, data),
@@ -411,5 +420,8 @@ export const assessmentAPI = {
   startQuiz: (assessmentId) => api.post(`/assessments/student/${assessmentId}/quiz-start`),
 
   submitQuiz: (assessmentId, answers) =>
-    api.post(`/assessments/student/${assessmentId}/quiz-submit`, { answers })
+    api.post(`/assessments/student/${assessmentId}/quiz-submit`, { answers }),
+
+  studentQuizReview: (assessmentId) =>
+    api.get(`/assessments/student/${assessmentId}/quiz-review`)
 };

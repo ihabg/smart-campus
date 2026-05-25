@@ -51,6 +51,8 @@ export default function StudentAssessmentsPage() {
   const [submissionText, setSubmissionText] = useState('');
   const [submissionFile, setSubmissionFile] = useState(null);
   const [answers, setAnswers] = useState({});
+  const [quizReview, setQuizReview] = useState(null);
+  const [reviewLoading, setReviewLoading] = useState(false);
   const [timeLeft, setTimeLeft] = useState(0);
   const [loading, setLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -105,6 +107,7 @@ export default function StudentAssessmentsPage() {
     setSubmissionText('');
     setSubmissionFile(null);
     setAnswers({});
+    setQuizReview(null);
 
     try {
       const response = await assessmentAPI.studentDetail(item.id);
@@ -199,6 +202,21 @@ export default function StudentAssessmentsPage() {
       setError(err?.response?.data?.message || 'Could not submit quiz.');
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function openQuizReview() {
+    if (!selected) return;
+    setReviewLoading(true);
+    setError('');
+    setMessage('');
+    try {
+      const response = await assessmentAPI.studentQuizReview(selected.id);
+      setQuizReview(response.data?.data || null);
+    } catch (err) {
+      setError(err?.response?.data?.message || 'Could not open quiz review.');
+    } finally {
+      setReviewLoading(false);
     }
   }
 
@@ -304,6 +322,10 @@ export default function StudentAssessmentsPage() {
                 submitQuiz={submitQuiz}
                 saving={saving}
                 timeLeft={timeLeft}
+                openQuizReview={openQuizReview}
+                quizReview={quizReview}
+                reviewLoading={reviewLoading}
+                closeQuizReview={() => setQuizReview(null)}
               />
             )}
           </section>
@@ -457,7 +479,7 @@ function AssignmentPanel({ selected, submissionText, setSubmissionText, setSubmi
   );
 }
 
-function QuizPanel({ selected, answers, setChoice, setTextAnswer, startQuiz, submitQuiz, saving, timeLeft }) {
+function QuizPanel({ selected, answers, setChoice, setTextAnswer, startQuiz, submitQuiz, saving, timeLeft, openQuizReview, quizReview, reviewLoading, closeQuizReview }) {
   const status = statusOf(selected);
   const attempt = selected.attempt;
   const inProgress = attempt?.status === 'in_progress';
@@ -486,7 +508,18 @@ function QuizPanel({ selected, answers, setChoice, setTextAnswer, startQuiz, sub
           <strong>Quiz submitted</strong>
           <span>Submitted: {dateTimeLabel(attempt.submitted_at)}</span>
           <span>Score: {attempt.score ?? 'Pending'} </span>
+          {selected.allow_review ? (
+            <button className="student-assess-btn student-assess-btn--primary" type="button" disabled={reviewLoading} onClick={openQuizReview}>
+              {reviewLoading ? 'Loading review...' : 'Review quiz'}
+            </button>
+          ) : (
+            <small>Quiz review is not enabled by the professor yet.</small>
+          )}
         </div>
+      )}
+
+      {quizReview && (
+        <StudentQuizReview review={quizReview} onClose={closeQuizReview} />
       )}
 
       {!attempt && status === 'Open now' && (
@@ -512,6 +545,13 @@ function QuizPanel({ selected, answers, setChoice, setTextAnswer, startQuiz, sub
                 <span>{question.points} pts</span>
               </div>
               <p>{question.question_text}</p>
+              {question.question_image_url && (
+                <img
+                  className="student-question-image"
+                  src={publicFileUrl(question.question_image_url)}
+                  alt={`Question ${index + 1}`}
+                />
+              )}
 
               {question.question_type === 'text' ? (
                 <textarea
@@ -546,6 +586,79 @@ function QuizPanel({ selected, answers, setChoice, setTextAnswer, startQuiz, sub
             {saving ? 'Submitting...' : 'Submit quiz'}
           </button>
           {timeLeft <= 0 && <small className="danger-text">Time is over. Refresh the quiz to see the latest status.</small>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+function StudentQuizReview({ review, onClose }) {
+  const { assessment, attempt, questions = [] } = review || {};
+  const maxScore = questions.reduce((sum, question) => sum + Number(question.points || 0), 0);
+
+  return (
+    <div className="student-review-card">
+      <div className="student-review-head">
+        <div>
+          <h3>Quiz review</h3>
+          <small>{assessment?.title}</small>
+        </div>
+        <div className="student-review-score">
+          <strong>{attempt?.score ?? 0} / {maxScore || assessment?.points || 0}</strong>
+          <span>Submitted {dateTimeLabel(attempt?.submitted_at)}</span>
+        </div>
+        <button className="student-assess-btn student-assess-btn--light" type="button" onClick={onClose}>Hide review</button>
+      </div>
+
+      {questions.map((question, index) => (
+        <StudentReviewQuestion key={question.id} question={question} index={index} />
+      ))}
+    </div>
+  );
+}
+
+function StudentReviewQuestion({ question, index }) {
+  const answer = question.answer || {};
+  const selectedIds = Array.isArray(answer.selected_option_ids) ? answer.selected_option_ids : [];
+
+  return (
+    <div className="student-review-question">
+      <div className="student-review-question__head">
+        <strong>Question {index + 1}</strong>
+        <span>{answer.points_awarded ?? 0} / {question.points} pts</span>
+      </div>
+      <p>{question.question_text}</p>
+      {question.question_image_url && (
+        <img className="student-question-image" src={publicFileUrl(question.question_image_url)} alt={`Question ${index + 1}`} />
+      )}
+
+      {question.question_type === 'text' ? (
+        <div className="student-review-text-answer">
+          <strong>Your answer</strong>
+          <p>{answer.answer_text || 'No answer submitted.'}</p>
+        </div>
+      ) : (
+        <div className="student-review-options">
+          {(question.options || []).map((option) => {
+            const selected = selectedIds.includes(option.id);
+            const className = [
+              'student-review-option',
+              option.is_correct ? 'student-review-option--correct' : '',
+              selected ? 'student-review-option--selected' : '',
+              selected && !option.is_correct ? 'student-review-option--wrong' : ''
+            ].filter(Boolean).join(' ');
+
+            return (
+              <div key={option.id} className={className}>
+                <span>{option.option_text}</span>
+                <small>
+                  {option.is_correct ? 'Correct answer' : ''}
+                  {selected ? (option.is_correct ? ' · Your answer' : 'Your answer') : ''}
+                </small>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
