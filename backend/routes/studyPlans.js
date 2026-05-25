@@ -17,6 +17,11 @@ router.post('/:id/courses',               ctrl.addCourse);
 router.patch('/:id/courses/:courseId',    ctrl.updateCourse);
 router.delete('/:id/courses/:courseId',   ctrl.removeCourse);
 
+// Batch assignments — must come before /:id GET/PATCH/DELETE
+router.get('/:id/batch-assignments',          ctrl.listBatchAssignments);
+router.post('/:id/batch-assignments',         ctrl.assignBatch);
+router.delete('/:id/batch-assignments/:year', ctrl.removeBatchAssignment);
+
 // Plan-level CRUD
 router.get('/:id',    ctrl.getPlan);
 router.patch('/:id',  ctrl.updatePlan);

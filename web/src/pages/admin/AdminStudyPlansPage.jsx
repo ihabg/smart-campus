@@ -338,6 +338,303 @@ function EditCourseModal({ planId, course, onSave, onClose }) {
   );
 }
 
+// ─── Batch Assignments Section ─────────────────────────────────
+
+function BatchAssignmentsSection({ planId }) {
+  const [assignments,   setAssignments]   = useState([]);
+  const [loading,       setLoading]       = useState(false);
+  const [addMode,       setAddMode]       = useState('single'); // 'single' | 'range'
+  const [singleYear,    setSingleYear]    = useState('');
+  const [rangeFrom,     setRangeFrom]     = useState('');
+  const [rangeTo,       setRangeTo]       = useState('');
+  const [saving,        setSaving]        = useState(false);
+  const [singleConflict, setSingleConflict] = useState(null); // { year, current_plan }
+  const [rangeResult,   setRangeResult]   = useState(null);
+  const [pendingForce,  setPendingForce]  = useState(null);   // { from_year, to_year }
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await studyPlanAPI.listBatchAssignments(planId);
+      setAssignments(res.data?.data || []);
+    } catch {
+      toast.error('Failed to load batch assignments.');
+    } finally {
+      setLoading(false);
+    }
+  }, [planId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function handleAssignSingle(force = false) {
+    const year = Number(singleYear);
+    if (!year || year < 1990 || year > 2100) {
+      toast.error('Enter a valid year (1990–2100).');
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await studyPlanAPI.assignBatch(planId, { registration_year: year, force });
+      const d = res.data?.data;
+      setSingleConflict(null);
+      if (d.assigned?.length > 0 || d.reassigned?.length > 0) {
+        toast.success(d.reassigned?.length > 0 ? `Batch ${year} reassigned to this plan.` : `Batch ${year} assigned.`);
+        setSingleYear('');
+        load();
+      } else if (d.already_this_plan?.length > 0) {
+        toast(`Batch ${year} is already assigned to this plan.`);
+      }
+    } catch (err) {
+      if (err.response?.status === 409) {
+        setSingleConflict({ year, current_plan: err.response.data.current_plan });
+      } else {
+        toast.error(err.response?.data?.message || 'Failed to assign batch year.');
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleAssignRange(force = false, fromOverride, toOverride) {
+    const from = Number(fromOverride !== undefined ? fromOverride : rangeFrom);
+    const to   = Number(toOverride   !== undefined ? toOverride   : rangeTo);
+    if (!from || !to || from > to) { toast.error('Enter a valid year range.'); return; }
+    if (to - from > 50) { toast.error('Range cannot exceed 50 years.'); return; }
+    setSaving(true);
+    try {
+      const res = await studyPlanAPI.assignBatch(planId, { from_year: from, to_year: to, force });
+      const d = res.data?.data;
+      setRangeResult(d);
+      if (d.conflicts?.length > 0 && !force) {
+        setPendingForce({ from_year: from, to_year: to });
+      } else {
+        setPendingForce(null);
+      }
+      if ((d.assigned?.length || 0) + (d.reassigned?.length || 0) > 0) {
+        load();
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to assign batch range.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleRemove(year) {
+    try {
+      await studyPlanAPI.removeBatchAssignment(planId, year);
+      setAssignments(prev => prev.filter(a => a.registration_year !== year));
+      toast.success(`Batch ${year} removed.`);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to remove assignment.');
+    }
+  }
+
+  function switchMode(mode) {
+    setAddMode(mode);
+    setSingleConflict(null);
+    setRangeResult(null);
+    setPendingForce(null);
+  }
+
+  return (
+    <div className="spm-ba card">
+      <div className="spm-ba-head">
+        <span className="spm-ba-head__title">Batch Assignments</span>
+        <span className="spm-ba-head__count">
+          {loading ? '…' : `${assignments.length} batch year${assignments.length !== 1 ? 's' : ''}`}
+        </span>
+      </div>
+
+      {loading ? (
+        <p className="spm-ba-empty">Loading…</p>
+      ) : assignments.length === 0 ? (
+        <p className="spm-ba-empty">No explicit assignments yet — students will use latest-plan fallback.</p>
+      ) : (
+        <div className="spm-ba-list">
+          {assignments.map(a => (
+            <span key={a.registration_year} className="spm-ba-chip">
+              {a.registration_year}
+              <button
+                className="spm-ba-chip__remove"
+                title={`Remove batch ${a.registration_year}`}
+                onClick={() => handleRemove(a.registration_year)}
+              >
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Add form */}
+      <div className="spm-ba-form">
+        <div className="spm-ba-form-tabs">
+          <button
+            className={`spm-ba-tab${addMode === 'single' ? ' spm-ba-tab--active' : ''}`}
+            onClick={() => switchMode('single')}
+          >
+            Single Year
+          </button>
+          <button
+            className={`spm-ba-tab${addMode === 'range' ? ' spm-ba-tab--active' : ''}`}
+            onClick={() => switchMode('range')}
+          >
+            Year Range
+          </button>
+        </div>
+
+        {addMode === 'single' && (
+          <div className="spm-ba-single-row">
+            <input
+              className="spm-input spm-ba-year-input"
+              type="number"
+              min="1990"
+              max="2100"
+              placeholder="e.g. 2021"
+              value={singleYear}
+              onChange={e => { setSingleYear(e.target.value); setSingleConflict(null); }}
+            />
+            <button
+              className="btn btn--primary spm-sm-btn"
+              onClick={() => handleAssignSingle(false)}
+              disabled={saving || !singleYear}
+            >
+              {saving ? 'Assigning…' : 'Assign'}
+            </button>
+          </div>
+        )}
+
+        {addMode === 'range' && (
+          <>
+            <div className="spm-ba-range-grid">
+              <div>
+                <label className="spm-label">From Year</label>
+                <input
+                  className="spm-input"
+                  type="number"
+                  min="1990"
+                  max="2100"
+                  placeholder="2020"
+                  value={rangeFrom}
+                  onChange={e => { setRangeFrom(e.target.value); setRangeResult(null); }}
+                />
+              </div>
+              <div>
+                <label className="spm-label">To Year</label>
+                <input
+                  className="spm-input"
+                  type="number"
+                  min="1990"
+                  max="2100"
+                  placeholder="2024"
+                  value={rangeTo}
+                  onChange={e => { setRangeTo(e.target.value); setRangeResult(null); }}
+                />
+              </div>
+            </div>
+            <button
+              className="btn btn--primary spm-sm-btn"
+              onClick={() => handleAssignRange(false)}
+              disabled={saving || !rangeFrom || !rangeTo}
+            >
+              {saving ? 'Assigning…' : 'Assign Range'}
+            </button>
+          </>
+        )}
+
+        {/* Single-year conflict: inline confirm */}
+        {singleConflict && (
+          <div className="spm-ba-confirm">
+            <p className="spm-ba-confirm__msg">
+              Batch <strong>{singleConflict.year}</strong> is currently assigned to{' '}
+              <strong>
+                {singleConflict.current_plan.label ||
+                  `Batch ${singleConflict.current_plan.plan_year} Plan`}
+              </strong>. Reassign it to this plan?
+            </p>
+            <div className="spm-ba-confirm__actions">
+              <button className="btn btn--ghost spm-sm-btn" onClick={() => setSingleConflict(null)}>
+                Cancel
+              </button>
+              <button
+                className="btn btn--primary spm-sm-btn"
+                onClick={() => handleAssignSingle(true)}
+                disabled={saving}
+              >
+                {saving ? 'Reassigning…' : 'Reassign'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Range result summary */}
+        {rangeResult && (
+          <div className="spm-ba-result">
+            {rangeResult.assigned?.length > 0 && (
+              <div className="spm-ba-result__row">
+                <span className="spm-ba-result__label spm-ba-result__label--green">Assigned:</span>
+                <span className="spm-ba-result__years">{rangeResult.assigned.join(', ')}</span>
+              </div>
+            )}
+            {rangeResult.reassigned?.length > 0 && (
+              <div className="spm-ba-result__row">
+                <span className="spm-ba-result__label spm-ba-result__label--blue">Reassigned:</span>
+                <span className="spm-ba-result__years">{rangeResult.reassigned.join(', ')}</span>
+              </div>
+            )}
+            {rangeResult.already_this_plan?.length > 0 && (
+              <div className="spm-ba-result__row">
+                <span className="spm-ba-result__label spm-ba-result__label--muted">Already here:</span>
+                <span className="spm-ba-result__years">{rangeResult.already_this_plan.join(', ')}</span>
+              </div>
+            )}
+
+            {rangeResult.conflicts?.length > 0 && (
+              <div className="spm-ba-conflicts">
+                <div className="spm-ba-conflicts__title">
+                  {rangeResult.conflicts.length} conflict{rangeResult.conflicts.length !== 1 ? 's' : ''} — already assigned to other plans:
+                </div>
+                {rangeResult.conflicts.map(c => (
+                  <div key={c.year} className="spm-ba-conflict-item">
+                    <span>{c.year}</span>
+                    {' '}→{' '}
+                    {c.current_plan.label || `Batch ${c.current_plan.plan_year} Plan`}
+                  </div>
+                ))}
+                <div className="spm-ba-conflicts__actions">
+                  <button
+                    className="btn btn--ghost spm-sm-btn"
+                    onClick={() => { setRangeResult(null); setPendingForce(null); }}
+                  >
+                    Keep as is
+                  </button>
+                  <button
+                    className="btn btn--primary spm-sm-btn"
+                    disabled={saving}
+                    onClick={() => {
+                      const p = pendingForce;
+                      setRangeResult(null);
+                      setPendingForce(null);
+                      handleAssignRange(true, p.from_year, p.to_year);
+                    }}
+                  >
+                    {saving ? 'Reassigning…' : 'Reassign All Conflicts'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      <p className="spm-ba-hint">
+        Students without an explicit assignment fall back to the latest plan where plan year ≤ their registration year.
+      </p>
+    </div>
+  );
+}
+
 // ─── Confirm Modal ─────────────────────────────────────────────
 
 function ConfirmModal({ title, message, onConfirm, onClose, danger = true }) {
@@ -526,6 +823,9 @@ export default function AdminStudyPlansPage() {
                     Delete Plan
                   </button>
                 </div>
+
+                {/* Batch assignments */}
+                <BatchAssignmentsSection planId={selectedId} />
 
                 {/* Controls */}
                 <div className="spm-detail-controls">

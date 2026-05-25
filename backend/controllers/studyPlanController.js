@@ -287,6 +287,158 @@ async function removeCourse(req, res, next) {
   }
 }
 
+// ── List batch assignments for a plan ────────────────────────
+async function listBatchAssignments(req, res, next) {
+  try {
+    const { id } = req.params;
+    const result = await query(`
+      SELECT registration_year, is_active, created_at
+      FROM   study_plan_batch_assignments
+      WHERE  plan_id = $1
+      ORDER  BY registration_year ASC
+    `, [id]);
+    res.json({ success: true, data: result.rows });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// ── Assign batch year(s) to a plan ────────────────────────────
+// Body: { registration_year, force } — single year
+//    or { from_year, to_year, force } — range (max 50 years)
+// force=true overwrites conflicts (years already assigned to another plan).
+// Without force, conflicts are returned in data.conflicts for UI resolution.
+async function assignBatch(req, res, next) {
+  try {
+    const { id } = req.params;
+    const { registration_year, from_year, to_year, force = false } = req.body;
+
+    const planRes = await query(
+      `SELECT id, department_id FROM study_plans WHERE id = $1`,
+      [id]
+    );
+    if (!planRes.rows[0]) {
+      return res.status(404).json({ success: false, message: 'Study plan not found.' });
+    }
+    const deptId = planRes.rows[0].department_id;
+
+    // Build year list
+    let years;
+    if (registration_year !== undefined) {
+      const y = Number(registration_year);
+      if (!Number.isInteger(y) || y < 1990 || y > 2100) {
+        return res.status(400).json({ success: false, message: 'Invalid registration_year.' });
+      }
+      years = [y];
+    } else if (from_year !== undefined && to_year !== undefined) {
+      const from = Number(from_year);
+      const to   = Number(to_year);
+      if (
+        !Number.isInteger(from) || !Number.isInteger(to) ||
+        from < 1990 || to > 2100 || from > to || to - from > 50
+      ) {
+        return res.status(400).json({ success: false, message: 'Invalid year range. Max 50 years.' });
+      }
+      years = [];
+      for (let y = from; y <= to; y++) years.push(y);
+    } else {
+      return res.status(400).json({
+        success: false,
+        message: 'registration_year or from_year + to_year are required.',
+      });
+    }
+
+    // For single year without force: do a quick conflict check first so we can
+    // return a clean 409 with the current plan info before touching anything.
+    if (years.length === 1 && !force) {
+      const check = await query(`
+        SELECT spba.plan_id, sp.plan_year, sp.label
+        FROM   study_plan_batch_assignments spba
+        JOIN   study_plans sp ON sp.id = spba.plan_id
+        WHERE  spba.department_id = $1 AND spba.registration_year = $2
+      `, [deptId, years[0]]);
+
+      if (check.rows[0] && check.rows[0].plan_id !== id) {
+        return res.status(409).json({
+          success:      false,
+          message:      'This batch year is already assigned to another plan.',
+          current_plan: check.rows[0],
+        });
+      }
+    }
+
+    // Process each year
+    const assigned          = [];
+    const already_this_plan = [];
+    const reassigned        = [];
+    const conflicts         = [];
+
+    for (const year of years) {
+      const existing = await query(`
+        SELECT spba.plan_id, sp.plan_year, sp.label
+        FROM   study_plan_batch_assignments spba
+        JOIN   study_plans sp ON sp.id = spba.plan_id
+        WHERE  spba.department_id = $1 AND spba.registration_year = $2
+      `, [deptId, year]);
+
+      const row = existing.rows[0];
+
+      if (!row) {
+        await query(
+          `INSERT INTO study_plan_batch_assignments (plan_id, department_id, registration_year) VALUES ($1, $2, $3)`,
+          [id, deptId, year]
+        );
+        assigned.push(year);
+      } else if (row.plan_id === id) {
+        already_this_plan.push(year);
+      } else if (force) {
+        await query(
+          `UPDATE study_plan_batch_assignments SET plan_id = $1, updated_at = NOW() WHERE department_id = $2 AND registration_year = $3`,
+          [id, deptId, year]
+        );
+        reassigned.push(year);
+      } else {
+        conflicts.push({
+          year,
+          current_plan: { plan_id: row.plan_id, plan_year: row.plan_year, label: row.label },
+        });
+      }
+    }
+
+    return res.json({
+      success: true,
+      data: { assigned, already_this_plan, reassigned, conflicts },
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// ── Remove a single batch assignment ─────────────────────────
+async function removeBatchAssignment(req, res, next) {
+  try {
+    const { id, year } = req.params;
+
+    const planRes = await query(`SELECT id FROM study_plans WHERE id = $1`, [id]);
+    if (!planRes.rows[0]) {
+      return res.status(404).json({ success: false, message: 'Study plan not found.' });
+    }
+
+    const result = await query(
+      `DELETE FROM study_plan_batch_assignments WHERE plan_id = $1 AND registration_year = $2 RETURNING id`,
+      [id, Number(year)]
+    );
+
+    if (!result.rows[0]) {
+      return res.status(404).json({ success: false, message: 'Batch assignment not found.' });
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   listPlans,
   getDepartments,
@@ -298,4 +450,7 @@ module.exports = {
   addCourse,
   updateCourse,
   removeCourse,
+  listBatchAssignments,
+  assignBatch,
+  removeBatchAssignment,
 };
