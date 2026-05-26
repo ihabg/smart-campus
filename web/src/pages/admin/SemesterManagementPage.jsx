@@ -675,6 +675,8 @@ function AddStudentPanel({ sectionId, sectionDetail, defaultDept, departments, o
       } else if (data?.at_capacity && data?.can_force) {
         // Show force enroll confirmation instead of a dead-end error
         setForceTarget(student);
+      } else if (data?.conflict) {
+        toast.error(data.message || 'Schedule conflict detected.');
       } else {
         toast.error(getErrorMessage(err));
       }

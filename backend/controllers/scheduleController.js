@@ -584,7 +584,8 @@ async function getAllSections(req, res, next) {
     let sql = `
       SELECT
         s.*,
-        c.code AS course_code, c.name AS course_name, c.department,
+        c.code AS course_code, c.name AS course_name, c.name_ar AS course_name_ar,
+        c.credit_hours, c.department,
         i.title || ' ' || i.first_name || ' ' || i.last_name AS instructor_name,
         i.email AS instructor_email,
         r.room_number, r.name AS room_name,
@@ -839,6 +840,54 @@ async function deleteSection(req, res, next) {
   }
 }
 
+// ─── Student schedule conflict helper ───────────────────────
+// Returns null if no conflict, or a structured conflict object.
+// Uses section_meetings as the canonical source of truth.
+// Both enrollStudent (self-registration) and adminEnrollStudent call this.
+async function checkStudentScheduleConflict(student_id, section_id) {
+  const result = await query(
+    `SELECT DISTINCT
+       c2.code         AS course_code,
+       c2.name         AS course_name,
+       s2.section_number,
+       sm2.day_of_week,
+       sm2.start_time::text AS start_time,
+       sm2.end_time::text   AS end_time
+     FROM sections s_new
+     JOIN section_meetings sm_new ON sm_new.section_id = s_new.id
+     JOIN enrollments e2 ON e2.student_id = $2 AND e2.status = 'enrolled'
+     JOIN sections s2
+       ON s2.id = e2.section_id
+      AND s2.semester::text = s_new.semester::text
+      AND s2.academic_year  = s_new.academic_year
+      AND s2.is_active      = TRUE
+      AND s2.id            != s_new.id
+     JOIN section_meetings sm2
+       ON sm2.section_id  = s2.id
+      AND sm2.day_of_week = sm_new.day_of_week
+      AND sm2.start_time  < sm_new.end_time
+      AND sm2.end_time    > sm_new.start_time
+     JOIN courses c2 ON c2.id = s2.course_id
+     WHERE s_new.id = $1
+     LIMIT 1`,
+    [section_id, student_id]
+  );
+
+  if (!result.rows.length) return null;
+
+  const c = result.rows[0];
+  const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  return {
+    course_code:    c.course_code,
+    course_name:    c.course_name,
+    section_number: c.section_number,
+    day_of_week:    c.day_of_week,
+    day_label:      DAY_NAMES[c.day_of_week] ?? String(c.day_of_week),
+    start_time:     String(c.start_time).slice(0, 5),
+    end_time:       String(c.end_time).slice(0, 5),
+  };
+}
+
 async function enrollStudent(req, res, next) {
   try {
     const { section_id } = req.body;
@@ -859,6 +908,16 @@ async function enrollStudent(req, res, next) {
       return res.status(409).json({ success: false, message: 'Section is full.' });
     }
 
+    const conflict = await checkStudentScheduleConflict(student_id, section_id);
+    if (conflict) {
+      return res.status(409).json({
+        success:  false,
+        conflict: true,
+        message: `Schedule conflict: ${conflict.course_code} (section ${conflict.section_number}) on ${conflict.day_label} ${conflict.start_time}–${conflict.end_time}`,
+        conflicting_course: conflict,
+      });
+    }
+
     await withTransaction(async client => {
       await client.query(
         `INSERT INTO enrollments (student_id, section_id)
@@ -875,6 +934,26 @@ async function enrollStudent(req, res, next) {
     });
 
     res.status(201).json({ success: true, message: 'Enrolled successfully.' });
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function getPublishedSemesters(req, res, next) {
+  try {
+    const result = await query(
+      `SELECT semester, academic_year, label
+       FROM semesters
+       WHERE status = 'published'
+       ORDER BY academic_year DESC,
+         CASE semester
+           WHEN 'summer' THEN 3
+           WHEN 'spring' THEN 2
+           WHEN 'fall'   THEN 1
+           ELSE 0
+         END DESC`
+    );
+    res.json({ success: true, data: { semesters: result.rows } });
   } catch (error) {
     next(error);
   }
@@ -1809,6 +1888,17 @@ async function adminEnrollStudent(req, res, next) {
 
     const { max_capacity, enrolled } = secRes.rows[0];
 
+    // Schedule conflict check — force does not bypass this
+    const conflict = await checkStudentScheduleConflict(student_id, section_id);
+    if (conflict) {
+      return res.status(409).json({
+        success:  false,
+        conflict: true,
+        message: `Schedule conflict with ${conflict.course_code} (section ${conflict.section_number}) on ${conflict.day_label} ${conflict.start_time}–${conflict.end_time}`,
+        conflicting_course: conflict,
+      });
+    }
+
     // Capacity check — only bypassed when force === true
     if (max_capacity !== null && enrolled >= max_capacity && !force) {
       return res.status(409).json({
@@ -2502,6 +2592,7 @@ module.exports = {
   adminRemoveAllEnrollments,
   getMyTerms,
   listSemesters,
+  getPublishedSemesters,
   ensureSemesterRow,
   publishSemester,
   unpublishSemester,

@@ -124,6 +124,8 @@ async function getStudyPlan(req, res, next) {
 
     // ── 3. Compute status per enrollment row ──────────────────
     function computeStatus(enrollmentStatus, letterGrade, isActive) {
+      // Dropped enrollments are always dropped — a recorded grade does not override removal
+      if (enrollmentStatus === 'dropped') return 'dropped';
       if (letterGrade) {
         // D- and E are failing — do NOT count as completed hours or satisfy plan requirements
         return FAILING_GRADES.has(letterGrade) ? 'failed' : 'completed';
@@ -190,6 +192,7 @@ async function getStudyPlan(req, res, next) {
 
     for (const row of enrollRes.rows) {
       if (!row.letter_grade) continue;
+      if (row.enrollment_status === 'dropped') continue; // dropped enrollments don't count in GPA
 
       const pts = gradeToPoint(row.letter_grade);
       if (pts === null) continue; // unrecognised grade letter — skip silently
@@ -256,9 +259,10 @@ async function getStudyPlan(req, res, next) {
     };
 
     // ── 6. Official study plan ─────────────────────────────────
-    let has_official_plan = false;
-    let plan_meta         = null;
-    let plan_courses      = [];
+    let has_official_plan        = false;
+    let plan_meta                = null;
+    let plan_courses             = [];
+    let category_requirements    = [];
 
     if (student.department_id && student.registration_year) {
       let planRow = null;
@@ -305,24 +309,32 @@ async function getStudyPlan(req, res, next) {
         has_official_plan = true;
         plan_meta         = planRow;
 
-        const planCoursesRes = await query(`
-          SELECT
-            spc.id                AS plan_course_id,
-            spc.category,
-            spc.recommended_year,
-            spc.recommended_semester,
-            spc.is_required,
-            spc.sort_order,
-            c.id                  AS course_id,
-            c.code                AS course_code,
-            c.name                AS course_name,
-            c.name_ar             AS course_name_ar,
-            c.credit_hours
-          FROM study_plan_courses spc
-          JOIN courses c ON c.id = spc.course_id
-          WHERE spc.plan_id = $1
-          ORDER BY spc.sort_order ASC, c.code ASC
-        `, [plan_meta.id]);
+        const [planCoursesRes, catReqsRes] = await Promise.all([
+          query(`
+            SELECT
+              spc.id                AS plan_course_id,
+              spc.category,
+              spc.recommended_year,
+              spc.recommended_semester,
+              spc.is_required,
+              spc.sort_order,
+              c.id                  AS course_id,
+              c.code                AS course_code,
+              c.name                AS course_name,
+              c.name_ar             AS course_name_ar,
+              c.credit_hours
+            FROM study_plan_courses spc
+            JOIN courses c ON c.id = spc.course_id
+            WHERE spc.plan_id = $1
+            ORDER BY spc.sort_order ASC, c.code ASC
+          `, [plan_meta.id]),
+          query(`
+            SELECT category, required_hours, label_en, label_ar, sort_order
+            FROM study_plan_category_requirements
+            WHERE plan_id = $1
+            ORDER BY sort_order ASC
+          `, [plan_meta.id]),
+        ]);
 
         const courseHistory = new Map();
         for (const e of enrollments) {
@@ -343,6 +355,8 @@ async function getStudyPlan(req, res, next) {
             total_grade:     hist?.total_grade != null ? hist.total_grade : null,
           };
         });
+
+        category_requirements = catReqsRes.rows;
       }
     }
 
@@ -374,6 +388,7 @@ async function getStudyPlan(req, res, next) {
         has_official_plan,
         plan_meta,
         plan_courses,
+        category_requirements,
       },
     });
   } catch (err) {

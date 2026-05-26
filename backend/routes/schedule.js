@@ -108,6 +108,9 @@ router.get(
   ctrl.validateSemester
 );
 
+// Published semesters — accessible to all authenticated users (term selector)
+router.get('/published-semesters', protect, ctrl.getPublishedSemesters);
+
 // ── Semester publish routes (static — must be before /:id) ───
 router.get(
   '/semesters',
