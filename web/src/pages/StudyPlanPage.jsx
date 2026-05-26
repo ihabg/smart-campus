@@ -10,6 +10,26 @@ import './StudyPlanPage.css';
 
 const SEMESTER_LABELS = { fall: 'Fall', spring: 'Spring', summer: 'Summer' };
 
+// Maps internal category keys → display labels (EN + AR).
+// Includes legacy keys as fallbacks in case any cached data still uses them.
+const CAT_LABEL = {
+  major_required:      'Major Required',      // إجباري تخصص
+  university_required: 'University Required', // إجباري جامعة
+  major_elective:      'Major Elective',      // اختياري تخصص
+  free_elective:       'Free Elective',       // مساق حر
+  // legacy fallbacks
+  required:            'Required',
+  elective:            'Elective',
+  general:             'General',
+};
+
+const CAT_CSS = {
+  major_required:      'sp-cat-tag--major-req',
+  university_required: 'sp-cat-tag--univ-req',
+  major_elective:      'sp-cat-tag--major-elec',
+  free_elective:       'sp-cat-tag--free-elec',
+};
+
 function semesterLabel(semester, academicYear) {
   return `${SEMESTER_LABELS[semester] || semester} ${academicYear}`;
 }
@@ -386,8 +406,8 @@ export default function StudyPlanPage() {
                         </td>
                         <td className="sp-table__hours">{c.credit_hours}</td>
                         <td style={{ textAlign:'center' }}>
-                          <span className="sp-cat-tag">
-                            {c.category.charAt(0).toUpperCase() + c.category.slice(1)}
+                          <span className={`sp-cat-tag ${CAT_CSS[c.category] || ''}`}>
+                            {CAT_LABEL[c.category] || c.category}
                           </span>
                         </td>
                         <td>

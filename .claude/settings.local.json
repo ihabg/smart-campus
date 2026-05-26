@@ -49,7 +49,8 @@
       "Bash(xargs grep -l \"CREATE TABLE\")",
       "Bash(xargs grep -l \"departments\\\\|users\\\\|courses\\\\|enrollments\")",
       "Bash(xargs ls -lh)",
-      "Bash(xargs grep -l \"sections\\\\|enrollments\\\\|grades\")"
+      "Bash(xargs grep -l \"sections\\\\|enrollments\\\\|grades\")",
+      "Bash(xargs ls -la)"
     ]
   }
 }

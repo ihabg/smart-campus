@@ -6,19 +6,24 @@ import './AdminStudyPlansPage.css';
 
 // ─── Constants ────────────────────────────────────────────────
 
-const CATEGORIES = ['required', 'elective', 'general'];
+const CATEGORIES = ['major_required', 'university_required', 'major_elective', 'free_elective'];
 const SEMESTERS  = ['fall', 'spring', 'summer'];
 const YEARS      = [1, 2, 3, 4, 5, 6];
 
 const CAT_META = {
-  required: { label: 'Required', cls: 'spm-cat--required' },
-  elective: { label: 'Elective', cls: 'spm-cat--elective' },
-  general:  { label: 'General',  cls: 'spm-cat--general'  },
+  major_required:      { label: 'Major Required',      labelAr: 'إجباري تخصص',  cls: 'spm-cat--major-req'  },
+  university_required: { label: 'University Required', labelAr: 'إجباري جامعة', cls: 'spm-cat--univ-req'   },
+  major_elective:      { label: 'Major Elective',      labelAr: 'اختياري تخصص', cls: 'spm-cat--major-elec' },
+  free_elective:       { label: 'Free Elective',        labelAr: 'مساق حر',      cls: 'spm-cat--free-elec'  },
 };
 
 function CategoryBadge({ cat }) {
-  const m = CAT_META[cat] || { label: cat, cls: '' };
-  return <span className={`spm-cat ${m.cls}`}>{m.label}</span>;
+  const m = CAT_META[cat] || { label: cat, labelAr: '', cls: '' };
+  return (
+    <span className={`spm-cat ${m.cls}`} title={m.labelAr}>
+      {m.label}
+    </span>
+  );
 }
 
 // ─── New Plan Modal ────────────────────────────────────────────
@@ -107,7 +112,7 @@ function AddCourseModal({ planId, onSave, onClose }) {
   const [avail,    setAvail]    = useState([]);
   const [selected, setSelected] = useState(null);
   const [form, setForm] = useState({
-    category:             'required',
+    category:             'major_required',
     recommended_year:     '',
     recommended_semester: '',
     is_required:          true,
@@ -192,9 +197,10 @@ function AddCourseModal({ planId, onSave, onClose }) {
                   <label className="spm-label">Category</label>
                   <select className="spm-select" value={form.category}
                     onChange={e => setForm(p => ({ ...p, category: e.target.value }))}>
-                    {CATEGORIES.map(c => (
-                      <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>
-                    ))}
+                    {CATEGORIES.map(c => {
+                      const m = CAT_META[c];
+                      return <option key={c} value={c}>{m.label} — {m.labelAr}</option>;
+                    })}
                   </select>
                 </div>
                 <div>
@@ -246,7 +252,7 @@ function AddCourseModal({ planId, onSave, onClose }) {
 
 function EditCourseModal({ planId, course, onSave, onClose }) {
   const [form, setForm] = useState({
-    category:             course.category             || 'required',
+    category:             course.category             || 'major_required',
     recommended_year:     course.recommended_year     ?? '',
     recommended_semester: course.recommended_semester || '',
     is_required:          course.is_required          ?? true,
@@ -290,9 +296,10 @@ function EditCourseModal({ planId, course, onSave, onClose }) {
               <label className="spm-label">Category</label>
               <select className="spm-select" value={form.category}
                 onChange={e => setForm(p => ({ ...p, category: e.target.value }))}>
-                {CATEGORIES.map(c => (
-                  <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>
-                ))}
+                {CATEGORIES.map(c => {
+                  const m = CAT_META[c];
+                  return <option key={c} value={c}>{m.label} — {m.labelAr}</option>;
+                })}
               </select>
             </div>
             <div>
@@ -635,6 +642,141 @@ function BatchAssignmentsSection({ planId }) {
   );
 }
 
+// ─── Category Requirements Section ────────────────────────────
+
+function CategoryRequirementsSection({ planId, courses, initialRequirements }) {
+  function buildHoursMap(reqs) {
+    const m = {};
+    for (const r of reqs || []) m[r.category] = String(r.required_hours ?? 0);
+    return m;
+  }
+
+  const [hours,  setHours]  = useState(() => buildHoursMap(initialRequirements));
+  const [saving, setSaving] = useState({});
+
+  useEffect(() => {
+    setHours(buildHoursMap(initialRequirements));
+  }, [initialRequirements]);
+
+  const catStats = {};
+  for (const cat of CATEGORIES) {
+    const cc = (courses || []).filter(c => c.category === cat);
+    catStats[cat] = {
+      count:      cc.length,
+      totalHours: cc.reduce((s, c) => s + Number(c.credit_hours || 0), 0),
+    };
+  }
+
+  async function handleSave(cat) {
+    const h = Number(hours[cat]);
+    if (isNaN(h) || h < 0) { toast.error('Enter a valid number of hours.'); return; }
+    setSaving(p => ({ ...p, [cat]: true }));
+    try {
+      await studyPlanAPI.upsertCategoryRequirement(planId, cat, { required_hours: h });
+      toast.success(`${CAT_META[cat].label} requirement saved.`);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to save requirement.');
+    } finally {
+      setSaving(p => ({ ...p, [cat]: false }));
+    }
+  }
+
+  return (
+    <div className="spm-catreq card">
+      <div className="spm-catreq__head">
+        <span className="spm-catreq__title">Category Requirements</span>
+        <span className="spm-catreq__sub">Set minimum required credit hours per category for degree completion.</span>
+      </div>
+
+      {/* Desktop table */}
+      <div className="spm-catreq__table-wrap">
+        <table className="spm-catreq__table">
+          <thead>
+            <tr>
+              <th>Category</th>
+              <th style={{ textAlign: 'center' }}>Courses in Plan</th>
+              <th style={{ textAlign: 'center' }}>Plan Hours</th>
+              <th style={{ textAlign: 'center' }}>Required Hours</th>
+              <th style={{ textAlign: 'right' }}>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {CATEGORIES.map(cat => {
+              const stats    = catStats[cat];
+              const isSaving = saving[cat] || false;
+              const h        = hours[cat] ?? '0';
+              return (
+                <tr key={cat}>
+                  <td><CategoryBadge cat={cat} /></td>
+                  <td className="spm-catreq__num">{stats.count}</td>
+                  <td className="spm-catreq__num">{stats.totalHours}</td>
+                  <td style={{ textAlign: 'center' }}>
+                    <input
+                      className="spm-input spm-catreq__hours-input"
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={h}
+                      onChange={e => setHours(p => ({ ...p, [cat]: e.target.value }))}
+                    />
+                  </td>
+                  <td style={{ textAlign: 'right' }}>
+                    <button
+                      className="btn btn--primary spm-sm-btn"
+                      onClick={() => handleSave(cat)}
+                      disabled={isSaving}
+                    >
+                      {isSaving ? 'Saving…' : 'Save'}
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Mobile cards */}
+      <div className="spm-catreq__mob-cards">
+        {CATEGORIES.map(cat => {
+          const stats    = catStats[cat];
+          const isSaving = saving[cat] || false;
+          const h        = hours[cat] ?? '0';
+          return (
+            <div key={cat} className="spm-catreq__mob-card">
+              <div className="spm-catreq__mob-header">
+                <CategoryBadge cat={cat} />
+                <div className="spm-catreq__mob-stats">
+                  <span><span className="spm-catreq__mob-label">Courses</span>{stats.count}</span>
+                  <span><span className="spm-catreq__mob-label">Plan Hrs</span>{stats.totalHours}</span>
+                </div>
+              </div>
+              <div className="spm-catreq__mob-row">
+                <label className="spm-label" style={{ marginBottom: 0 }}>Required Hours</label>
+                <input
+                  className="spm-input spm-catreq__hours-input"
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={h}
+                  onChange={e => setHours(p => ({ ...p, [cat]: e.target.value }))}
+                />
+                <button
+                  className="btn btn--primary spm-sm-btn"
+                  onClick={() => handleSave(cat)}
+                  disabled={isSaving}
+                >
+                  {isSaving ? 'Saving…' : 'Save'}
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ─── Confirm Modal ─────────────────────────────────────────────
 
 function ConfirmModal({ title, message, onConfirm, onClose, danger = true }) {
@@ -827,6 +969,13 @@ export default function AdminStudyPlansPage() {
                 {/* Batch assignments */}
                 <BatchAssignmentsSection planId={selectedId} />
 
+                {/* Category requirements */}
+                <CategoryRequirementsSection
+                  planId={selectedId}
+                  courses={detail.courses}
+                  initialRequirements={detail.category_requirements || []}
+                />
+
                 {/* Controls */}
                 <div className="spm-detail-controls">
                   <input
@@ -837,9 +986,10 @@ export default function AdminStudyPlansPage() {
                   />
                   <select className="spm-select" value={catFilter} onChange={e => setCatF(e.target.value)}>
                     <option value="all">All Categories</option>
-                    {CATEGORIES.map(c => (
-                      <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>
-                    ))}
+                    {CATEGORIES.map(c => {
+                      const m = CAT_META[c];
+                      return <option key={c} value={c}>{m.label} — {m.labelAr}</option>;
+                    })}
                   </select>
                   <button className="btn btn--primary" onClick={() => setShowAdd(true)}>+ Add Course</button>
                 </div>

@@ -358,6 +358,10 @@ export const studyPlanAPI = {
   listBatchAssignments: (id)       => api.get(`/admin/study-plans/${id}/batch-assignments`),
   assignBatch:          (id, data) => api.post(`/admin/study-plans/${id}/batch-assignments`, data),
   removeBatchAssignment:(id, year) => api.delete(`/admin/study-plans/${id}/batch-assignments/${year}`),
+  // Category requirements
+  listCategoryRequirements:  (id)                 => api.get(`/admin/study-plans/${id}/category-requirements`),
+  upsertCategoryRequirement: (id, category, data) => api.put(`/admin/study-plans/${id}/category-requirements/${category}`, data),
+  deleteCategoryRequirement: (id, category)       => api.delete(`/admin/study-plans/${id}/category-requirements/${category}`),
 };
 
 export default api;
