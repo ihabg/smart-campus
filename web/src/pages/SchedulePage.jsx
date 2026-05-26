@@ -1,8 +1,6 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import axios from 'axios';
-
 import { useMySchedule } from '../hooks/index';
-import { scheduleAPI } from '../api/index';
+import { scheduleAPI, officeHoursAPI } from '../api/index';
 import { Spinner } from '../components/ui/index';
 import './SchedulePage.css';
 import { Link } from 'react-router-dom';
@@ -80,19 +78,11 @@ const openOfficeHours = async (instructor) => {
   if (!selectedTerm) return;
 
   try {
-    const token =
-      localStorage.getItem('token') ||
-      localStorage.getItem('accessToken') ||
-      localStorage.getItem('authToken');
-
-    const response = await axios.get(
-      `http://localhost:5000/api/office-hours/${encodeURIComponent(instructor.email)}`,
+    const response = await officeHoursAPI.getByInstructorEmail(
+      instructor.email,
       {
-        headers: { Authorization: `Bearer ${token}` },
-        params: {
-          semester: selectedTerm.semester,
-          academic_year: selectedTerm.academic_year
-        }
+        semester: selectedTerm.semester,
+        academic_year: selectedTerm.academic_year
       }
     );
 

@@ -1,6 +1,7 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { publicUrl } from '../../utils/publicUrl';
 import './Sidebar.css';
 
 const NAV = {
@@ -114,7 +115,7 @@ export default function Sidebar({ collapsed, mobileOpen, onMobileClose }) {
           <div className="sidebar__user">
             <div className="sidebar__user-avatar">
               {user?.avatar_url
-                ? <img src={user.avatar_url} alt="avatar" />
+                ? <img src={publicUrl(user.avatar_url)} alt="avatar" />
                 : `${user?.first_name?.[0] || ''}${user?.last_name?.[0] || ''}`
               }
             </div>

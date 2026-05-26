@@ -5,6 +5,7 @@ import { userAPI, announcementAPI, professorAPI, instructorAPI, scheduleAPI, stu
 import { useAsync } from '../hooks/index';
 import { Button, Input, Spinner, Badge } from '../components/ui/index';
 import { getErrorMessage, timeAgo, formatTime } from '../utils/helpers';
+import { publicUrl } from '../utils/publicUrl';
 import toast from 'react-hot-toast';
 import './ProfilePage.css';
 
@@ -316,7 +317,7 @@ export function ProfilePage() {
           <div style={{ position: 'relative', flexShrink: 0 }}>
             <div style={{ width: 72, height: 72, borderRadius: '50%', background: 'var(--najah-light)', overflow: 'hidden', border: '2px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, fontWeight: 700, color: 'var(--najah-blue)' }}>
               {user?.avatar_url
-                ? <img src={user.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                ? <img src={publicUrl(user.avatar_url)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 : `${user?.first_name?.[0] || ''}${user?.last_name?.[0] || ''}`
               }
             </div>
@@ -403,7 +404,7 @@ export function ProfilePage() {
           <div className="prof-hero__avatar-wrap">
             <div className="prof-hero__avatar">
               {user?.avatar_url
-                ? <img src={user.avatar_url} alt="" />
+                ? <img src={publicUrl(user.avatar_url)} alt="" />
                 : `${user?.first_name?.[0] || ''}${user?.last_name?.[0] || ''}`
               }
             </div>
@@ -622,7 +623,7 @@ export function ProfilePage() {
         <div className="prof-hero__avatar-wrap">
           <div className="prof-hero__avatar">
             {user?.avatar_url
-              ? <img src={user.avatar_url} alt="" />
+              ? <img src={publicUrl(user.avatar_url)} alt="" />
               : `${user?.first_name?.[0] || ''}${user?.last_name?.[0] || ''}`
             }
           </div>

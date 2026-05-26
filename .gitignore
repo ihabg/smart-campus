@@ -6,6 +6,7 @@ node_modules/
 build/
 dist/
 .expo/
+web/build/
 
 # Environment files
 .env
@@ -22,6 +23,20 @@ npm-debug.log*
 .DS_Store
 Thumbs.db
 
-# React Native
+# React Native / Android outputs
 *.apk
 *.ipa
+*.aab
+
+# Capacitor / Android generated files
+web/android/.gradle/
+web/android/**/build/
+web/android/app/build/
+web/android/build/
+web/android/capacitor-cordova-android-plugins/build/
+web/node_modules/@capacitor/android/capacitor/build/
+
+# Android Studio local files
+web/android/local.properties
+web/android/.idea/
+web/android/*.iml

@@ -108,6 +108,13 @@ export const scheduleAPI = {
     api.get('/schedule/my/terms'),
 };
 
+
+// ─── officeHoursAPI ───────────────────────────────────────────
+export const officeHoursAPI = {
+  getByInstructorEmail: (email, params = {}) =>
+    api.get(`/office-hours/${encodeURIComponent(email)}`, { params }),
+};
+
 // ─── searchAPI ───────────────────────────────────────────────
 export const searchAPI = {
   global: (params = {}) => api.get('/search', { params }),
