@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { studentAPI } from '../api/index';
 import { Spinner, Badge } from '../components/ui/index';
 import { getErrorMessage } from '../utils/helpers';
+import { publicUrl } from '../utils/publicUrl';
 import './StudyPlanPage.css';
 
 // ─── Constants ────────────────────────────────────────────────
@@ -504,7 +505,7 @@ export default function StudyPlanPage() {
       <div className="sp-student-bar card">
         <div className="sp-student-bar__avatar">
           {user?.avatar_url
-            ? <img src={user.avatar_url} alt="" />
+            ? <img src={publicUrl(user.avatar_url)} alt="" />
             : initials
           }
         </div>

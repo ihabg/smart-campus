@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../hooks/index';
 import { BellIcon } from '../ui/index';
 import { timeAgo } from '../../utils/helpers';
+import { publicUrl } from '../../utils/publicUrl';
 import toast from 'react-hot-toast';
 import './Navbar.css';
 
@@ -159,7 +160,7 @@ export default function Navbar({ onMenuToggle }) {
           >
             {user?.avatar_url ? (
               <img
-                src={user.avatar_url}
+                src={publicUrl(user.avatar_url)}
                 alt="avatar"
                 className="navbar__avatar"
               />
