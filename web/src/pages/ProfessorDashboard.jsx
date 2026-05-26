@@ -2219,4 +2219,3 @@ function toPublicFileUrl(fileUrl) {
 
   return `${publicBase}${fileUrl.startsWith('/') ? fileUrl : `/${fileUrl}`}`;
 }
-
