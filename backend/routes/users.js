@@ -14,6 +14,7 @@ router.patch ('/me/profile',     ctrl.updateMyProfile);
 router.post  ('/me/avatar',      uploadAvatar.single('avatar'), ctrl.uploadAvatar);
 
 // Admin-only routes
+router.post  ('/',               restrictTo('admin','super_admin'), ctrl.createStudent);
 router.get   ('/',               restrictTo('admin','super_admin'), validatePagination, ctrl.getAllUsers);
 router.get   ('/stats',          restrictTo('admin','super_admin'), ctrl.getDashboardStats);
 router.get   ('/:id',            restrictTo('admin','super_admin'), validateUUID('id'), ctrl.getUserById);

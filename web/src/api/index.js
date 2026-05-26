@@ -161,6 +161,8 @@ export const userAPI = {
     });
   },
 
+  create: (data) => api.post('/users', data),
+
   adminUpdate: (id, data) => api.patch(`/users/${id}`, data),
 
   delete: (id) => api.delete(`/users/${id}`),

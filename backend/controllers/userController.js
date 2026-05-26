@@ -1,5 +1,21 @@
 const bcrypt = require('bcryptjs');
-const { query } = require('../config/db');
+const { v4: uuidv4 } = require('uuid');
+const { query, withTransaction } = require('../config/db');
+
+// ─── Infer academic year from student ID ──────────────────────
+// Mirrors the same logic in authController.js
+function getAcademicYear(studentId) {
+  const str = String(studentId).replace(/\D/g, '');
+  if (str.length < 3) return null;
+  const batch          = parseInt(str.slice(0, 3));
+  const yearSuffix     = batch % 100;
+  const enrollmentYear = 2000 + yearSuffix;
+  const currentYear    = new Date().getFullYear();
+  const yearsStudied   = currentYear - enrollmentYear + 1;
+  if (yearsStudied < 1) return 1;
+  if (yearsStudied > 6) return 6;
+  return yearsStudied;
+}
 
 // ─── Get all users (admin) ────────────────────────────────────
 
@@ -321,7 +337,112 @@ async function getDashboardStats(req, res, next) {
   }
 }
 
+// ─── Admin: create student ─────────────────────────────────────
+async function createStudent(req, res, next) {
+  try {
+    const {
+      first_name, last_name, email, password,
+      student_id, department_id,
+      year_of_study, registration_year,
+    } = req.body;
+
+    // ── Required field validation ─────────────────────────────
+    if (!first_name || !String(first_name).trim())
+      return res.status(400).json({ success: false, message: 'first_name is required.' });
+    if (!last_name || !String(last_name).trim())
+      return res.status(400).json({ success: false, message: 'last_name is required.' });
+    if (!email || !String(email).trim())
+      return res.status(400).json({ success: false, message: 'email is required.' });
+    if (!password || String(password).length < 6)
+      return res.status(400).json({ success: false, message: 'Password must be at least 6 characters.' });
+    if (!student_id || !String(student_id).trim())
+      return res.status(400).json({ success: false, message: 'student_id is required.' });
+    if (!/^\d{6,12}$/.test(String(student_id).trim()))
+      return res.status(400).json({ success: false, message: 'student_id must be 6–12 digits.' });
+    if (!department_id)
+      return res.status(400).json({ success: false, message: 'department_id is required.' });
+
+    const cleanEmail     = String(email).trim().toLowerCase();
+    const cleanStudentId = String(student_id).trim();
+
+    // ── Duplicate checks (parallel) ───────────────────────────
+    const [emailCheck, sidCheck, regNumCheck] = await Promise.all([
+      query('SELECT id FROM users          WHERE email               = $1', [cleanEmail]),
+      query('SELECT id FROM users          WHERE student_id          = $1', [cleanStudentId]),
+      query('SELECT id FROM student_profiles WHERE registration_number = $1', [cleanStudentId]),
+    ]);
+
+    if (emailCheck.rows.length)
+      return res.status(409).json({ success: false, message: 'Email is already registered.' });
+    if (sidCheck.rows.length)
+      return res.status(409).json({ success: false, message: 'Student ID is already registered.' });
+    if (regNumCheck.rows.length)
+      return res.status(409).json({ success: false, message: 'Registration number already exists.' });
+
+    // ── Verify department ─────────────────────────────────────
+    const deptResult = await query(
+      'SELECT id, name_en FROM departments WHERE id = $1', [department_id]
+    );
+    if (!deptResult.rows.length)
+      return res.status(400).json({ success: false, message: 'Department not found.' });
+    const deptNameEn = deptResult.rows[0].name_en;
+
+    // ── Hash password ─────────────────────────────────────────
+    const password_hash = await bcrypt.hash(password, 12);
+    const userId    = uuidv4();
+    const profileId = uuidv4();
+
+    // ── Infer year values when not supplied ───────────────────
+    const rawYear = year_of_study ? parseInt(year_of_study) : getAcademicYear(cleanStudentId);
+    const finalYear = Math.min(Math.max(rawYear ?? 1, 1), 6);
+
+    const batch = parseInt(cleanStudentId.slice(0, 3));
+    const finalRegYear = registration_year
+      ? parseInt(registration_year)
+      : 2000 + (batch % 100);
+
+    // ── Transaction: both rows or neither ────────────────────
+    await withTransaction(async (client) => {
+      await client.query(
+        `INSERT INTO users
+           (id, first_name, last_name, email, password_hash,
+            student_id, department, year_of_study, role, status)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'student','active')`,
+        [
+          userId,
+          String(first_name).trim(),
+          String(last_name).trim(),
+          cleanEmail,
+          password_hash,
+          cleanStudentId,
+          deptNameEn,
+          finalYear,
+        ]
+      );
+
+      await client.query(
+        `INSERT INTO student_profiles
+           (id, user_id, registration_number, department_id, year_of_study, registration_year)
+         VALUES ($1,$2,$3,$4,$5,$6)`,
+        [profileId, userId, cleanStudentId, department_id, finalYear, finalRegYear]
+      );
+    });
+
+    // ── Return new user (no password_hash) ────────────────────
+    const created = await query(
+      `SELECT id, first_name, last_name, email, role, status,
+              student_id, department, year_of_study, created_at
+       FROM users WHERE id = $1`,
+      [userId]
+    );
+
+    res.status(201).json({ success: true, data: { user: created.rows[0] } });
+  } catch (error) {
+    next(error);
+  }
+}
+
 module.exports = {
   getAllUsers, getUserById, updateMyProfile, uploadAvatar,
-  adminUpdateUser, deleteUser, getDashboardStats,
+  adminUpdateUser, deleteUser, getDashboardStats, createStudent,
 };

@@ -463,6 +463,13 @@ function dashRoomBarColor(type) {
 }
 
 // ─── Admin Users ──────────────────────────────────────────────
+const BLANK_ADD_FORM = {
+  first_name: '', last_name: '', email: '',
+  student_id: '', department_id: '',
+  year_of_study: '', registration_year: '',
+  password: '', confirm_password: '',
+};
+
 export function AdminUsers() {
   const { isSuperAdmin, user: currentUser } = useAuth();
 
@@ -486,6 +493,15 @@ export function AdminUsers() {
   // Suspend / activate state
   const [statusTarget,  setStatusTarget]  = useState(null);
   const [statusLoading, setStatusLoading] = useState(false);
+
+  // Add student modal state
+  const [addModal,      setAddModal]      = useState(false);
+  const [addForm,       setAddForm]       = useState(BLANK_ADD_FORM);
+  const [addLoading,    setAddLoading]    = useState(false);
+  const [addError,      setAddError]      = useState('');
+  const [depts,         setDepts]         = useState([]);
+  const [deptsLoading,  setDeptsLoading]  = useState(false);
+  const deptsLoadedRef = useRef(false);
 
   // Data
   const { data: statsData } = useAsync(() => userAPI.getStats(), []);
@@ -568,6 +584,64 @@ export function AdminUsers() {
       toast.error(getErrorMessage(err));
     } finally {
       setDelLoading(false);
+    }
+  }
+
+  async function openAddModal() {
+    setAddForm(BLANK_ADD_FORM);
+    setAddError('');
+    setAddModal(true);
+    if (!deptsLoadedRef.current) {
+      setDeptsLoading(true);
+      try {
+        const res  = await studyPlanAPI.getDepartments();
+        const list = res?.data?.data || [];
+        setDepts(list);
+        deptsLoadedRef.current = true;
+      } catch {
+        // non-fatal — dropdown stays empty, user sees message
+      } finally {
+        setDeptsLoading(false);
+      }
+    }
+  }
+
+  async function handleAddSubmit() {
+    setAddError('');
+    const { first_name, last_name, email, student_id, department_id, password, confirm_password } = addForm;
+
+    if (!first_name.trim())                           { setAddError('First name is required.');                    return; }
+    if (!last_name.trim())                            { setAddError('Last name is required.');                     return; }
+    if (!email.trim())                                { setAddError('Email is required.');                         return; }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))   { setAddError('Please enter a valid email address.');        return; }
+    if (!student_id.trim())                           { setAddError('Student ID is required.');                    return; }
+    if (!/^\d{6,12}$/.test(student_id.trim()))        { setAddError('Student ID must be 6–12 digits.');            return; }
+    if (!department_id)                               { setAddError('Please select a department.');                return; }
+    if (!password)                                    { setAddError('Password is required.');                      return; }
+    if (password.length < 6)                          { setAddError('Password must be at least 6 characters.');   return; }
+    if (password !== confirm_password)                { setAddError('Passwords do not match.');                    return; }
+
+    setAddLoading(true);
+    try {
+      const payload = {
+        first_name: first_name.trim(),
+        last_name:  last_name.trim(),
+        email:      email.trim().toLowerCase(),
+        password,
+        student_id: student_id.trim(),
+        department_id,
+      };
+      if (addForm.year_of_study)    payload.year_of_study    = parseInt(addForm.year_of_study);
+      if (addForm.registration_year) payload.registration_year = parseInt(addForm.registration_year);
+
+      await userAPI.create(payload);
+      toast.success('Student account created successfully.');
+      setAddModal(false);
+      refetch();
+    } catch (err) {
+      setAddError(getErrorMessage(err));
+    } finally {
+      setAddLoading(false);
     }
   }
 
@@ -677,6 +751,9 @@ export function AdminUsers() {
             ✕ Clear filters
           </button>
         )}
+        <button className="btn btn--primary btn--sm au-add-btn" onClick={openAddModal}>
+          + Add Student
+        </button>
       </div>
 
       {/* Error banner */}
@@ -953,6 +1030,155 @@ export function AdminUsers() {
         title="Delete User"
         message={`Permanently delete ${delUser?.first_name} ${delUser?.last_name}? This action cannot be undone. If this user has enrollments, grades, or teaching data, those records may also be affected.`}
       />
+
+      {/* ── Add Student modal ───────────────────────────────────── */}
+      <Modal
+        open={addModal}
+        onClose={() => setAddModal(false)}
+        title="Add New Student"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setAddModal(false)} disabled={addLoading}>
+              Cancel
+            </Button>
+            <Button variant="primary" onClick={handleAddSubmit} loading={addLoading}>
+              Create Student
+            </Button>
+          </>
+        }
+      >
+        {addError && (
+          <div className="au-add-error">⚠ {addError}</div>
+        )}
+
+        {/* Basic Info */}
+        <div className="au-modal-section">
+          <div className="au-modal-section-title">Basic Info</div>
+          <div className="au-add-grid">
+            <Input
+              label="First Name *"
+              value={addForm.first_name}
+              onChange={e => setAddForm(f => ({ ...f, first_name: e.target.value }))}
+              placeholder="e.g. Ahmad"
+            />
+            <Input
+              label="Last Name *"
+              value={addForm.last_name}
+              onChange={e => setAddForm(f => ({ ...f, last_name: e.target.value }))}
+              placeholder="e.g. Al-Haddad"
+            />
+            <div className="au-add-grid__full">
+              <Input
+                label="Email *"
+                type="email"
+                value={addForm.email}
+                onChange={e => setAddForm(f => ({ ...f, email: e.target.value }))}
+                placeholder="e.g. s12501001@stu.najah.edu"
+                autoComplete="off"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Student Info */}
+        <div className="au-modal-section">
+          <div className="au-modal-section-title">Student Info</div>
+          <div className="au-add-grid">
+            <div>
+              <label className="form-label">Student ID *</label>
+              <input
+                className="form-input"
+                type="text"
+                inputMode="numeric"
+                value={addForm.student_id}
+                onChange={e => {
+                  const sid = e.target.value.replace(/\D/g, '').slice(0, 12);
+                  const updates = { student_id: sid };
+                  if (sid.length >= 8) {
+                    const yr = inferYearFromStudentId(sid);
+                    const ry = inferRegYearFromStudentId(sid);
+                    if (yr) updates.year_of_study    = String(yr);
+                    if (ry) updates.registration_year = String(ry);
+                  }
+                  setAddForm(f => ({ ...f, ...updates }));
+                }}
+                placeholder="e.g. 12501001"
+                maxLength={12}
+              />
+            </div>
+            <div>
+              <label className="form-label">Department *</label>
+              <select
+                className="form-input"
+                value={addForm.department_id}
+                onChange={e => setAddForm(f => ({ ...f, department_id: e.target.value }))}
+                disabled={deptsLoading}
+              >
+                <option value="">
+                  {deptsLoading ? 'Loading departments…' : 'Select department…'}
+                </option>
+                {depts.map(d => (
+                  <option key={d.id} value={d.id}>{d.name_en}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="form-label">Year of Study</label>
+              <select
+                className="form-input"
+                value={addForm.year_of_study}
+                onChange={e => setAddForm(f => ({ ...f, year_of_study: e.target.value }))}
+              >
+                <option value="">Auto (from Student ID)</option>
+                {[1, 2, 3, 4, 5, 6].map(yr => (
+                  <option key={yr} value={String(yr)}>Year {yr}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="form-label">Registration Year</label>
+              <input
+                className="form-input"
+                type="number"
+                value={addForm.registration_year}
+                onChange={e => setAddForm(f => ({ ...f, registration_year: e.target.value }))}
+                placeholder="e.g. 2025 (auto)"
+                min={2000}
+                max={2100}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Account */}
+        <div className="au-modal-section">
+          <div className="au-modal-section-title">Account</div>
+          <div className="au-add-grid">
+            <div>
+              <label className="form-label">Password *</label>
+              <input
+                className="form-input"
+                type="password"
+                value={addForm.password}
+                onChange={e => setAddForm(f => ({ ...f, password: e.target.value }))}
+                placeholder="Min. 6 characters"
+                autoComplete="new-password"
+              />
+            </div>
+            <div>
+              <label className="form-label">Confirm Password *</label>
+              <input
+                className="form-input"
+                type="password"
+                value={addForm.confirm_password}
+                onChange={e => setAddForm(f => ({ ...f, confirm_password: e.target.value }))}
+                placeholder="Re-enter password"
+                autoComplete="new-password"
+              />
+            </div>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }
@@ -999,6 +1225,23 @@ function UserRoleBadge({ role }) {
 function UserStatusBadge({ status }) {
   const variant = statusBadgeClass(status).replace('badge--', '');
   return <Badge variant={variant}>{statusLabel(status)}</Badge>;
+}
+
+function inferYearFromStudentId(sid) {
+  const str = String(sid).replace(/\D/g, '');
+  if (str.length < 3) return null;
+  const batch          = parseInt(str.slice(0, 3));
+  const enrollmentYear = 2000 + (batch % 100);
+  const yearsStudied   = new Date().getFullYear() - enrollmentYear + 1;
+  if (yearsStudied < 1) return 1;
+  if (yearsStudied > 6) return 6;
+  return yearsStudied;
+}
+
+function inferRegYearFromStudentId(sid) {
+  const str = String(sid).replace(/\D/g, '');
+  if (str.length < 3) return null;
+  return 2000 + (parseInt(str.slice(0, 3)) % 100);
 }
 
 // ─── Admin Floors ─────────────────────────────────────────────

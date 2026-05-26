@@ -402,6 +402,42 @@
   border: 1px solid var(--border, #e5e7eb);
 }
 
+/* ─── Add Student modal ──────────────────────────── */
+.au-add-btn {
+  margin-left: auto;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.au-add-error {
+  background: #fef2f2;
+  border: 1px solid #fca5a5;
+  border-radius: var(--r-lg, 14px);
+  color: #dc2626;
+  padding: 10px 14px;
+  font-size: 13px;
+  margin-bottom: 16px;
+}
+
+.au-add-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 14px;
+}
+
+.au-add-grid__full {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 480px) {
+  .au-add-grid {
+    grid-template-columns: 1fr;
+  }
+  .au-add-grid__full {
+    grid-column: 1;
+  }
+}
+
 /* ─── Responsive ─────────────────────────────────── */
 
 /* Tablet: 3-column stats, hide Dept + Last Login */
