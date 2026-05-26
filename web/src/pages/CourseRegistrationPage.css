@@ -609,11 +609,10 @@
 /* ── Section row ─────────────────────────────────────────────── */
 
 .cr-sec-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: 60px 1fr 140px 80px 90px 100px 120px;
   align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 10px;
+  gap: 8px;
   padding: 10px 16px;
   border-bottom: 1px solid var(--border, #e5e7eb);
   transition: background 0.1s;
@@ -639,21 +638,21 @@
   opacity: 0.6;
 }
 
-.cr-sec-row__info {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px 14px;
-  flex: 1;
-  min-width: 0;
+.cr-sec-row__num,
+.cr-sec-row__instr,
+.cr-sec-row__sched,
+.cr-sec-row__room,
+.cr-sec-row__cap,
+.cr-sec-row__status,
+.cr-sec-row__action {
   font-size: 13px;
+  min-width: 0;
 }
 
 .cr-sec-row__num {
   font-weight: 700;
   color: var(--navy, #1a2744);
   white-space: nowrap;
-  min-width: 46px;
 }
 
 .cr-sec-row__instr {
@@ -661,7 +660,6 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 160px;
 }
 
 .cr-sec-row__sched {
@@ -698,11 +696,15 @@
   white-space: nowrap;
 }
 
-.cr-sec-row__right {
+.cr-sec-row__status {
   display: flex;
   align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
+}
+
+.cr-sec-row__action {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
 }
 
 /* ── Mini capacity bar ───────────────────────────────────────── */
@@ -752,7 +754,7 @@
 }
 
 .cr-sec-row__prereq-hint {
-  flex: 0 0 100%;
+  grid-column: 1 / -1;
   display: flex;
   flex-direction: column;
   gap: 3px;
@@ -1036,21 +1038,47 @@
   }
 
   .cr-sec-row {
+    display: flex;
     flex-direction: column;
-    align-items: flex-start;
-    gap: 8px;
+    gap: 0;
     padding: 12px 14px;
   }
 
-  .cr-sec-row__info {
-    gap: 4px 10px;
+  .cr-sec-row__num,
+  .cr-sec-row__instr,
+  .cr-sec-row__sched,
+  .cr-sec-row__room,
+  .cr-sec-row__cap,
+  .cr-sec-row__status {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    padding: 3px 0;
   }
 
-  .cr-sec-row__right {
+  .cr-sec-row__num::before,
+  .cr-sec-row__instr::before,
+  .cr-sec-row__sched::before,
+  .cr-sec-row__room::before,
+  .cr-sec-row__cap::before,
+  .cr-sec-row__status::before {
+    content: attr(data-label);
+    font-weight: 600;
+    font-size: 11px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    min-width: 74px;
+    flex-shrink: 0;
+  }
+
+  .cr-sec-row__action {
     width: 100%;
     justify-content: flex-end;
-    padding-top: 6px;
+    padding-top: 8px;
     border-top: 1px solid var(--border, #e5e7eb);
+    margin-top: 6px;
   }
 
   .cr-course__name {

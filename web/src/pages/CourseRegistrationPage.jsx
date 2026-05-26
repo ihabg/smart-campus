@@ -230,37 +230,42 @@ function SectionRow({ section, secStatus, onEnroll, onOpenDrop, isEnrolling, mis
 
   return (
     <div className={`cr-sec-row cr-sec-row--${secStatus}`}>
-      <div className="cr-sec-row__info">
-        <span className="cr-sec-row__num">
-          Sec {String(section.section_number).padStart(2, '0')}
-        </span>
-        {section.instructor_name && (
-          <span className="cr-sec-row__instr">{section.instructor_name}</span>
-        )}
-        <span className="cr-sec-row__sched">
-          <span className="cr-sec-row__days">{fmtDays(section.day_of_week)}</span>
-          <span className="cr-sec-row__time">{fmtTime(section.start_time)}–{fmtTime(section.end_time)}</span>
-        </span>
-        {section.room_number && (
-          <span className="cr-sec-row__room">{section.room_number}</span>
-        )}
-        <span className="cr-sec-row__cap">
-          <span className="cr-sec-row__cap-txt">
-            {section.enrolled ?? 0}{section.max_capacity ? `/${section.max_capacity}` : ''}
-          </span>
-          {pct !== null && (
-            <span className="cr-mini-bar" role="progressbar" aria-valuenow={pct}>
-              <span
-                className={`cr-mini-bar__fill${pct >= 100 ? ' cr-mini-bar__fill--full' : pct >= 80 ? ' cr-mini-bar__fill--warn' : ''}`}
-                style={{ width: `${pct}%` }}
-              />
-            </span>
-          )}
-        </span>
-      </div>
+      <span className="cr-sec-row__num" data-label="Sec">
+        Sec {String(section.section_number).padStart(2, '0')}
+      </span>
 
-      <div className="cr-sec-row__right">
+      <span className="cr-sec-row__instr" data-label="Instructor">
+        {section.instructor_name || '—'}
+      </span>
+
+      <span className="cr-sec-row__sched" data-label="Schedule">
+        <span className="cr-sec-row__days">{fmtDays(section.day_of_week)}</span>
+        <span className="cr-sec-row__time">{fmtTime(section.start_time)}–{fmtTime(section.end_time)}</span>
+      </span>
+
+      <span className="cr-sec-row__room" data-label="Room">
+        {section.room_number || '—'}
+      </span>
+
+      <span className="cr-sec-row__cap" data-label="Capacity">
+        <span className="cr-sec-row__cap-txt">
+          {section.enrolled ?? 0}{section.max_capacity ? `/${section.max_capacity}` : ''}
+        </span>
+        {pct !== null && (
+          <span className="cr-mini-bar" role="progressbar" aria-valuenow={pct}>
+            <span
+              className={`cr-mini-bar__fill${pct >= 100 ? ' cr-mini-bar__fill--full' : pct >= 80 ? ' cr-mini-bar__fill--warn' : ''}`}
+              style={{ width: `${pct}%` }}
+            />
+          </span>
+        )}
+      </span>
+
+      <span className="cr-sec-row__status" data-label="Status">
         <span className={`cr-sec-badge ${meta.css}`}>{meta.label}</span>
+      </span>
+
+      <span className="cr-sec-row__action" data-label="Actions">
         {secStatus === 'already_registered' ? (
           <button
             className="cr-btn cr-btn--drop cr-btn--sm"
@@ -291,7 +296,7 @@ function SectionRow({ section, secStatus, onEnroll, onOpenDrop, isEnrolling, mis
               : '—'}
           </button>
         )}
-      </div>
+      </span>
 
       {secStatus === 'prereq_missing' && missingPrereqs?.length > 0 && (
         <div className="cr-sec-row__prereq-hint">
@@ -447,7 +452,7 @@ function CourseRow({
                 <span>Room</span>
                 <span>Capacity</span>
                 <span>Status</span>
-                <span></span>
+                <span>Actions</span>
               </div>
               {sections.map(sec => {
                 const ss = getSectionStatus(sec, enrolledBySectionId, enrolledByCourseId, myEnrolled, prereqStatus.ok);
