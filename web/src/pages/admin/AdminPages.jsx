@@ -124,23 +124,59 @@ export function AdminDashboard() {
         <div className="card">
           <SectionHeader title="Quick Actions" />
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             {[
-              { to: '/admin/floors', label: 'Manage Floors & Rooms' },
-              { to: '/admin/map-editor', label: '✏️ Open Map Editor' },
-              { to: '/admin/schedule', label: 'Manage Schedule' },
-              { to: '/admin/announcements', label: '📢 Manage Announcements' },
-              { to: '/admin/notifications', label: '🔔 Send Notification' },
-              { to: '/admin/users', label: 'Manage Users' }
-            ].map((action) => (
-              <Link
-                key={action.to}
-                to={action.to}
-                className="btn btn--secondary"
-                style={{ justifyContent: 'flex-start' }}
-              >
-                {action.label} →
-              </Link>
+              {
+                group: 'Academic',
+                actions: [
+                  { to: '/admin/semester',    label: '📅 Semester' },
+                  { to: '/admin/study-plans', label: '🎓 Study Plans' },
+                  { to: '/admin/courses',     label: '📖 Courses' },
+                  { to: '/admin/doctors',     label: '👨‍🏫 Doctors' },
+                ],
+              },
+              {
+                group: 'Campus',
+                actions: [
+                  { to: '/admin/floors',      label: '🏢 Floors & Maps' },
+                  { to: '/admin/map-editor',  label: '✏️ Map Editor' },
+                ],
+              },
+              {
+                group: 'Communication',
+                actions: [
+                  { to: '/admin/notifications', label: '🔔 Notifications' },
+                  { to: '/admin/announcements', label: '📢 Announcements' },
+                ],
+              },
+              {
+                group: 'Users',
+                actions: [
+                  { to: '/admin/users', label: '👥 Manage Users' },
+                ],
+              },
+            ].map(({ group, actions }) => (
+              <div key={group}>
+                <div style={{
+                  fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase',
+                  letterSpacing: '0.07em', color: 'var(--text-muted)',
+                  marginBottom: 6,
+                }}>
+                  {group}
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {actions.map(action => (
+                    <Link
+                      key={action.to}
+                      to={action.to}
+                      className="btn btn--secondary"
+                      style={{ justifyContent: 'flex-start', fontSize: 12.5, flex: '1 1 140px' }}
+                    >
+                      {action.label}
+                    </Link>
+                  ))}
+                </div>
+              </div>
             ))}
           </div>
         </div>
