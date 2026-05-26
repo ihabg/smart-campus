@@ -290,6 +290,9 @@ export const semesterAPI = {
 
   validate: ({ semester, academic_year, department_contains } = {}) =>
     api.get('/schedule/validate', { params: { semester, academic_year, department_contains } }),
+
+  setPeriod: ({ semester, academic_year, registration_start, registration_end, drop_deadline }) =>
+    api.patch('/schedule/semesters/period', { semester, academic_year, registration_start, registration_end, drop_deadline }),
 };
 
 // ─── courseAPI ────────────────────────────────────────────────

@@ -2186,6 +2186,18 @@ function ValidationTab({ semester, academicYear, departmentContains }) {
   );
 }
 
+function toDatetimeLocal(isoStr) {
+  if (!isoStr) return '';
+  const d = new Date(isoStr);
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+function fromDatetimeLocal(localStr) {
+  if (!localStr) return null;
+  return new Date(localStr).toISOString();
+}
+
 // ─── Main page ────────────────────────────────────────────────
 export default function SemesterManagementPage() {
   const [semester, setSemester] = useState('fall');
@@ -2210,6 +2222,9 @@ export default function SemesterManagementPage() {
   const [unpublishConfirm, setUnpublishConfirm] = useState(false);
   const [publishBlockedResult, setPublishBlockedResult] = useState(null);
   const [publishWarnings, setPublishWarnings] = useState(null);
+
+  const [periodDraft,  setPeriodDraft]  = useState({ registration_start: '', registration_end: '', drop_deadline: '' });
+  const [periodSaving, setPeriodSaving] = useState(false);
 
   const currentSemData = allSemesterStatuses.find(
     s => s.semester === semester && s.academic_year === academicYear
@@ -2270,6 +2285,58 @@ export default function SemesterManagementPage() {
   }, []);
 
   useEffect(() => { loadSemesterStatuses(); }, [loadSemesterStatuses]);
+
+  useEffect(() => {
+    setPeriodDraft({
+      registration_start: toDatetimeLocal(currentSemData?.registration_start),
+      registration_end:   toDatetimeLocal(currentSemData?.registration_end),
+      drop_deadline:      toDatetimeLocal(currentSemData?.drop_deadline),
+    });
+  }, [currentSemData]);
+
+  const savePeriod = async () => {
+    if (periodDraft.registration_start && periodDraft.registration_end) {
+      if (new Date(periodDraft.registration_start) >= new Date(periodDraft.registration_end)) {
+        toast.error('Registration start must be before registration end.');
+        return;
+      }
+    }
+    setPeriodSaving(true);
+    try {
+      await semesterAPI.setPeriod({
+        semester,
+        academic_year:      academicYear,
+        registration_start: fromDatetimeLocal(periodDraft.registration_start),
+        registration_end:   fromDatetimeLocal(periodDraft.registration_end),
+        drop_deadline:      fromDatetimeLocal(periodDraft.drop_deadline),
+      });
+      toast.success('Registration period saved.');
+      await loadSemesterStatuses();
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setPeriodSaving(false);
+    }
+  };
+
+  const clearPeriod = async () => {
+    setPeriodSaving(true);
+    try {
+      await semesterAPI.setPeriod({
+        semester,
+        academic_year:      academicYear,
+        registration_start: null,
+        registration_end:   null,
+        drop_deadline:      null,
+      });
+      toast.success('Registration period cleared — open while published.');
+      await loadSemesterStatuses();
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setPeriodSaving(false);
+    }
+  };
 
   useEffect(() => {
     if (!semester || !academicYear) return;
@@ -2457,6 +2524,95 @@ export default function SemesterManagementPage() {
           />
         )}
       </div>
+
+      {/* ── Registration Period ── */}
+      {(() => {
+        const now      = new Date();
+        const rsDate   = currentSemData?.registration_start ? new Date(currentSemData.registration_start) : null;
+        const reDate   = currentSemData?.registration_end   ? new Date(currentSemData.registration_end)   : null;
+        const ddDate   = currentSemData?.drop_deadline      ? new Date(currentSemData.drop_deadline)       : null;
+        const hasAny   = rsDate || reDate || ddDate;
+        const regOpen  = hasAny && (!rsDate || now >= rsDate) && (!reDate || now <= reDate);
+        const notYet   = hasAny && rsDate && now < rsDate;
+        const closed   = hasAny && reDate && now > reDate;
+        const dropPast = ddDate && now > ddDate;
+
+        const chipStyle = (bg, color, border) => ({
+          fontSize: 11, padding: '3px 10px', borderRadius: 20, fontWeight: 600,
+          background: bg, color, border: `1px solid ${border}`, whiteSpace: 'nowrap',
+        });
+
+        const inputStyle = {
+          padding: '7px 10px', borderRadius: 6, border: '1px solid #d1d5db',
+          fontSize: 13, color: '#111827', background: '#fff', width: '100%',
+        };
+        const labelStyle = {
+          display: 'block', fontSize: 11, fontWeight: 600, color: '#64748b',
+          textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 5,
+        };
+
+        return (
+          <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: '18px 20px', marginBottom: 24 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10, marginBottom: 16 }}>
+              <span style={{ fontSize: 14, fontWeight: 700, color: '#111827' }}>Registration Period</span>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {!hasAny  && <span style={chipStyle('#f1f5f9', '#64748b', '#e2e8f0')}>No Window Set — Open While Published</span>}
+                {regOpen  && <span style={chipStyle('#ecfdf5', '#15803d', '#86efac')}>● Registration Open</span>}
+                {notYet   && <span style={chipStyle('#fffbeb', '#92400e', '#fde68a')}>Registration Not Yet Open</span>}
+                {closed   && <span style={chipStyle('#fef2f2', '#dc2626', '#fecaca')}>Registration Closed</span>}
+                {dropPast && <span style={chipStyle('#fef2f2', '#dc2626', '#fecaca')}>Drop Deadline Passed</span>}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, marginBottom: 16 }}>
+              <div style={{ flex: '1 1 180px' }}>
+                <label style={labelStyle}>Registration Opens</label>
+                <input
+                  type="datetime-local"
+                  style={inputStyle}
+                  value={periodDraft.registration_start}
+                  onChange={e => setPeriodDraft(p => ({ ...p, registration_start: e.target.value }))}
+                />
+              </div>
+              <div style={{ flex: '1 1 180px' }}>
+                <label style={labelStyle}>Registration Closes</label>
+                <input
+                  type="datetime-local"
+                  style={inputStyle}
+                  value={periodDraft.registration_end}
+                  onChange={e => setPeriodDraft(p => ({ ...p, registration_end: e.target.value }))}
+                />
+              </div>
+              <div style={{ flex: '1 1 180px' }}>
+                <label style={labelStyle}>Drop Deadline</label>
+                <input
+                  type="datetime-local"
+                  style={inputStyle}
+                  value={periodDraft.drop_deadline}
+                  onChange={e => setPeriodDraft(p => ({ ...p, drop_deadline: e.target.value }))}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button
+                onClick={clearPeriod}
+                disabled={periodSaving}
+                style={{ padding: '7px 16px', borderRadius: 7, border: '1px solid #e2e8f0', background: '#fff', cursor: periodSaving ? 'not-allowed' : 'pointer', color: '#374151', fontSize: 13, fontWeight: 500 }}
+              >
+                Clear
+              </button>
+              <button
+                onClick={savePeriod}
+                disabled={periodSaving}
+                style={{ padding: '7px 18px', borderRadius: 7, border: 'none', background: periodSaving ? '#93c5fd' : '#2563eb', color: '#fff', cursor: periodSaving ? 'not-allowed' : 'pointer', fontSize: 13, fontWeight: 600 }}
+              >
+                {periodSaving ? 'Saving…' : 'Save Period'}
+              </button>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── Controls ── */}
       <div style={{ display: 'flex', gap: 20, marginBottom: 24, flexWrap: 'wrap', alignItems: 'flex-end' }}>

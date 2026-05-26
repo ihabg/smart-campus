@@ -54,6 +54,44 @@
   line-height: 1.6;
 }
 
+/* ── Registration period banner ─────────────────────────────── */
+
+.cr-period-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 18px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 10px;
+  margin-bottom: 16px;
+}
+
+.cr-period-banner__icon {
+  font-size: 18px;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.cr-period-banner__body {
+  min-width: 0;
+}
+
+.cr-period-banner__title {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #991b1b;
+  margin-bottom: 4px;
+}
+
+.cr-period-banner__dates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  font-size: 12px;
+  color: #7f1d1d;
+}
+
 /* ── Page header ─────────────────────────────────────────────── */
 
 .cr-page-header {

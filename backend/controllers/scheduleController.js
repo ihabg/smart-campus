@@ -947,6 +947,55 @@ async function checkStudentScheduleConflict(student_id, section_id) {
   };
 }
 
+async function checkRegistrationPeriod(semester, academicYear) {
+  const result = await query(
+    `SELECT status, registration_start, registration_end, drop_deadline
+     FROM semesters
+     WHERE semester = $1 AND academic_year = $2`,
+    [semester, academicYear]
+  );
+
+  if (!result.rows.length) {
+    return { enrollAllowed: false, dropAllowed: false, reason: 'semester_not_found', period: null };
+  }
+
+  const { status, registration_start, registration_end, drop_deadline } = result.rows[0];
+  const period = { registration_start, registration_end, drop_deadline };
+
+  if (status !== 'published') {
+    return { enrollAllowed: false, dropAllowed: false, reason: 'not_published', period };
+  }
+
+  const now = new Date();
+  let enrollAllowed = true;
+  let enrollReason  = null;
+
+  if (registration_start && now < new Date(registration_start)) {
+    enrollAllowed = false;
+    enrollReason  = 'not_open_yet';
+  } else if (registration_end && now > new Date(registration_end)) {
+    enrollAllowed = false;
+    enrollReason  = 'registration_closed';
+  }
+
+  const dropAllowed = !drop_deadline || now <= new Date(drop_deadline);
+
+  return {
+    enrollAllowed,
+    dropAllowed,
+    reason: enrollReason || (!dropAllowed ? 'drop_deadline_passed' : null),
+    period,
+  };
+}
+
+const PERIOD_MESSAGES = {
+  semester_not_found:  'Semester not found.',
+  not_published:       'This semester is not currently open for registration.',
+  not_open_yet:        'Registration for this semester has not opened yet.',
+  registration_closed: 'Registration for this semester is closed.',
+  drop_deadline_passed:'The drop deadline for this semester has passed.',
+};
+
 async function enrollStudent(req, res, next) {
   try {
     const { section_id } = req.body;
@@ -962,6 +1011,16 @@ async function enrollStudent(req, res, next) {
     }
 
     const { max_capacity, enrolled, course_id, semester, academic_year } = sec.rows[0];
+
+    const periodCheck = await checkRegistrationPeriod(semester, academic_year);
+    if (!periodCheck.enrollAllowed) {
+      return res.status(403).json({
+        success:             false,
+        registration_closed: true,
+        reason:              periodCheck.reason,
+        message:             PERIOD_MESSAGES[periodCheck.reason] || 'Registration is not open.',
+      });
+    }
 
     const prereqCheck = await checkCoursePrerequisites(student_id, course_id, semester, academic_year);
     if (!prereqCheck.ok) {
@@ -1011,7 +1070,8 @@ async function enrollStudent(req, res, next) {
 async function getPublishedSemesters(req, res, next) {
   try {
     const result = await query(
-      `SELECT semester, academic_year, label
+      `SELECT semester, academic_year, label,
+              registration_start, registration_end, drop_deadline
        FROM semesters
        WHERE status = 'published'
        ORDER BY academic_year DESC,
@@ -1032,6 +1092,25 @@ async function dropEnrollment(req, res, next) {
   try {
     const { section_id } = req.params;
     const student_id = req.user.id;
+
+    const secRes = await query(
+      'SELECT semester, academic_year FROM sections WHERE id = $1',
+      [section_id]
+    );
+    if (!secRes.rows.length) {
+      return res.status(404).json({ success: false, message: 'Section not found.' });
+    }
+    const { semester, academic_year } = secRes.rows[0];
+
+    const periodCheck = await checkRegistrationPeriod(semester, academic_year);
+    if (!periodCheck.dropAllowed) {
+      return res.status(403).json({
+        success:              false,
+        drop_deadline_passed: true,
+        reason:               periodCheck.reason,
+        message:              PERIOD_MESSAGES[periodCheck.reason] || 'Dropping is not allowed at this time.',
+      });
+    }
 
     await withTransaction(async client => {
       const result = await client.query(
@@ -2245,6 +2324,13 @@ async function runSemesterMigration() {
   `);
 
   await query(`
+    ALTER TABLE semesters
+      ADD COLUMN IF NOT EXISTS registration_start TIMESTAMPTZ,
+      ADD COLUMN IF NOT EXISTS registration_end   TIMESTAMPTZ,
+      ADD COLUMN IF NOT EXISTS drop_deadline      TIMESTAMPTZ
+  `);
+
+  await query(`
     INSERT INTO semesters (semester, academic_year, label, status)
     SELECT DISTINCT
       semester::text,
@@ -2297,7 +2383,9 @@ async function getMyTerms(req, res, next) {
 async function listSemesters(req, res, next) {
   try {
     const result = await query(
-      `SELECT id, semester, academic_year, label, status, created_at, updated_at
+      `SELECT id, semester, academic_year, label, status,
+              registration_start, registration_end, drop_deadline,
+              created_at, updated_at
        FROM semesters
        ORDER BY academic_year DESC,
          CASE semester
@@ -2373,6 +2461,46 @@ async function unpublishSemester(req, res, next) {
     if (!result.rows.length) {
       return res.status(404).json({ success: false, message: 'Semester not found' });
     }
+    res.json({ success: true, data: { semester: result.rows[0] } });
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function setRegistrationPeriod(req, res, next) {
+  try {
+    const { semester, academic_year, registration_start, registration_end, drop_deadline } = req.body;
+
+    if (!semester || !academic_year) {
+      return res.status(400).json({ success: false, message: 'semester and academic_year are required.' });
+    }
+    if (registration_start && registration_end) {
+      if (new Date(registration_start) >= new Date(registration_end)) {
+        return res.status(400).json({ success: false, message: 'registration_start must be before registration_end.' });
+      }
+    }
+
+    const result = await query(
+      `UPDATE semesters
+       SET registration_start = $3,
+           registration_end   = $4,
+           drop_deadline      = $5,
+           updated_at         = NOW()
+       WHERE semester = $1 AND academic_year = $2
+       RETURNING *`,
+      [
+        semester,
+        academic_year,
+        registration_start || null,
+        registration_end   || null,
+        drop_deadline      || null,
+      ]
+    );
+
+    if (!result.rows.length) {
+      return res.status(404).json({ success: false, message: 'Semester not found. Use ensure to create it first.' });
+    }
+
     res.json({ success: true, data: { semester: result.rows[0] } });
   } catch (error) {
     next(error);
@@ -2679,5 +2807,6 @@ module.exports = {
   ensureSemesterRow,
   publishSemester,
   unpublishSemester,
+  setRegistrationPeriod,
   validateSemester,
 };
