@@ -34,7 +34,7 @@ export default function DashboardPage() {
   const QUICK_LINKS = [
     !isProfessor && { to:'/map',      label:'Campus Map',  emoji:'🗺️' },
     { to:'/schedule',                 label:'My Schedule', emoji:'📅' },
-    { to:'/search',                   label:'Find a Room', emoji:'🔍' },
+    { to:'/map',                       label:'Find a Room', emoji:'🔍' },
   ].filter(Boolean);
 
   return (
