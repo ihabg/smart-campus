@@ -670,7 +670,6 @@
   .sp-tab__count { display: none; }
 }
 
-<<<<<<< HEAD
 /* ── Study Plan Advisor ─────────────────────────────────────── */
 .sp-advisor {
   padding: 22px;
@@ -1228,7 +1227,10 @@
   }
 
   .sp-advisor-chip__name {
-=======
+    max-width: none;
+  }
+}
+
 /* ── Available Option badge ──────────────────────────────────── */
 
 .sp-badge--available_option {
@@ -1440,12 +1442,10 @@
   }
 
   .sp-cat-progress-bar {
->>>>>>> bcd418da0b69c878ccc1b1341af9f9a8f256f026
     max-width: none;
   }
 }
 
-<<<<<<< HEAD
 /* ── Advisor recommended schedule map (official-plan style) ───── */
 .sp-advisor-flow {
   margin-top: 14px;
@@ -1750,12 +1750,12 @@
 
 .sp-advisor-pick--selected {
   opacity: 1;
-=======
+}
+
 @media (max-width: 480px) {
   .sp-cat-header {
     padding: 14px 16px;
   }
 
   .sp-cat-name { font-size: 14px; }
->>>>>>> bcd418da0b69c878ccc1b1341af9f9a8f256f026
 }

@@ -11,10 +11,6 @@ import './StudyPlanPage.css';
 
 const SEMESTER_LABELS = { fall: 'Fall', spring: 'Spring', summer: 'Summer' };
 
-<<<<<<< HEAD
-function semesterLabel(semester, academicYear) {
-  return `${SEMESTER_LABELS[semester] || semester} ${academicYear}`;
-=======
 const CAT_LABEL = {
   major_required:      'Major Required',
   university_required: 'University Required',
@@ -53,7 +49,6 @@ const SEM_RANK      = { fall: 1, spring: 2, summer: 3 };
 function gradeColor(letter) {
   if (!letter) return 'var(--text-muted)';
   return FAILING.has(letter) ? '#dc2626' : '#16a34a';
->>>>>>> bcd418da0b69c878ccc1b1341af9f9a8f256f026
 }
 
 function semesterOrder(semester) {
@@ -909,7 +904,6 @@ export default function StudyPlanPage() {
         </div>
       )}
 
-<<<<<<< HEAD
       {/* ── Study Plan Advisor ───────────────────────────────────── */}
       <div className="sp-advisor card">
         <div className="sp-advisor__head">
@@ -1047,9 +1041,6 @@ export default function StudyPlanPage() {
       </div>
 
       {/* ── Tab strip: only when official plan exists ── */}
-=======
-      {/* ── Tab strip ── */}
->>>>>>> bcd418da0b69c878ccc1b1341af9f9a8f256f026
       {has_official_plan && (
         <div className="sp-tabs">
           <button
@@ -1159,102 +1150,6 @@ export default function StudyPlanPage() {
             </div>
           )}
 
-<<<<<<< HEAD
-          {/* Year-grouped plan courses */}
-          {planGroups.map(({ year, courses }) => (
-            <div key={year} className="sp-group">
-              <div className="sp-group-head">
-                <span className="sp-group-head__label">
-                  {year === 0 ? 'Other Courses' : `Year ${year}`}
-                </span>
-                <span className="sp-group-head__count">
-                  {courses.length} course{courses.length !== 1 ? 's' : ''}
-                </span>
-              </div>
-
-              {/* Desktop table */}
-              <div className="sp-table-wrap">
-                <table className="sp-table">
-                  <thead>
-                    <tr>
-                      <th>Code</th>
-                      <th>Course</th>
-                      <th style={{ textAlign:'center' }}>Hours</th>
-                      <th style={{ textAlign:'center' }}>Category</th>
-                      <th style={{ textAlign:'center' }}>Grade</th>
-                      <th style={{ textAlign:'right'  }}>Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {courses.map(c => (
-                      <tr key={c.plan_course_id}>
-                        <td><span className="sp-table__code">{c.course_code}</span></td>
-                        <td>
-                          <div className="sp-table__name">{c.course_name}</div>
-                          {c.course_name_ar && (
-                            <div className="sp-table__name-ar">{c.course_name_ar}</div>
-                          )}
-                        </td>
-                        <td className="sp-table__hours">{c.credit_hours}</td>
-                        <td style={{ textAlign:'center' }}>
-                          <span className="sp-cat-tag">
-                            {c.category.charAt(0).toUpperCase() + c.category.slice(1)}
-                          </span>
-                        </td>
-                        <td>
-                          <span
-                            className="sp-table__grade"
-                            style={{ color: gradeColor(c.letter_grade) }}
-                          >
-                            {c.letter_grade || '—'}
-                          </span>
-                        </td>
-                        <td style={{ textAlign:'right' }}>
-                          <StatusBadge status={c.computed_status} />
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Mobile cards */}
-              <div className="sp-card-list">
-                {courses.map(c => (
-                  <div key={c.plan_course_id} className="sp-course-card">
-                    <div className="sp-course-card__top">
-                      <div>
-                        <div className="sp-course-card__code">{c.course_code}</div>
-                        <div className="sp-course-card__name">{c.course_name}</div>
-                        {c.course_name_ar && (
-                          <div className="sp-course-card__name-ar">{c.course_name_ar}</div>
-                        )}
-                      </div>
-                      <StatusBadge status={c.computed_status} />
-                    </div>
-                    <div className="sp-course-card__footer">
-                      <span>{c.credit_hours} credit hour{c.credit_hours !== 1 ? 's' : ''}</span>
-                      <span className="sp-cat-tag">
-                        {c.category.charAt(0).toUpperCase() + c.category.slice(1)}
-                      </span>
-                      {c.letter_grade ? (
-                        <span
-                          className="sp-course-card__grade"
-                          style={{ color: gradeColor(c.letter_grade) }}
-                        >
-                          Grade: {c.letter_grade}
-                          {c.total_grade != null ? ` (${Math.round(c.total_grade)})` : ''}
-                        </span>
-                      ) : (
-                        <span style={{ color:'var(--text-muted)', fontSize:12 }}>No grade yet</span>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-=======
           {/* Category-grouped plan courses */}
           {plan_courses.length > 0 && planFiltered.length > 0 && categoryGroups.map(({ category: catKey, courses: allCourses }) => {
             if (allCourses.length === 0) return null;
@@ -1269,7 +1164,6 @@ export default function StudyPlanPage() {
               />
             );
           })}
->>>>>>> bcd418da0b69c878ccc1b1341af9f9a8f256f026
         </>
       )}
 
