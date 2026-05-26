@@ -71,7 +71,7 @@
 
 .sp-summary {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 12px;
   margin-bottom: 20px;
 }
@@ -101,16 +101,19 @@
   line-height: 1;
 }
 
-.sp-stat__value--green {
-  color: #16a34a;
+.sp-stat__value--green { color: #16a34a; }
+.sp-stat__value--blue  { color: var(--blue, #1443c8); }
+.sp-stat__value--red   { color: #dc2626; }
+
+.sp-stat__sub {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-top: 4px;
 }
 
-.sp-stat__value--blue {
-  color: var(--blue, #1443c8);
-}
-
-.sp-stat__value--red {
-  color: #dc2626;
+.sp-group-head__gpa {
+  font-weight: 600;
+  color: var(--navy);
 }
 
 /* ── Pending official plan banner ────────────────────────────── */
@@ -146,6 +149,68 @@
   margin: 0;
 }
 
+/* ── Tab strip ───────────────────────────────────────────────── */
+
+.sp-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+
+.sp-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 22px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--r-full, 9999px);
+  background: var(--surface, #fff);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  font-family: var(--font-body);
+  transition: background var(--t-fast, 120ms), border-color var(--t-fast, 120ms), color var(--t-fast, 120ms);
+}
+
+.sp-tab:hover:not(.sp-tab--active) {
+  background: var(--surface-2, #f8f9fd);
+  color: var(--text);
+  border-color: var(--border-strong, #b0bed8);
+}
+
+.sp-tab--active {
+  background: var(--navy);
+  border-color: var(--navy);
+  color: #fff;
+}
+
+.sp-tab__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: var(--r-full, 9999px);
+  font-size: 11px;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.25);
+  color: inherit;
+}
+
+.sp-tab--active .sp-tab__count {
+  background: rgba(255, 255, 255, 0.25);
+  color: #fff;
+}
+
+.sp-tab:not(.sp-tab--active) .sp-tab__count {
+  background: var(--surface-2, #f0f2f8);
+  color: var(--text-muted);
+}
+
 /* ── Controls: search + filters ──────────────────────────────── */
 
 .sp-controls {
@@ -167,7 +232,6 @@
   color: var(--text);
   outline: none;
   transition: border-color var(--t-fast, 120ms), box-shadow var(--t-fast, 120ms);
-  min-width: 0;
 }
 
 .sp-search:focus {
@@ -221,7 +285,7 @@
   margin-bottom: 12px;
 }
 
-/* ── Semester group ──────────────────────────────────────────── */
+/* ── Semester / year group ───────────────────────────────────── */
 
 .sp-group {
   margin-bottom: 24px;
@@ -268,9 +332,7 @@
   white-space: nowrap;
 }
 
-.sp-table th:last-child {
-  text-align: right;
-}
+.sp-table th:last-child { text-align: right; }
 
 .sp-table td {
   padding: 10px 12px;
@@ -280,13 +342,9 @@
   border-top: 1px solid var(--border);
 }
 
-.sp-table td:last-child {
-  text-align: right;
-}
+.sp-table td:last-child { text-align: right; }
 
-.sp-table tr:hover td {
-  background: var(--surface-2, #f8f9fd);
-}
+.sp-table tr:hover td { background: var(--surface-2, #f8f9fd); }
 
 .sp-table__code {
   font-family: var(--font-mono);
@@ -296,10 +354,7 @@
   white-space: nowrap;
 }
 
-.sp-table__name {
-  font-weight: 500;
-  color: var(--text);
-}
+.sp-table__name    { font-weight: 500; color: var(--text); }
 
 .sp-table__name-ar {
   font-size: 11px;
@@ -318,6 +373,8 @@
   font-family: var(--font-mono);
   font-weight: 700;
   font-size: 13px;
+  display: block;
+  text-align: center;
 }
 
 /* ── Status badges ───────────────────────────────────────────── */
@@ -333,38 +390,15 @@
   white-space: nowrap;
 }
 
-.sp-badge--completed {
-  background: #dcfce7;
-  color: #166534;
-}
-
-.sp-badge--in_progress {
-  background: var(--blue-bg, #e0e8ff);
-  color: var(--blue, #1443c8);
-}
-
-.sp-badge--failed {
-  background: #fee2e2;
-  color: #dc2626;
-}
-
-.sp-badge--dropped {
-  background: var(--surface-2, #f8f9fd);
-  color: var(--text-muted);
-  border: 1px solid var(--border);
-}
-
-.sp-badge--not_taken {
-  background: var(--surface-2, #f8f9fd);
-  color: var(--text-muted);
-  border: 1px dashed var(--border-strong, #b0bed8);
-}
+.sp-badge--completed   { background: #dcfce7; color: #166534; }
+.sp-badge--in_progress { background: var(--blue-bg, #e0e8ff); color: var(--blue, #1443c8); }
+.sp-badge--failed      { background: #fee2e2; color: #dc2626; }
+.sp-badge--dropped     { background: var(--surface-2, #f8f9fd); color: var(--text-muted); border: 1px solid var(--border); }
+.sp-badge--not_taken   { background: var(--surface-2, #f8f9fd); color: var(--text-muted); border: 1px dashed var(--border-strong, #b0bed8); }
 
 /* ── Mobile course cards (hidden on desktop) ─────────────────── */
 
-.sp-card-list {
-  display: none;
-}
+.sp-card-list { display: none; }
 
 .sp-course-card {
   background: var(--surface, #fff);
@@ -390,18 +424,8 @@
   color: var(--navy);
 }
 
-.sp-course-card__name {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text);
-  margin-bottom: 2px;
-}
-
-.sp-course-card__name-ar {
-  font-size: 11px;
-  color: var(--text-muted);
-  direction: rtl;
-}
+.sp-course-card__name    { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 2px; }
+.sp-course-card__name-ar { font-size: 11px; color: var(--text-muted); direction: rtl; }
 
 .sp-course-card__footer {
   display: flex;
@@ -421,46 +445,7 @@
   color: var(--navy);
 }
 
-/* ── Responsive ─────────────────────────────────────────────── */
-
-/* Tablet: 2-column summary, hide table → show cards */
-@media (max-width: 768px) {
-  .sp-summary {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .sp-table-wrap {
-    display: none;
-  }
-
-  .sp-card-list {
-    display: block;
-  }
-
-  .sp-controls {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .sp-search {
-    min-width: 0;
-    width: 100%;
-  }
-
-  .sp-filters {
-    gap: 6px;
-  }
-
-  .sp-student-bar__name {
-    font-size: 16px;
-  }
-}
-
-/* ── Official Study Plan section (Phase 2) ───────────────────── */
-
-.sp-official-plan {
-  margin-bottom: 28px;
-}
+/* ── Official Study Plan header card ─────────────────────────── */
 
 .sp-official-plan__head {
   display: flex;
@@ -488,10 +473,7 @@
   opacity: 0.75;
 }
 
-.sp-official-plan__progress {
-  text-align: right;
-  white-space: nowrap;
-}
+.sp-official-plan__progress { text-align: right; white-space: nowrap; }
 
 .sp-official-plan__progress-val {
   font-size: 22px;
@@ -530,43 +512,53 @@
   white-space: nowrap;
 }
 
-/* ── History toggle (Phase 2 collapsible) ────────────────────── */
+/* ── Responsive ─────────────────────────────────────────────── */
 
-.sp-history-toggle {
-  margin-bottom: 16px;
-}
-
-.sp-history-toggle__btn {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 16px;
-  background: var(--surface, #fff);
-  border: 1px solid var(--border);
-  border-radius: var(--r-xl, 20px);
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text);
-  cursor: pointer;
-  font-family: var(--font-body);
-  transition: background var(--t-fast, 120ms);
-}
-
-.sp-history-toggle__btn:hover {
-  background: var(--surface-2, #f8f9fd);
-}
-
-.sp-history-toggle__count {
-  font-size: 11px;
-  color: var(--text-muted);
-  font-weight: 500;
-}
-
-/* Mobile: single-column everything */
-@media (max-width: 480px) {
-  .sp-page {
-    padding-bottom: 32px;
+/* Tablet: 3-column summary (5 cards → 3+2), table → cards */
+@media (max-width: 768px) {
+  .sp-summary {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
+
+  .sp-table-wrap { display: none; }
+  .sp-card-list  { display: block; }
+
+  .sp-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .sp-search {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .sp-filters { gap: 6px; }
+
+  .sp-student-bar__name { font-size: 16px; }
+}
+
+/* Mobile: tabs stretch to fill width */
+@media (max-width: 640px) {
+  .sp-tabs {
+    gap: 6px;
+  }
+
+  .sp-tab {
+    flex: 1;
+    justify-content: center;
+    padding: 10px 14px;
+    font-size: 12.5px;
+  }
+}
+
+/* Small mobile: 2-column summary, single-column everything else */
+@media (max-width: 480px) {
+  .sp-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .sp-page { padding-bottom: 32px; }
 
   .sp-student-bar {
     padding: 14px 16px;
@@ -579,20 +571,21 @@
     font-size: 15px;
   }
 
-  .sp-stat {
-    padding: 12px 14px;
-  }
+  .sp-stat { padding: 12px 14px; }
 
-  .sp-stat__value {
-    font-size: 22px;
-  }
+  .sp-stat__value { font-size: 22px; }
 
   .sp-filter-btn {
     padding: 6px 11px;
     font-size: 11.5px;
   }
 
-  .sp-pending {
-    padding: 14px 16px;
+  .sp-pending { padding: 14px 16px; }
+
+  .sp-tab {
+    padding: 9px 12px;
+    font-size: 12px;
   }
+
+  .sp-tab__count { display: none; }
 }

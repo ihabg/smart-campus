@@ -16,7 +16,13 @@ function errorHandler(err, req, res, next) {  // eslint-disable-line no-unused-v
     message = 'Referenced record does not exist.';
   } else if (err.code === '22P02') {
     statusCode = 400;
-    message = 'Invalid UUID format.';
+    if (err.message?.includes('enum')) {
+      message = process.env.NODE_ENV === 'development'
+        ? `Invalid enum value: ${err.message}`
+        : 'Invalid value format.';
+    } else {
+      message = 'Invalid UUID format.';
+    }
   }
 
   // Multer errors

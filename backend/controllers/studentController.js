@@ -1,12 +1,36 @@
 const { query } = require('../config/db');
 
+// ── GPA helpers ────────────────────────────────────────────────
+
+function gradeToPoint(letter) {
+  const map = {
+    'A': 4.00, 'A-': 3.75,
+    'B+': 3.50, 'B': 3.00, 'B-': 2.75,
+    'C+': 2.50, 'C': 2.00, 'C-': 1.75,
+    'D+': 1.50, 'D': 1.00, 'D-': 0.75,
+    'E': 0.00,
+  };
+  const v = map[letter];
+  return v !== undefined ? v : null;
+}
+
+function semesterRank(semester) {
+  const s = (semester || '').toLowerCase();
+  if (s === 'fall'   || s === 'first')  return 1;
+  if (s === 'spring' || s === 'second') return 2;
+  if (s === 'summer')                   return 3;
+  return 0;
+}
+
+function academicYearStart(academicYear) {
+  return parseInt(String(academicYear || '').split('/')[0], 10) || 0;
+}
+
+// D- and E are failing — they count in GPA but NOT in completed hours
+const FAILING_GRADES = new Set(['D-', 'E']);
+
 /**
  * GET /api/student/study-plan
- *
- * Phase 1 — returns the authenticated student's enrollment history and
- * academic progress.  study_plans / study_plan_courses do NOT exist yet,
- * so has_official_plan is always false and "Not Taken" courses are never
- * shown.  No GPA is calculated or returned.
  */
 async function getStudyPlan(req, res, next) {
   try {
@@ -35,7 +59,10 @@ async function getStudyPlan(req, res, next) {
       return res.status(404).json({ success: false, message: 'Student not found.' });
     }
 
-    // ── 2. Full enrollment history (all statuses) + grades ────
+    // ── 2. Full enrollment history + official grades ───────────
+    // Credit hours come from courses.credit_hours — no study_plan_courses join.
+    // Ordered most-recent first: academic_year DESC, then semester rank DESC
+    // (fall=1 earliest, spring=2, summer=3 most recent within a year).
     const enrollRes = await query(`
       SELECT
         e.id              AS enrollment_id,
@@ -69,34 +96,39 @@ async function getStudyPlan(req, res, next) {
       JOIN  sections s ON s.id = e.section_id
       JOIN  courses  c ON c.id = s.course_id
       LEFT JOIN grades g
-        ON g.student_id = $1
+        ON g.student_id = e.student_id
        AND g.section_id = e.section_id
       WHERE e.student_id = $1
       ORDER BY
         s.academic_year DESC,
         CASE s.semester
-          WHEN 'summer' THEN 1
+          WHEN 'fall'   THEN 1
           WHEN 'spring' THEN 2
-          WHEN 'fall'   THEN 3
-        END ASC,
+          WHEN 'summer' THEN 3
+          ELSE 0
+        END DESC,
         c.code ASC
     `, [studentId]);
 
+    // ── DEBUG: log raw enrollment+grade rows for test student ─
+    if (student.student_id === '12143698') {
+      console.log(`[DEBUG student=${student.student_id}] ${enrollRes.rows.length} enrollment rows:`);
+      enrollRes.rows.forEach((r, i) => {
+        console.log(
+          `  [${i}] course=${r.course_code}  section=${r.section_id}` +
+          `  ${r.semester} ${r.academic_year}` +
+          `  letter=${r.letter_grade ?? 'null'}  total=${r.total_grade ?? 'null'}`
+        );
+      });
+    }
+
     // ── 3. Compute status per enrollment row ──────────────────
-    // Grade is authoritative and always preserved, even on inactive sections.
-    // Inactive sections with no grade return null → excluded from results.
     function computeStatus(enrollmentStatus, letterGrade, isActive) {
       if (letterGrade) {
-        // Real grade exists: preserve the historical record regardless of
-        // whether the section is still active.
-        return letterGrade === 'E' ? 'failed' : 'completed';
+        // D- and E are failing — do NOT count as completed hours or satisfy plan requirements
+        return FAILING_GRADES.has(letterGrade) ? 'failed' : 'completed';
       }
-      if (!isActive) {
-        // Section was deactivated and no grade was ever recorded.
-        // Return null so the row is filtered out before being sent to
-        // the frontend — it should not count as In Progress.
-        return null;
-      }
+      if (!isActive) return null; // inactive section, no grade — filter out
       switch (enrollmentStatus) {
         case 'completed': return 'completed';
         case 'failed':    return 'failed';
@@ -110,13 +142,9 @@ async function getStudyPlan(req, res, next) {
       computed_status: computeStatus(row.enrollment_status, row.letter_grade, row.is_active),
     }));
 
-    // Drop inactive no-grade rows — they must not appear in the Study Plan
-    // or contribute to any summary stat.
     const enrollments = allEnrollments.filter(row => row.computed_status !== null);
 
     // ── 4. Deduplicated summary stats ─────────────────────────
-    // Per distinct course, use the best status achieved.
-    // Priority: completed > in_progress > failed > dropped
     const priority = { completed: 4, in_progress: 3, failed: 2, dropped: 1 };
     const courseMap = new Map();
 
@@ -142,31 +170,99 @@ async function getStudyPlan(req, res, next) {
     for (const c of courseMap.values()) {
       const h = c.credit_hours || 0;
       switch (c.computed_status) {
-        case 'completed':
-          completedHours += h;
-          completedCourses++;
-          break;
-        case 'in_progress':
-          inProgressHours += h;
-          inProgressCourses++;
-          break;
-        case 'failed':
-          failedCourses++;
-          break;
-        case 'dropped':
-          droppedCourses++;
-          break;
+        case 'completed':   completedHours   += h; completedCourses++;   break;
+        case 'in_progress': inProgressHours  += h; inProgressCourses++;  break;
+        case 'failed':                              failedCourses++;      break;
+        case 'dropped':                             droppedCourses++;     break;
       }
     }
 
-    // ── 5. Phase 2: look up official study plan ───────────────
+    // ── 5. GPA computation ─────────────────────────────────────
+    // Iterates enrollRes.rows directly — includes grades from inactive sections.
+    // No join to study_plan_courses; credit_hours always from courses table.
+    //
+    // Cumulative GPA: latest graded attempt per course, determined by
+    //   academicYearStart DESC, then semesterRank DESC (fall<spring<summer).
+    // Semester GPA: all graded courses in that semester (no dedup needed).
+    const latestAttempt = new Map(); // course_id → { pts, ch, yearStart, semRank }
+    const semGpaAccum   = new Map(); // `year||sem` → { academic_year, semester, yearStart, semRank, qp, hours }
+    let skippedGpaCourses = 0;
+
+    for (const row of enrollRes.rows) {
+      if (!row.letter_grade) continue;
+
+      const pts = gradeToPoint(row.letter_grade);
+      if (pts === null) continue; // unrecognised grade letter — skip silently
+
+      const ch = row.credit_hours;
+      if (!ch || ch <= 0) {
+        // Missing or zero credit hours — skip to avoid divide-by-zero
+        skippedGpaCourses++;
+        continue;
+      }
+
+      const yearStart = academicYearStart(row.academic_year);
+      const semRank   = semesterRank(row.semester);
+
+      // Per-semester accumulation (all attempts, no dedup per course)
+      const semKey = `${row.academic_year}||${row.semester}`;
+      if (!semGpaAccum.has(semKey)) {
+        semGpaAccum.set(semKey, {
+          academic_year: row.academic_year,
+          semester:      row.semester,
+          yearStart,
+          semRank,
+          qp:    0,
+          hours: 0,
+        });
+      }
+      const sg = semGpaAccum.get(semKey);
+      sg.qp    += pts * ch;
+      sg.hours += ch;
+
+      // Latest-attempt-per-course for cumulative GPA
+      const prev = latestAttempt.get(row.course_id);
+      const isNewer = !prev
+        || yearStart > prev.yearStart
+        || (yearStart === prev.yearStart && semRank > prev.semRank);
+      if (isNewer) {
+        latestAttempt.set(row.course_id, { pts, ch, yearStart, semRank });
+      }
+    }
+
+    let totalQP = 0, totalGpaHours = 0;
+    for (const { pts, ch } of latestAttempt.values()) {
+      totalQP       += pts * ch;
+      totalGpaHours += ch;
+    }
+    const cumulativeGpa = totalGpaHours > 0
+      ? Math.round(totalQP / totalGpaHours * 100) / 100
+      : null;
+
+    const semesterGpa = [...semGpaAccum.values()]
+      .sort((a, b) => b.yearStart - a.yearStart || b.semRank - a.semRank)
+      .map(g => ({
+        academic_year: g.academic_year,
+        semester:      g.semester,
+        gpa:           Math.round(g.qp / g.hours * 100) / 100,
+      }));
+
+    const gpa_summary = {
+      cumulative_gpa:       cumulativeGpa,
+      semester_gpa:         semesterGpa,
+      gpa_hours:            totalGpaHours,
+      graded_courses_count: latestAttempt.size,
+      skipped_gpa_courses:  skippedGpaCourses,
+    };
+
+    // ── 6. Official study plan ─────────────────────────────────
     let has_official_plan = false;
     let plan_meta         = null;
     let plan_courses      = [];
 
     if (student.department_id && student.registration_year) {
-      // Step 1: explicit batch assignment lookup
       let planRow = null;
+
       const explicitRes = await query(`
         SELECT
           sp.id,
@@ -186,7 +282,6 @@ async function getStudyPlan(req, res, next) {
 
       planRow = explicitRes.rows[0] || null;
 
-      // Step 2: fallback — latest plan where plan_year <= registration_year
       if (!planRow) {
         const fallbackRes = await query(`
           SELECT
@@ -229,7 +324,6 @@ async function getStudyPlan(req, res, next) {
           ORDER BY spc.sort_order ASC, c.code ASC
         `, [plan_meta.id]);
 
-        // Build course_id → best enrollment history entry map
         const courseHistory = new Map();
         for (const e of enrollments) {
           const existing = courseHistory.get(e.course_id);
@@ -275,6 +369,7 @@ async function getStudyPlan(req, res, next) {
           dropped_courses:          droppedCourses,
           total_distinct_courses:   courseMap.size,
         },
+        gpa_summary,
         enrollments,
         has_official_plan,
         plan_meta,
@@ -282,6 +377,9 @@ async function getStudyPlan(req, res, next) {
       },
     });
   } catch (err) {
+    if (err.code === '22P02') {
+      console.error('[getStudyPlan] 22P02 invalid UUID format:', err.message, err.detail || '');
+    }
     next(err);
   }
 }
