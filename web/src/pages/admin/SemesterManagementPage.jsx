@@ -614,9 +614,11 @@ function AddStudentPanel({ sectionId, sectionDetail, defaultDept, departments, o
   const [searching,    setSearching]    = useState(false);
   const [searchError,  setSearchError]  = useState('');
   const [searched,     setSearched]     = useState(false);
-  const [enrollingId,  setEnrollingId]  = useState(null);
-  const [forceTarget,  setForceTarget]  = useState(null);
-  const [forceLoading, setForceLoading] = useState(false);
+  const [enrollingId,   setEnrollingId]   = useState(null);
+  const [forceTarget,   setForceTarget]   = useState(null);
+  const [forceLoading,  setForceLoading]  = useState(false);
+  const [prereqTarget,  setPrereqTarget]  = useState(null); // { student, missing[] }
+  const [prereqLoading, setPrereqLoading] = useState(false);
   const timerRef = useRef(null);
 
   // Reset when section or college changes
@@ -628,6 +630,7 @@ function AddStudentPanel({ sectionId, sectionDetail, defaultDept, departments, o
     setSearchError('');
     setSearched(false);
     setForceTarget(null);
+    setPrereqTarget(null);
   }, [sectionId, defaultDept]);
 
   useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); }, []);
@@ -672,8 +675,9 @@ function AddStudentPanel({ sectionId, sectionDetail, defaultDept, departments, o
       if (data?.already_enrolled) {
         toast.error('Student is already enrolled.');
         setResults(prev => prev.map(r => r.user_id === student.user_id ? { ...r, already_enrolled: true } : r));
+      } else if (data?.prerequisite_failed && data?.can_force) {
+        setPrereqTarget({ student, missing: data.missing || [] });
       } else if (data?.at_capacity && data?.can_force) {
-        // Show force enroll confirmation instead of a dead-end error
         setForceTarget(student);
       } else if (data?.conflict) {
         toast.error(data.message || 'Schedule conflict detected.');
@@ -705,6 +709,32 @@ function AddStudentPanel({ sectionId, sectionDetail, defaultDept, departments, o
       }
     } finally {
       setForceLoading(false);
+    }
+  };
+
+  const handlePrereqForceEnroll = async () => {
+    if (!prereqTarget) return;
+    setPrereqLoading(true);
+    try {
+      await enrollmentAPI.enrollStudent({ section_id: sectionId, student_id: prereqTarget.student.user_id, force: true });
+      toast.success(`${prereqTarget.student.first_name} ${prereqTarget.student.last_name} enrolled (prerequisites overridden).`);
+      setResults(prev => prev.map(r => r.user_id === prereqTarget.student.user_id ? { ...r, already_enrolled: true } : r));
+      setPrereqTarget(null);
+      onEnrolled();
+    } catch (err) {
+      const data = err.response?.data;
+      if (data?.already_enrolled) {
+        toast.error('Student is already enrolled.');
+        setResults(prev => prev.map(r => r.user_id === prereqTarget.student.user_id ? { ...r, already_enrolled: true } : r));
+        setPrereqTarget(null);
+      } else if (data?.conflict) {
+        toast.error(data.message || 'Schedule conflict detected. Cannot override.');
+        setPrereqTarget(null);
+      } else {
+        toast.error(getErrorMessage(err));
+      }
+    } finally {
+      setPrereqLoading(false);
     }
   };
 
@@ -812,6 +842,64 @@ function AddStudentPanel({ sectionId, sectionDetail, defaultDept, departments, o
             </div>
           )}
         </>
+      )}
+
+      {/* Prerequisite override confirmation dialog */}
+      {prereqTarget && (
+        <div
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+          onClick={e => { if (e.target === e.currentTarget && !prereqLoading) setPrereqTarget(null); }}
+        >
+          <div style={{ background: '#fff', borderRadius: 14, padding: '24px 28px', maxWidth: 480, width: '100%', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+              <span style={{ fontSize: 22 }}>🔒</span>
+              <div style={{ fontSize: 16, fontWeight: 700, color: '#991b1b' }}>Missing Prerequisites — Override?</div>
+            </div>
+
+            <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '12px 14px', marginBottom: 14, fontSize: 13 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, gap: 12 }}>
+                <span style={{ color: '#64748b', fontWeight: 500, whiteSpace: 'nowrap' }}>Student</span>
+                <span style={{ color: '#111827', fontWeight: 600, textAlign: 'right' }}>
+                  {prereqTarget.student.first_name} {prereqTarget.student.last_name}
+                  {prereqTarget.student.registration_number ? ` (${prereqTarget.student.registration_number})` : ''}
+                </span>
+              </div>
+              <div style={{ color: '#64748b', fontWeight: 500, marginBottom: 6 }}>Missing prerequisites:</div>
+              <ul style={{ margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 3 }}>
+                {prereqTarget.missing.map(m => (
+                  <li key={m.course_id} style={{ color: '#dc2626', fontWeight: 600, fontSize: 12 }}>
+                    {m.code} — {m.name}
+                    {m.is_concurrent
+                      ? <span style={{ color: '#92400e', fontWeight: 400 }}> (must be enrolled this term)</span>
+                      : <span style={{ color: '#92400e', fontWeight: 400 }}> (must be completed first)</span>
+                    }
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <p style={{ fontSize: 13, color: '#374151', marginBottom: 20, lineHeight: 1.55 }}>
+              This student has not completed the required prerequisites. Force enrolling bypasses academic rules and may create a violation in the student's record. Only proceed if this is an approved administrative exception.
+            </p>
+
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+              <button
+                onClick={() => setPrereqTarget(null)}
+                disabled={prereqLoading}
+                style={{ padding: '8px 18px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', cursor: prereqLoading ? 'not-allowed' : 'pointer', color: '#374151', fontSize: 13, fontWeight: 500 }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handlePrereqForceEnroll}
+                disabled={prereqLoading}
+                style={{ padding: '8px 20px', borderRadius: 8, border: 'none', background: prereqLoading ? '#fca5a5' : '#dc2626', cursor: prereqLoading ? 'not-allowed' : 'pointer', color: '#fff', fontSize: 13, fontWeight: 700 }}
+              >
+                {prereqLoading ? 'Enrolling…' : 'Override & Enroll'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Force enroll confirmation dialog */}

@@ -1934,7 +1934,7 @@ async function adminEnrollStudent(req, res, next) {
     }
 
     const [secRes, userRes, existingRes] = await Promise.all([
-      query('SELECT id, max_capacity, enrolled FROM sections WHERE id = $1 AND is_active = TRUE', [section_id]),
+      query('SELECT id, max_capacity, enrolled, course_id, semester, academic_year FROM sections WHERE id = $1 AND is_active = TRUE', [section_id]),
       query("SELECT id FROM users WHERE id = $1 AND role = 'student'", [student_id]),
       query('SELECT status FROM enrollments WHERE student_id = $1 AND section_id = $2', [student_id, section_id]),
     ]);
@@ -1955,7 +1955,21 @@ async function adminEnrollStudent(req, res, next) {
       });
     }
 
-    const { max_capacity, enrolled } = secRes.rows[0];
+    const { max_capacity, enrolled, course_id, semester, academic_year } = secRes.rows[0];
+
+    // Prerequisite check — skipped when force === true
+    if (!force) {
+      const prereqCheck = await checkCoursePrerequisites(student_id, course_id, semester, academic_year);
+      if (!prereqCheck.ok) {
+        return res.status(409).json({
+          success:            false,
+          prerequisite_failed: true,
+          can_force:          true,
+          message:            'Missing prerequisites for this course.',
+          missing:            prereqCheck.missing,
+        });
+      }
+    }
 
     // Schedule conflict check — force does not bypass this
     const conflict = await checkStudentScheduleConflict(student_id, section_id);
