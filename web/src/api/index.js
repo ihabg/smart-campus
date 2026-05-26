@@ -360,6 +360,10 @@ export const professorAPI = {
 // ─── studentAPI ──────────────────────────────────────────────
 export const studentAPI = {
   getStudyPlan: () => api.get('/student/study-plan'),
+  getStudyPlanAdvisorContext: () => api.get('/student/study-plan/advisor/context'),
+  recommendStudyPlan: (data = {}) => api.post('/student/study-plan/advisor/recommend', data),
+  evaluateStudyPlan: (data = {}) => api.post('/student/study-plan/advisor/evaluate', data),
+  chatStudyPlanAdvisor: (data = {}) => api.post('/student/study-plan/advisor/chat', data),
 };
 
 // ─── studyPlanAPI ─────────────────────────────────────────────
@@ -378,10 +382,6 @@ export const studyPlanAPI = {
   listBatchAssignments: (id)       => api.get(`/admin/study-plans/${id}/batch-assignments`),
   assignBatch:          (id, data) => api.post(`/admin/study-plans/${id}/batch-assignments`, data),
   removeBatchAssignment:(id, year) => api.delete(`/admin/study-plans/${id}/batch-assignments/${year}`),
-  // Category requirements
-  listCategoryRequirements:  (id)                 => api.get(`/admin/study-plans/${id}/category-requirements`),
-  upsertCategoryRequirement: (id, category, data) => api.put(`/admin/study-plans/${id}/category-requirements/${category}`, data),
-  deleteCategoryRequirement: (id, category)       => api.delete(`/admin/study-plans/${id}/category-requirements/${category}`),
 };
 
 export default api;

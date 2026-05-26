@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { assessmentAPI } from '../api/index';
 import { Spinner } from '../components/ui/index';
 import './StudentAssessmentsPage.css';
@@ -42,6 +43,8 @@ function formatSeconds(total) {
 }
 
 export default function StudentAssessmentsPage() {
+  const location = useLocation();
+  const autoOpenedAssessmentRef = useRef('');
   const [semester, setSemester] = useState('spring');
   const [academicYear, setAcademicYear] = useState('2025/2026');
   const [sectionId, setSectionId] = useState('all');
@@ -80,6 +83,19 @@ export default function StudentAssessmentsPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const targetAssessmentId = location.state?.assessmentId || params.get('assessment_id');
+
+    if (!targetAssessmentId || loading || autoOpenedAssessmentRef.current === String(targetAssessmentId)) return;
+
+    const target = data.assessments.find((item) => String(item.id) === String(targetAssessmentId));
+    if (target) {
+      autoOpenedAssessmentRef.current = String(targetAssessmentId);
+      openAssessment(target);
+    }
+  }, [location.search, location.state, data.assessments, loading]);
 
   useEffect(() => {
     if (!selected?.attempt?.due_at || selected?.attempt?.status !== 'in_progress') {

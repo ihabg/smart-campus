@@ -11,6 +11,10 @@ import './StudyPlanPage.css';
 
 const SEMESTER_LABELS = { fall: 'Fall', spring: 'Spring', summer: 'Summer' };
 
+<<<<<<< HEAD
+function semesterLabel(semester, academicYear) {
+  return `${SEMESTER_LABELS[semester] || semester} ${academicYear}`;
+=======
 const CAT_LABEL = {
   major_required:      'Major Required',
   university_required: 'University Required',
@@ -49,6 +53,15 @@ const SEM_RANK      = { fall: 1, spring: 2, summer: 3 };
 function gradeColor(letter) {
   if (!letter) return 'var(--text-muted)';
   return FAILING.has(letter) ? '#dc2626' : '#16a34a';
+>>>>>>> bcd418da0b69c878ccc1b1341af9f9a8f256f026
+}
+
+function semesterOrder(semester) {
+  const s = String(semester || '').toLowerCase();
+  if (s === 'fall' || s === 'first') return 1;
+  if (s === 'spring' || s === 'second') return 2;
+  if (s === 'summer') return 3;
+  return 9;
 }
 
 const STATUS_META = {
@@ -371,6 +384,247 @@ function CategorySection({ catKey, filteredCourses, progress }) {
   );
 }
 
+function advisorStatusClass(status) {
+  if (status === 'excellent') return 'sp-advisor-status--excellent';
+  if (status === 'good') return 'sp-advisor-status--good';
+  if (status === 'blocked') return 'sp-advisor-status--blocked';
+  if (status === 'needs_improvement') return 'sp-advisor-status--warning';
+  return 'sp-advisor-status--idle';
+}
+
+function courseTitle(course) {
+  return course?.course_name || course?.name || course?.display_name || course?.course_code || 'Course';
+}
+
+function courseCode(course) {
+  return course?.course_code || course?.code || '';
+}
+
+function courseCategoryLabel(course) {
+  const raw = String(course?.category || '').replace(/_/g, ' ').trim();
+  if (!raw) return course?.is_required ? 'Required' : 'Elective';
+  return raw.charAt(0).toUpperCase() + raw.slice(1);
+}
+
+function semesterName(value) {
+  return SEMESTER_LABELS[value] || (value ? String(value).charAt(0).toUpperCase() + String(value).slice(1) : 'Suggested');
+}
+
+function advisorCourseKind(course) {
+  const text = `${course?.course_name || ''} ${course?.course_name_ar || ''} ${course?.category || ''}`.toLowerCase();
+  if (/lab|practical|مختبر|عملي/.test(text)) return 'lab';
+  if (/elective|اختياري/.test(text)) return 'elective';
+  return 'required';
+}
+
+function findCourseInPlan(allCourses, ref) {
+  if (!ref) return null;
+  const refId = String(ref.course_id || ref.prerequisite_id || '').trim();
+  const refCode = String(ref.course_code || ref.prerequisite_code || '').trim().toUpperCase();
+
+  return (allCourses || []).find(course => {
+    const id = String(course.course_id || '').trim();
+    const code = String(course.course_code || '').trim().toUpperCase();
+    return (refId && id === refId) || (refCode && code === refCode);
+  }) || null;
+}
+
+function uniqueCourses(courses) {
+  const seen = new Set();
+  const out = [];
+  for (const course of courses || []) {
+    const key = String(course?.course_id || course?.course_code || '').trim();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(course);
+  }
+  return out;
+}
+
+function sortFlowCourses(courses) {
+  return [...(courses || [])].sort((a, b) => {
+    const yearA = Number(a.recommended_year || 99);
+    const yearB = Number(b.recommended_year || 99);
+    if (yearA !== yearB) return yearA - yearB;
+    const sem = semesterOrder(a.recommended_semester) - semesterOrder(b.recommended_semester);
+    if (sem !== 0) return sem;
+    return String(a.course_code || '').localeCompare(String(b.course_code || ''));
+  });
+}
+
+function buildAdvisorScheduleFlow(selectedCourses, allCourses = []) {
+  const selected = uniqueCourses(selectedCourses);
+  const selectedIds = new Set(selected.map(c => String(c.course_id)));
+  const selectedCodes = new Set(selected.map(c => String(c.course_code || '').toUpperCase()));
+
+  const prerequisiteCourses = [];
+  for (const course of selected) {
+    for (const prereq of course.prerequisites || []) {
+      const resolved = findCourseInPlan(allCourses, prereq) || {
+        course_id: prereq.course_id || prereq.prerequisite_id || prereq.prerequisite_code,
+        course_code: prereq.course_code || prereq.prerequisite_code,
+        course_name: prereq.course_name || prereq.prerequisite_name,
+        credit_hours: prereq.credit_hours || prereq.prerequisite_credit_hours || 0,
+        category: 'prerequisite',
+        computed_status: 'not_taken',
+      };
+      const keyId = String(resolved.course_id || '');
+      const keyCode = String(resolved.course_code || '').toUpperCase();
+      if (!selectedIds.has(keyId) && !selectedCodes.has(keyCode)) prerequisiteCourses.push(resolved);
+    }
+  }
+
+  const unlockedLater = (allCourses || []).filter(course => {
+    if (!course?.course_id || selectedIds.has(String(course.course_id))) return false;
+    if (['completed', 'in_progress'].includes(course.computed_status)) return false;
+    return (course.prerequisites || []).some(prereq =>
+      selectedIds.has(String(prereq.prerequisite_id || prereq.course_id)) ||
+      selectedCodes.has(String(prereq.prerequisite_code || prereq.course_code || '').toUpperCase())
+    );
+  });
+
+  return [
+    {
+      key: 'before',
+      number: '01',
+      title: 'Already required before this plan',
+      note: 'Courses that unlock the suggested plan.',
+      courses: sortFlowCourses(uniqueCourses(prerequisiteCourses)).slice(0, 6),
+    },
+    {
+      key: 'next',
+      number: '02',
+      title: 'Suggested next-semester schedule',
+      note: 'These are the courses the assistant recommends now.',
+      courses: sortFlowCourses(selected),
+      featured: true,
+    },
+    {
+      key: 'after',
+      number: '03',
+      title: 'Unlocked after this semester',
+      note: 'Possible courses that become easier after passing this plan.',
+      courses: sortFlowCourses(uniqueCourses(unlockedLater)).slice(0, 6),
+    },
+  ];
+}
+
+
+function groupAdvisorCatalog(courses) {
+  const sorted = [...(courses || [])].sort((a, b) => {
+    const yearA = Number(a.recommended_year || 99);
+    const yearB = Number(b.recommended_year || 99);
+    if (yearA !== yearB) return yearA - yearB;
+    const sem = semesterOrder(a.recommended_semester) - semesterOrder(b.recommended_semester);
+    if (sem !== 0) return sem;
+    return String(a.course_code || '').localeCompare(String(b.course_code || ''));
+  });
+
+  const groups = [];
+  const map = new Map();
+
+  for (const course of sorted) {
+    const year = course.recommended_year || 'Other';
+    const sem = course.recommended_semester || 'general';
+    const key = `${year}||${sem}`;
+    if (!map.has(key)) {
+      const group = {
+        key,
+        year,
+        semester: sem,
+        courses: [],
+      };
+      map.set(key, group);
+      groups.push(group);
+    }
+    map.get(key).courses.push(course);
+  }
+
+  return groups;
+}
+
+function AdvisorCourseChip({ course, onRemove }) {
+  return (
+    <span className="sp-advisor-chip">
+      <span className="sp-advisor-chip__name">{courseTitle(course)}</span>
+      <span className="sp-advisor-chip__meta">{courseCode(course)} · {course.credit_hours || 0}h</span>
+      {onRemove && (
+        <button type="button" onClick={() => onRemove(course.course_id)} aria-label={`Remove ${courseTitle(course)}`}>×</button>
+      )}
+    </span>
+  );
+}
+
+function AdvisorPlanMap({ courses, allCourses = [] }) {
+  if (!courses || courses.length === 0) return null;
+  const groups = buildAdvisorScheduleFlow(courses, allCourses);
+
+  return (
+    <div className="sp-advisor-flow">
+      <div className="sp-advisor-flow__header">
+        <div>
+          <strong>Recommended schedule map</strong>
+          <span>Course names are shown like the official study-plan picture, with prerequisite flow around the suggestion.</span>
+        </div>
+      </div>
+
+      <div className="sp-advisor-flow__board">
+        {groups.map((group, index) => (
+          <div key={group.key} className={`sp-advisor-flow__stage${group.featured ? ' sp-advisor-flow__stage--featured' : ''}`}>
+            <div className="sp-advisor-flow__stage-title">
+              <span>{group.number}</span>
+              <div>
+                <strong>{group.title}</strong>
+                <small>{group.note}</small>
+              </div>
+            </div>
+
+            {group.courses.length === 0 ? (
+              <div className="sp-advisor-flow__empty">
+                {group.key === 'before'
+                  ? 'No missing prerequisite courses were found for this suggestion.'
+                  : group.key === 'after'
+                    ? 'No direct unlocked courses were detected yet.'
+                    : 'No courses selected.'}
+              </div>
+            ) : (
+              <div className="sp-advisor-flow__cards">
+                {group.courses.map(course => (
+                  <div
+                    key={`${group.key}-${course.course_id || course.course_code}`}
+                    className={`sp-advisor-flow-card sp-advisor-flow-card--${advisorCourseKind(course)} sp-advisor-flow-card--${course.computed_status || 'not_taken'}`}
+                  >
+                    <div className="sp-advisor-flow-card__name">{courseTitle(course)}</div>
+                    <div className="sp-advisor-flow-card__meta">
+                      <span>{courseCode(course)}</span>
+                      <span>{course.credit_hours || 0}h</span>
+                      <span>{courseCategoryLabel(course)}</span>
+                    </div>
+                    {(course.prerequisites || []).length > 0 && group.key !== 'before' && (
+                      <div className="sp-advisor-flow-card__prereq">
+                        Needs: {(course.prerequisites || []).map(p => p.course_name || p.prerequisite_name || p.course_code || p.prerequisite_code).join(', ')}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {index < groups.length - 1 && <div className="sp-advisor-flow__arrow" aria-hidden="true">↓</div>}
+          </div>
+        ))}
+      </div>
+
+      <div className="sp-advisor-flow__legend">
+        <span><i className="sp-advisor-dot sp-advisor-dot--required" /> Required/Core</span>
+        <span><i className="sp-advisor-dot sp-advisor-dot--lab" /> Lab/Practical</span>
+        <span><i className="sp-advisor-dot sp-advisor-dot--elective" /> Elective</span>
+        <span><i className="sp-advisor-dot sp-advisor-dot--completed" /> Already completed</span>
+      </div>
+    </div>
+  );
+}
+
 // ─── Study Plan Page ──────────────────────────────────────────
 
 export default function StudyPlanPage() {
@@ -382,6 +636,12 @@ export default function StudyPlanPage() {
   const [search,       setSearch]    = useState('');
   const [activeFilter, setFilter]    = useState('all');
   const [activeTab,    setActiveTab] = useState('plan');
+
+  const [advisorLoading,  setAdvisorLoading]  = useState(false);
+  const [advisorError,    setAdvisorError]    = useState(null);
+  const [advisorText,     setAdvisorText]     = useState('Choose an option and I will help you build a better next-semester plan.');
+  const [advisorResult,   setAdvisorResult]   = useState(null);
+  const [advisorCourseIds,setAdvisorCourseIds]= useState([]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -493,6 +753,72 @@ export default function StudyPlanPage() {
   const showControls  = tab === 'plan' ? plan_courses.length > 0 : enrollments.length > 0;
   const activeFilters = tab === 'plan' ? PLAN_FILTERS : HISTORY_FILTERS;
 
+  const advisorPlanCatalogCourses = (plan_courses || [])
+    .filter(c => c.course_id)
+    .sort((a, b) => {
+      const yearA = Number(a.recommended_year || 99);
+      const yearB = Number(b.recommended_year || 99);
+      if (yearA !== yearB) return yearA - yearB;
+      const sem = semesterOrder(a.recommended_semester) - semesterOrder(b.recommended_semester);
+      if (sem !== 0) return sem;
+      return String(a.course_code || '').localeCompare(String(b.course_code || ''));
+    });
+
+  const advisorCatalogGroups = groupAdvisorCatalog(advisorPlanCatalogCourses);
+  const advisorSelectedIds = new Set(advisorCourseIds.map(String));
+  const advisorSelectedCourses = advisorPlanCatalogCourses.filter(c => advisorSelectedIds.has(String(c.course_id)));
+
+  const advisorHours = advisorSelectedCourses.reduce((sum, c) => sum + Number(c.credit_hours || 0), 0);
+
+  function setAdvisorFromResponse(payload) {
+    const data = payload?.data?.data || payload?.data || payload || {};
+    const recommended = data.recommended_courses || data.evaluation?.selected_courses || [];
+    if (recommended.length > 0) {
+      setAdvisorCourseIds(recommended.map(c => c.course_id).filter(Boolean));
+    }
+    setAdvisorResult(data.evaluation || null);
+    setAdvisorText(data.advisor_text || data.evaluation?.summary || 'I checked your plan.');
+  }
+
+  async function runAdvisorRecommend(mode = 'balanced') {
+    setAdvisorLoading(true);
+    setAdvisorError(null);
+    try {
+      const res = await studentAPI.recommendStudyPlan({ mode });
+      setAdvisorFromResponse(res);
+    } catch (err) {
+      setAdvisorError(getErrorMessage(err));
+    } finally {
+      setAdvisorLoading(false);
+    }
+  }
+
+  async function runAdvisorEvaluate() {
+    setAdvisorLoading(true);
+    setAdvisorError(null);
+    try {
+      const res = await studentAPI.evaluateStudyPlan({ planned_course_ids: advisorCourseIds });
+      setAdvisorFromResponse(res);
+    } catch (err) {
+      setAdvisorError(getErrorMessage(err));
+    } finally {
+      setAdvisorLoading(false);
+    }
+  }
+
+  function toggleAdvisorCourse(courseId) {
+    setAdvisorCourseIds(prev => {
+      const id = String(courseId);
+      return prev.map(String).includes(id)
+        ? prev.filter(x => String(x) !== id)
+        : [...prev, courseId];
+    });
+  }
+
+  function removeAdvisorCourse(courseId) {
+    setAdvisorCourseIds(prev => prev.filter(x => String(x) !== String(courseId)));
+  }
+
   return (
     <div className="sp-page">
 
@@ -583,7 +909,147 @@ export default function StudyPlanPage() {
         </div>
       )}
 
+<<<<<<< HEAD
+      {/* ── Study Plan Advisor ───────────────────────────────────── */}
+      <div className="sp-advisor card">
+        <div className="sp-advisor__head">
+          <div>
+            <div className="sp-advisor__eyebrow">Smart Study Plan Assistant</div>
+            <h2 className="sp-advisor__title">Plan your next semester</h2>
+            <p className="sp-advisor__desc">
+              Choose courses, ask for a suggestion, then review the recommended next-semester schedule as a visual study-plan flow.
+            </p>
+          </div>
+          <div className={`sp-advisor-status ${advisorStatusClass(advisorResult?.status)}`}>
+            <span>{advisorResult?.label || 'Ready'}</span>
+            {advisorResult?.score !== undefined && <strong>{advisorResult.score}%</strong>}
+          </div>
+        </div>
+
+        <div className="sp-advisor-actions">
+          <button type="button" onClick={() => runAdvisorRecommend('balanced')} disabled={advisorLoading}>
+            ✨ Suggest next-semester schedule
+          </button>
+          <button type="button" onClick={runAdvisorEvaluate} disabled={advisorLoading || advisorCourseIds.length === 0}>
+            ✅ Check my selected plan
+          </button>
+          <button type="button" onClick={() => runAdvisorRecommend('lighter')} disabled={advisorLoading}>
+            🪶 Make it lighter
+          </button>
+          <button type="button" onClick={() => runAdvisorRecommend('stronger')} disabled={advisorLoading}>
+            🚀 Make it stronger
+          </button>
+        </div>
+
+        <div className="sp-advisor-grid">
+          <div className="sp-advisor-box">
+            <div className="sp-advisor-box__top">
+              <span>Selected next-semester courses</span>
+              <strong>{advisorSelectedCourses.length} courses · {advisorHours} hours</strong>
+            </div>
+            {advisorSelectedCourses.length === 0 ? (
+              <p className="sp-advisor-muted">No courses selected yet. Use the suggestion button or select courses manually.</p>
+            ) : (
+              <div className="sp-advisor-chips">
+                {advisorSelectedCourses.map(course => (
+                  <AdvisorCourseChip key={course.course_id} course={course} onRemove={removeAdvisorCourse} />
+                ))}
+              </div>
+            )}
+
+            <div className="sp-advisor-message">
+              <span className="sp-advisor-message__icon">🤖</span>
+              <p>{advisorLoading ? 'Checking your plan…' : advisorText}</p>
+            </div>
+            {advisorError && <div className="sp-advisor-error">{advisorError}</div>}
+            <AdvisorPlanMap courses={advisorSelectedCourses} allCourses={plan_courses} />
+          </div>
+
+          <div className="sp-advisor-box">
+            <div className="sp-advisor-box__top">
+              <span>All courses in your official plan</span>
+              <button type="button" className="sp-advisor-clear" onClick={() => { setAdvisorCourseIds([]); setAdvisorResult(null); setAdvisorText('Selection cleared. Choose courses and I will evaluate them.'); }}>Clear</button>
+            </div>
+            <p className="sp-advisor-muted sp-advisor-catalog-note">
+              This list shows the full study-plan catalog for your department, including required courses, labs/practical courses, university requirements, and electives. Select any courses to test a next-semester plan.
+            </p>
+            {advisorPlanCatalogCourses.length === 0 ? (
+              <p className="sp-advisor-muted">No courses were found in your official study plan yet.</p>
+            ) : (
+              <div className="sp-advisor-picker sp-advisor-picker--catalog">
+                {advisorCatalogGroups.map(group => (
+                  <div key={group.key} className="sp-advisor-catalog-group">
+                    <div className="sp-advisor-catalog-group__title">
+                      <span>{group.year === 'Other' ? 'Other courses' : `Year ${group.year}`}</span>
+                      <small>{group.semester === 'general' ? 'General' : semesterName(group.semester)}</small>
+                    </div>
+                    {group.courses.map(course => {
+                      const checked = advisorCourseIds.map(String).includes(String(course.course_id));
+                      return (
+                        <label key={course.course_id} className={`sp-advisor-pick sp-advisor-pick--${course.computed_status || 'not_taken'}${checked ? ' sp-advisor-pick--selected' : ''}`}>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleAdvisorCourse(course.course_id)}
+                          />
+                          <span>
+                            <strong>{courseTitle(course)}</strong>
+                            <small>
+                              {courseCode(course)} · {courseCategoryLabel(course)} · {course.computed_status === 'completed' ? 'Completed' : course.computed_status === 'in_progress' ? 'In progress' : course.computed_status === 'failed' ? 'Needs repeat' : 'Not taken'}
+                            </small>
+                          </span>
+                          <em>{course.credit_hours || 0}h</em>
+                        </label>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {advisorResult && (
+          <div className="sp-advisor-result">
+            <div className="sp-advisor-result__summary">
+              <strong>{advisorResult.summary}</strong>
+              <span>{advisorResult.course_count} course{advisorResult.course_count !== 1 ? 's' : ''} · {advisorResult.credit_hours} credit hours</span>
+            </div>
+
+            <div className="sp-advisor-result__cols">
+              <div>
+                <h4>Strengths</h4>
+                {(advisorResult.strengths || []).length === 0 ? (
+                  <p className="sp-advisor-muted">No strengths detected yet.</p>
+                ) : (
+                  <ul>{advisorResult.strengths.map((item, idx) => <li key={idx}>{item}</li>)}</ul>
+                )}
+              </div>
+              <div>
+                <h4>Warnings</h4>
+                {([...(advisorResult.blocking_issues || []), ...(advisorResult.warnings || [])]).length === 0 ? (
+                  <p className="sp-advisor-muted">No warnings. This plan looks safe.</p>
+                ) : (
+                  <ul>{[...(advisorResult.blocking_issues || []), ...(advisorResult.warnings || [])].map((item, idx) => <li key={idx}>{item}</li>)}</ul>
+                )}
+              </div>
+              <div>
+                <h4>Suggestions</h4>
+                {(advisorResult.suggestions || []).length === 0 ? (
+                  <p className="sp-advisor-muted">No extra changes needed.</p>
+                ) : (
+                  <ul>{advisorResult.suggestions.map((item, idx) => <li key={idx}>{item}</li>)}</ul>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── Tab strip: only when official plan exists ── */}
+=======
       {/* ── Tab strip ── */}
+>>>>>>> bcd418da0b69c878ccc1b1341af9f9a8f256f026
       {has_official_plan && (
         <div className="sp-tabs">
           <button
@@ -693,6 +1159,102 @@ export default function StudyPlanPage() {
             </div>
           )}
 
+<<<<<<< HEAD
+          {/* Year-grouped plan courses */}
+          {planGroups.map(({ year, courses }) => (
+            <div key={year} className="sp-group">
+              <div className="sp-group-head">
+                <span className="sp-group-head__label">
+                  {year === 0 ? 'Other Courses' : `Year ${year}`}
+                </span>
+                <span className="sp-group-head__count">
+                  {courses.length} course{courses.length !== 1 ? 's' : ''}
+                </span>
+              </div>
+
+              {/* Desktop table */}
+              <div className="sp-table-wrap">
+                <table className="sp-table">
+                  <thead>
+                    <tr>
+                      <th>Code</th>
+                      <th>Course</th>
+                      <th style={{ textAlign:'center' }}>Hours</th>
+                      <th style={{ textAlign:'center' }}>Category</th>
+                      <th style={{ textAlign:'center' }}>Grade</th>
+                      <th style={{ textAlign:'right'  }}>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {courses.map(c => (
+                      <tr key={c.plan_course_id}>
+                        <td><span className="sp-table__code">{c.course_code}</span></td>
+                        <td>
+                          <div className="sp-table__name">{c.course_name}</div>
+                          {c.course_name_ar && (
+                            <div className="sp-table__name-ar">{c.course_name_ar}</div>
+                          )}
+                        </td>
+                        <td className="sp-table__hours">{c.credit_hours}</td>
+                        <td style={{ textAlign:'center' }}>
+                          <span className="sp-cat-tag">
+                            {c.category.charAt(0).toUpperCase() + c.category.slice(1)}
+                          </span>
+                        </td>
+                        <td>
+                          <span
+                            className="sp-table__grade"
+                            style={{ color: gradeColor(c.letter_grade) }}
+                          >
+                            {c.letter_grade || '—'}
+                          </span>
+                        </td>
+                        <td style={{ textAlign:'right' }}>
+                          <StatusBadge status={c.computed_status} />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Mobile cards */}
+              <div className="sp-card-list">
+                {courses.map(c => (
+                  <div key={c.plan_course_id} className="sp-course-card">
+                    <div className="sp-course-card__top">
+                      <div>
+                        <div className="sp-course-card__code">{c.course_code}</div>
+                        <div className="sp-course-card__name">{c.course_name}</div>
+                        {c.course_name_ar && (
+                          <div className="sp-course-card__name-ar">{c.course_name_ar}</div>
+                        )}
+                      </div>
+                      <StatusBadge status={c.computed_status} />
+                    </div>
+                    <div className="sp-course-card__footer">
+                      <span>{c.credit_hours} credit hour{c.credit_hours !== 1 ? 's' : ''}</span>
+                      <span className="sp-cat-tag">
+                        {c.category.charAt(0).toUpperCase() + c.category.slice(1)}
+                      </span>
+                      {c.letter_grade ? (
+                        <span
+                          className="sp-course-card__grade"
+                          style={{ color: gradeColor(c.letter_grade) }}
+                        >
+                          Grade: {c.letter_grade}
+                          {c.total_grade != null ? ` (${Math.round(c.total_grade)})` : ''}
+                        </span>
+                      ) : (
+                        <span style={{ color:'var(--text-muted)', fontSize:12 }}>No grade yet</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+=======
           {/* Category-grouped plan courses */}
           {plan_courses.length > 0 && planFiltered.length > 0 && categoryGroups.map(({ category: catKey, courses: allCourses }) => {
             if (allCourses.length === 0) return null;
@@ -707,6 +1269,7 @@ export default function StudyPlanPage() {
               />
             );
           })}
+>>>>>>> bcd418da0b69c878ccc1b1341af9f9a8f256f026
         </>
       )}
 
