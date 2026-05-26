@@ -1,5 +1,7 @@
 const { query } = require('../config/db');
 
+const VALID_CATEGORIES = ['major_required', 'university_required', 'major_elective', 'free_elective'];
+
 // ── List all study plans ──────────────────────────────────────
 async function listPlans(req, res, next) {
   try {
@@ -64,31 +66,40 @@ async function getPlan(req, res, next) {
       return res.status(404).json({ success: false, message: 'Study plan not found.' });
     }
 
-    const coursesRes = await query(`
-      SELECT
-        spc.id                AS plan_course_id,
-        spc.category,
-        spc.recommended_year,
-        spc.recommended_semester,
-        spc.is_required,
-        spc.sort_order,
-        c.id                  AS course_id,
-        c.code                AS course_code,
-        c.name                AS course_name,
-        c.name_ar             AS course_name_ar,
-        c.credit_hours,
-        c.department          AS course_department
-      FROM study_plan_courses spc
-      JOIN courses c ON c.id = spc.course_id
-      WHERE spc.plan_id = $1
-      ORDER BY spc.sort_order ASC, c.code ASC
-    `, [id]);
+    const [coursesRes, reqsRes] = await Promise.all([
+      query(`
+        SELECT
+          spc.id                AS plan_course_id,
+          spc.category,
+          spc.recommended_year,
+          spc.recommended_semester,
+          spc.is_required,
+          spc.sort_order,
+          c.id                  AS course_id,
+          c.code                AS course_code,
+          c.name                AS course_name,
+          c.name_ar             AS course_name_ar,
+          c.credit_hours,
+          c.department          AS course_department
+        FROM study_plan_courses spc
+        JOIN courses c ON c.id = spc.course_id
+        WHERE spc.plan_id = $1
+        ORDER BY spc.sort_order ASC, c.code ASC
+      `, [id]),
+      query(`
+        SELECT category, required_hours, label_en, label_ar, sort_order
+        FROM study_plan_category_requirements
+        WHERE plan_id = $1
+        ORDER BY sort_order ASC, category ASC
+      `, [id]),
+    ]);
 
     res.json({
       success: true,
       data: {
-        plan:    planRes.rows[0],
-        courses: coursesRes.rows,
+        plan:                  planRes.rows[0],
+        courses:               coursesRes.rows,
+        category_requirements: reqsRes.rows,
       },
     });
   } catch (err) {
@@ -196,7 +207,7 @@ async function addCourse(req, res, next) {
     const { id } = req.params;
     const {
       course_id,
-      category             = 'required',
+      category             = 'major_required',
       recommended_year,
       recommended_semester,
       is_required          = true,
@@ -205,6 +216,13 @@ async function addCourse(req, res, next) {
 
     if (!course_id) {
       return res.status(400).json({ success: false, message: 'course_id is required.' });
+    }
+
+    if (!VALID_CATEGORIES.includes(category)) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid category. Must be one of: ${VALID_CATEGORIES.join(', ')}.`,
+      });
     }
 
     const result = await query(`
@@ -236,6 +254,13 @@ async function updateCourse(req, res, next) {
   try {
     const { id, courseId } = req.params;
     const { category, recommended_year, recommended_semester, is_required, sort_order } = req.body;
+
+    if (category !== undefined && !VALID_CATEGORIES.includes(category)) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid category. Must be one of: ${VALID_CATEGORIES.join(', ')}.`,
+      });
+    }
 
     const sets  = [];
     const vals  = [id, courseId];
@@ -440,6 +465,88 @@ async function removeBatchAssignment(req, res, next) {
   }
 }
 
+// ── List category requirements for a plan ────────────────────
+async function listCategoryRequirements(req, res, next) {
+  try {
+    const { id } = req.params;
+    const result = await query(`
+      SELECT category, required_hours, label_en, label_ar, sort_order, updated_at
+      FROM study_plan_category_requirements
+      WHERE plan_id = $1
+      ORDER BY sort_order ASC, category ASC
+    `, [id]);
+    res.json({ success: true, data: result.rows });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// ── Upsert a single category requirement ─────────────────────
+async function upsertCategoryRequirement(req, res, next) {
+  try {
+    const { id, category } = req.params;
+    const { required_hours } = req.body;
+
+    if (!VALID_CATEGORIES.includes(category)) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid category. Must be one of: ${VALID_CATEGORIES.join(', ')}.`,
+      });
+    }
+
+    const hours = Number(required_hours);
+    if (isNaN(hours) || hours < 0) {
+      return res.status(400).json({ success: false, message: 'required_hours must be a non-negative number.' });
+    }
+
+    const planCheck = await query(`SELECT id FROM study_plans WHERE id = $1`, [id]);
+    if (!planCheck.rows[0]) {
+      return res.status(404).json({ success: false, message: 'Study plan not found.' });
+    }
+
+    const result = await query(`
+      INSERT INTO study_plan_category_requirements (plan_id, category, required_hours)
+      VALUES ($1, $2, $3)
+      ON CONFLICT (plan_id, category) DO UPDATE
+        SET required_hours = EXCLUDED.required_hours,
+            updated_at     = NOW()
+      RETURNING category, required_hours, label_en, label_ar, sort_order, updated_at
+    `, [id, category, hours]);
+
+    res.json({ success: true, data: result.rows[0] });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// ── Delete a category requirement (reset to unconfigured) ────
+async function deleteCategoryRequirement(req, res, next) {
+  try {
+    const { id, category } = req.params;
+
+    if (!VALID_CATEGORIES.includes(category)) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid category. Must be one of: ${VALID_CATEGORIES.join(', ')}.`,
+      });
+    }
+
+    const result = await query(`
+      DELETE FROM study_plan_category_requirements
+      WHERE plan_id = $1 AND category = $2
+      RETURNING category
+    `, [id, category]);
+
+    if (!result.rows[0]) {
+      return res.status(404).json({ success: false, message: 'Category requirement not found.' });
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   listPlans,
   getDepartments,
@@ -454,4 +561,7 @@ module.exports = {
   listBatchAssignments,
   assignBatch,
   removeBatchAssignment,
+  listCategoryRequirements,
+  upsertCategoryRequirement,
+  deleteCategoryRequirement,
 };

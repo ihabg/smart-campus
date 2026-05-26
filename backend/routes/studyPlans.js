@@ -22,6 +22,11 @@ router.get('/:id/batch-assignments',          ctrl.listBatchAssignments);
 router.post('/:id/batch-assignments',         ctrl.assignBatch);
 router.delete('/:id/batch-assignments/:year', ctrl.removeBatchAssignment);
 
+// Category requirements — must come before /:id GET/PATCH/DELETE
+router.get('/:id/category-requirements',                   ctrl.listCategoryRequirements);
+router.put('/:id/category-requirements/:category',         ctrl.upsertCategoryRequirement);
+router.delete('/:id/category-requirements/:category',      ctrl.deleteCategoryRequirement);
+
 // Plan-level CRUD
 router.get('/:id',    ctrl.getPlan);
 router.patch('/:id',  ctrl.updatePlan);
