@@ -2303,14 +2303,18 @@ export default function SemesterManagementPage() {
     }
     setPeriodSaving(true);
     try {
-      await semesterAPI.setPeriod({
+      const { data } = await semesterAPI.setPeriod({
         semester,
         academic_year:      academicYear,
         registration_start: fromDatetimeLocal(periodDraft.registration_start),
         registration_end:   fromDatetimeLocal(periodDraft.registration_end),
         drop_deadline:      fromDatetimeLocal(periodDraft.drop_deadline),
       });
-      toast.success('Registration period saved.');
+      const sent = data?.notifications_sent ?? 0;
+      toast.success(sent > 0
+        ? 'Registration period saved and students notified.'
+        : 'Registration period saved. No notification needed.'
+      );
       await loadSemesterStatuses();
     } catch (err) {
       toast.error(getErrorMessage(err));
@@ -2322,14 +2326,18 @@ export default function SemesterManagementPage() {
   const clearPeriod = async () => {
     setPeriodSaving(true);
     try {
-      await semesterAPI.setPeriod({
+      const { data } = await semesterAPI.setPeriod({
         semester,
         academic_year:      academicYear,
         registration_start: null,
         registration_end:   null,
         drop_deadline:      null,
       });
-      toast.success('Registration period cleared — open while published.');
+      const sent = data?.notifications_sent ?? 0;
+      toast.success(sent > 0
+        ? 'Registration period cleared and students notified.'
+        : 'Registration period cleared — open while published.'
+      );
       await loadSemesterStatuses();
     } catch (err) {
       toast.error(getErrorMessage(err));

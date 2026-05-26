@@ -2467,6 +2467,38 @@ async function unpublishSemester(req, res, next) {
   }
 }
 
+function deriveRegState(start, end, nowMs) {
+  if (!start && !end) return 'unrestricted';
+  if (start && nowMs < start) return 'not_open_yet';
+  if (end && nowMs > end) return 'closed';
+  return 'open';
+}
+
+function fmtNotifDate(isoStr) {
+  if (!isoStr) return '';
+  return new Date(isoStr).toLocaleString('en-US', {
+    month: 'short', day: 'numeric', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', timeZoneName: 'short',
+  });
+}
+
+async function createPeriodNotification(title, body, senderId) {
+  const notifRes = await query(
+    `INSERT INTO notifications (title, body, type, sender_id, target_role, is_published, published_at)
+     VALUES ($1, $2, 'system', $3, 'student', TRUE, NOW())
+     RETURNING id`,
+    [title, body, senderId]
+  );
+  const notifId = notifRes.rows[0].id;
+  await query(
+    `INSERT INTO notification_receipts (notification_id, user_id)
+     SELECT $1, id FROM users WHERE role = 'student' AND status = 'active'
+     ON CONFLICT DO NOTHING`,
+    [notifId]
+  );
+  return notifId;
+}
+
 async function setRegistrationPeriod(req, res, next) {
   try {
     const { semester, academic_year, registration_start, registration_end, drop_deadline } = req.body;
@@ -2479,6 +2511,19 @@ async function setRegistrationPeriod(req, res, next) {
         return res.status(400).json({ success: false, message: 'registration_start must be before registration_end.' });
       }
     }
+
+    // Fetch old values before update for change detection
+    const oldRes = await query(
+      `SELECT registration_start, registration_end, drop_deadline, label, status
+       FROM semesters WHERE semester = $1 AND academic_year = $2`,
+      [semester, academic_year]
+    );
+
+    if (!oldRes.rows.length) {
+      return res.status(404).json({ success: false, message: 'Semester not found. Use ensure to create it first.' });
+    }
+
+    const old = oldRes.rows[0];
 
     const result = await query(
       `UPDATE semesters
@@ -2497,11 +2542,88 @@ async function setRegistrationPeriod(req, res, next) {
       ]
     );
 
-    if (!result.rows.length) {
-      return res.status(404).json({ success: false, message: 'Semester not found. Use ensure to create it first.' });
+    const updated = result.rows[0];
+
+    // ── Change detection ─────────────────────────────────────────
+    const toMs   = v => (v ? new Date(v).getTime() : null);
+    const newStart = registration_start || null;
+    const newEnd   = registration_end   || null;
+    const newDrop  = drop_deadline      || null;
+
+    const oldStartMs = toMs(old.registration_start);
+    const oldEndMs   = toMs(old.registration_end);
+    const oldDropMs  = toMs(old.drop_deadline);
+    const newStartMs = toMs(newStart);
+    const newEndMs   = toMs(newEnd);
+    const newDropMs  = toMs(newDrop);
+
+    const regChanged  = oldStartMs !== newStartMs || oldEndMs !== newEndMs;
+    const dropChanged = oldDropMs  !== newDropMs;
+
+    const label = old.label || `${semester} ${academic_year}`;
+    const nowMs = Date.now();
+    const notificationEvents = [];
+
+    // ── Registration state notifications ─────────────────────────
+    if (regChanged) {
+      const oldState = deriveRegState(oldStartMs, oldEndMs, nowMs);
+      const newState = deriveRegState(newStartMs, newEndMs, nowMs);
+      if (oldState !== newState) {
+        if (newState === 'open') {
+          notificationEvents.push({
+            title: 'Registration Open',
+            body: `Registration is now open for ${label}.`,
+          });
+        } else if (newState === 'not_open_yet') {
+          notificationEvents.push({
+            title: 'Registration Scheduled',
+            body: `Registration for ${label} will open on ${fmtNotifDate(newStart)}.`,
+          });
+        } else if (newState === 'closed') {
+          notificationEvents.push({
+            title: 'Registration Closed',
+            body: `Registration is closed for ${label}.`,
+          });
+        } else {
+          notificationEvents.push({
+            title: 'Registration Period Updated',
+            body: `Registration period restrictions were cleared for ${label}. Registration is open while the semester is published.`,
+          });
+        }
+      }
     }
 
-    res.json({ success: true, data: { semester: result.rows[0] } });
+    // ── Drop deadline notifications ───────────────────────────────
+    if (dropChanged) {
+      if (!newDrop) {
+        notificationEvents.push({
+          title: 'Drop Deadline Removed',
+          body: `The drop deadline for ${label} has been removed.`,
+        });
+      } else if (nowMs > newDropMs) {
+        notificationEvents.push({
+          title: 'Drop Deadline Passed',
+          body: `The drop deadline for ${label} has passed.`,
+        });
+      } else {
+        notificationEvents.push({
+          title: 'Drop Deadline Updated',
+          body: `Drop deadline for ${label} is ${fmtNotifDate(newDrop)}.`,
+        });
+      }
+    }
+
+    // ── Create notifications for all active students ──────────────
+    for (const evt of notificationEvents) {
+      await createPeriodNotification(evt.title, evt.body, req.user.id);
+    }
+
+    res.json({
+      success: true,
+      data: { semester: updated },
+      notifications_sent: notificationEvents.length,
+      notification_events: notificationEvents.map(e => e.title),
+    });
   } catch (error) {
     next(error);
   }
