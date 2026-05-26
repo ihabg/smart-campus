@@ -1,5 +1,8 @@
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { Link } from 'react-router-dom';
+import { useAuth } from '../../context/AuthContext';
+import { publicUrl } from '../../utils/publicUrl';
+import './AdminUsersPage.css';
 import {
   userAPI,
   roomAPI,
@@ -226,115 +229,541 @@ function getRoomTypeBadgeVariant(type) {
 
 // ─── Admin Users ──────────────────────────────────────────────
 export function AdminUsers() {
-  const [page,   setPage]   = useState(1);
-  const [search, setSearch] = useState('');
-  const [role,   setRole]   = useState('');
-  const [editUser,  setEditUser]  = useState(null);
-  const [delUser,   setDelUser]   = useState(null);
+  const { isSuperAdmin, user: currentUser } = useAuth();
+
+  // Filter / pagination state
+  const [page,         setPage]         = useState(1);
+  const [limit,        setLimit]        = useState(20);
+  const [search,       setSearch]       = useState('');
+  const [roleFilter,   setRoleFilter]   = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [deptFilter,   setDeptFilter]   = useState('');
+
+  // Edit modal state
+  const [editUser,    setEditUser]    = useState(null);
+  const [editForm,    setEditForm]    = useState({});
+  const [editLoading, setEditLoading] = useState(false);
+
+  // Delete state
+  const [delUser,    setDelUser]    = useState(null);
   const [delLoading, setDelLoading] = useState(false);
 
-  const { data, loading, refetch } = useAsync(
-    () => userAPI.getAll({ page, limit: 20, search, role }),
-    [page, search, role]
+  // Suspend / activate state
+  const [statusTarget,  setStatusTarget]  = useState(null);
+  const [statusLoading, setStatusLoading] = useState(false);
+
+  // Data
+  const { data: statsData } = useAsync(() => userAPI.getStats(), []);
+  const { data, loading, error, refetch } = useAsync(
+    () => userAPI.getAll({
+      page, limit, search,
+      role: roleFilter, status: statusFilter, department: deptFilter,
+    }),
+    [page, limit, search, roleFilter, statusFilter, deptFilter]
   );
 
   const users      = data?.users || [];
   const pagination = data?.pagination;
+  const stats      = statsData?.users || {};
 
-  const handleDelete = async () => {
+  const hasFilters = !!(search || roleFilter || statusFilter || deptFilter);
+
+  function resetFilters() {
+    setSearch('');
+    setRoleFilter('');
+    setStatusFilter('');
+    setDeptFilter('');
+    setPage(1);
+  }
+
+  function applyStatFilter(type, val) {
+    setSearch('');
+    setDeptFilter('');
+    if (type === 'role')   { setRoleFilter(val);   setStatusFilter(''); }
+    if (type === 'status') { setStatusFilter(val); setRoleFilter('');   }
+    setPage(1);
+  }
+
+  function openEdit(u) {
+    setEditUser(u);
+    setEditForm({ role: u.role, status: u.status, department: u.department || '' });
+  }
+
+  async function handleSaveEdit() {
+    setEditLoading(true);
+    try {
+      await userAPI.adminUpdate(editUser.id, editForm);
+      toast.success('User updated');
+      setEditUser(null);
+      refetch();
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setEditLoading(false);
+    }
+  }
+
+  function openStatusToggle(u) {
+    const newStatus = u.status === 'active' ? 'suspended' : 'active';
+    setStatusTarget({ user: u, newStatus });
+  }
+
+  async function confirmStatusToggle() {
+    setStatusLoading(true);
+    try {
+      await userAPI.adminUpdate(statusTarget.user.id, { status: statusTarget.newStatus });
+      toast.success(statusTarget.newStatus === 'active' ? 'User activated' : 'User suspended');
+      setStatusTarget(null);
+      refetch();
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setStatusLoading(false);
+    }
+  }
+
+  async function handleDelete() {
     setDelLoading(true);
     try {
       await userAPI.delete(delUser.id);
       toast.success('User deleted');
       setDelUser(null);
       refetch();
-    } catch (err) { toast.error(getErrorMessage(err)); }
-    finally { setDelLoading(false); }
-  };
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setDelLoading(false);
+    }
+  }
 
-  const handleUpdateRole = async (userId, role, status) => {
-    try {
-      await userAPI.adminUpdate(userId, { role, status });
-      toast.success('User updated');
-      refetch();
-      setEditUser(null);
-    } catch (err) { toast.error(getErrorMessage(err)); }
-  };
-
-  const columns = [
-    { key: 'name', label: 'Name', render: (_, r) => (
-      <div>
-        <div style={{ fontWeight: 600 }}>{r.first_name} {r.last_name}</div>
-        <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{r.email}</div>
-      </div>
-    )},
-    { key: 'student_id', label: 'ID', render: v => <span style={{ fontFamily: 'monospace' }}>{v || '—'}</span> },
-    { key: 'role',   label: 'Role',   render: v => <Badge variant={v === 'student' ? 'blue' : 'amber'}>{v.replace('_',' ')}</Badge> },
-    { key: 'status', label: 'Status', render: v => <Badge variant={statusBadgeClass(v).replace('badge--','')}>{statusLabel(v)}</Badge> },
-    { key: 'department', label: 'Dept', render: v => v || '—' },
-    { key: 'last_login', label: 'Last Login', render: v => formatDate(v) },
-    { key: 'actions', label: '', render: (_, r) => (
-      <div style={{ display: 'flex', gap: 4 }}>
-        <button className="btn btn--ghost btn--sm btn--icon" onClick={() => setEditUser(r)} title="Edit"><EditIcon /></button>
-        <button className="btn btn--ghost btn--sm btn--icon" onClick={() => setDelUser(r)} title="Delete" style={{ color: 'var(--red)' }}><TrashIcon /></button>
-      </div>
-    )},
+  const ROLE_OPTIONS = [
+    { value: '',               label: 'All Roles' },
+    { value: 'student',        label: 'Student' },
+    { value: 'professor',      label: 'Professor' },
+    { value: 'department_head',label: 'Dept Head' },
+    { value: 'dean',           label: 'Dean' },
+    { value: 'admin',          label: 'Admin' },
+    { value: 'super_admin',    label: 'Super Admin' },
   ];
+
+  const STATUS_OPTIONS = [
+    { value: '',          label: 'All Statuses' },
+    { value: 'active',    label: 'Active' },
+    { value: 'inactive',  label: 'Inactive' },
+    { value: 'suspended', label: 'Suspended' },
+  ];
+
+  const STAT_CARDS = [
+    { label: 'Total Users', value: stats.total      || 0, color: 'navy',  filter: null },
+    { label: 'Active',      value: stats.active     || 0, color: 'green', filter: { type: 'status', val: 'active' } },
+    { label: 'Students',    value: stats.students   || 0, color: 'blue',  filter: { type: 'role',   val: 'student' } },
+    { label: 'Professors',  value: stats.professors || 0, color: 'teal',  filter: { type: 'role',   val: 'professor' } },
+    { label: 'Admins',      value: (stats.admins || 0) + (stats.super_admins || 0), color: 'amber', filter: { type: 'role', val: 'admin' } },
+    { label: 'Suspended',   value: stats.suspended  || 0, color: 'red',   filter: { type: 'status', val: 'suspended' } },
+  ];
+
+  function isCardSelected(card) {
+    if (!card.filter) return !hasFilters;
+    if (card.filter.type === 'role')   return roleFilter   === card.filter.val && !search && !statusFilter && !deptFilter;
+    if (card.filter.type === 'status') return statusFilter === card.filter.val && !search && !roleFilter   && !deptFilter;
+    return false;
+  }
 
   return (
     <div>
+      {/* Header */}
       <div className="page-header">
-        <h1 className="page-title">Users</h1>
-        <p className="page-sub">{pagination?.total || 0} total users</p>
+        <div>
+          <h1 className="page-title">Users</h1>
+          <p className="page-sub">{pagination?.total ?? stats.total ?? 0} total users</p>
+        </div>
       </div>
 
-      <div className="card card--no-pad">
-        <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <div style={{ flex: 1, minWidth: 200 }}>
-            <SearchInput value={search} onChange={v => { setSearch(v); setPage(1); }} onClear={() => { setSearch(''); setPage(1); }} placeholder="Search users…" />
+      {/* Stats cards */}
+      <div className="au-stats">
+        {STAT_CARDS.map(card => (
+          <div
+            key={card.label}
+            className={`au-stat-card au-stat-card--${card.color}${isCardSelected(card) ? ' au-stat-card--selected' : ''}`}
+            onClick={() => card.filter ? applyStatFilter(card.filter.type, card.filter.val) : resetFilters()}
+            title={card.filter ? `Filter by ${card.label}` : 'Show all users'}
+          >
+            <div className="au-stat-card__value">{card.value}</div>
+            <div className="au-stat-card__label">{card.label}</div>
           </div>
-          <select className="form-input" style={{ width: 'auto' }} value={role} onChange={e => { setRole(e.target.value); setPage(1); }}>
-            <option value="">All roles</option>
-            <option value="student">Students</option>
-            <option value="admin">Admins</option>
-          </select>
-        </div>
-        <Table columns={columns} data={users} loading={loading} emptyMessage="No users found" />
-        <div style={{ padding: '0 16px' }}>
-          <Pagination pagination={pagination} onPageChange={setPage} />
-        </div>
+        ))}
       </div>
 
-      {/* Edit modal */}
-      <Modal open={!!editUser} onClose={() => setEditUser(null)} title={`Edit: ${editUser?.first_name} ${editUser?.last_name}`}
-        footer={<Button variant="secondary" onClick={() => setEditUser(null)}>Close</Button>}
-      >
-        {editUser && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <Select label="Role" value={editUser.role}
-              onChange={e => setEditUser(u => ({ ...u, role: e.target.value }))}
-              options={[{value:'student',label:'Student'},{value:'admin',label:'Admin'},{value:'super_admin',label:'Super Admin'}]}
-            />
-            <Select label="Status" value={editUser.status}
-              onChange={e => setEditUser(u => ({ ...u, status: e.target.value }))}
-              options={[{value:'active',label:'Active'},{value:'inactive',label:'Inactive'},{value:'suspended',label:'Suspended'}]}
-            />
-            <Button variant="primary" onClick={() => handleUpdateRole(editUser.id, editUser.role, editUser.status)}>
+      {/* Controls */}
+      <div className="card au-controls">
+        <div className="au-controls__search">
+          <SearchInput
+            value={search}
+            onChange={v => { setSearch(v); setPage(1); }}
+            onClear={() => { setSearch(''); setPage(1); }}
+            placeholder="Search by name, email, or ID…"
+          />
+        </div>
+        <select
+          className="form-input au-controls__select"
+          value={roleFilter}
+          onChange={e => { setRoleFilter(e.target.value); setPage(1); }}
+          aria-label="Filter by role"
+        >
+          {ROLE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+        <select
+          className="form-input au-controls__select"
+          value={statusFilter}
+          onChange={e => { setStatusFilter(e.target.value); setPage(1); }}
+          aria-label="Filter by status"
+        >
+          {STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+        <input
+          className="form-input au-controls__dept"
+          placeholder="Department…"
+          value={deptFilter}
+          onChange={e => { setDeptFilter(e.target.value); setPage(1); }}
+          aria-label="Filter by department"
+        />
+        <select
+          className="form-input au-controls__limit"
+          value={limit}
+          onChange={e => { setLimit(Number(e.target.value)); setPage(1); }}
+          aria-label="Rows per page"
+        >
+          <option value={10}>10 / page</option>
+          <option value={20}>20 / page</option>
+          <option value={50}>50 / page</option>
+        </select>
+        {hasFilters && (
+          <button className="btn btn--ghost btn--sm" onClick={resetFilters}>
+            ✕ Clear filters
+          </button>
+        )}
+      </div>
+
+      {/* Error banner */}
+      {error && (
+        <div className="au-error">
+          ⚠ Failed to load users. Please refresh and try again.
+        </div>
+      )}
+
+      {/* ── Desktop / tablet table ─────────────────────────────── */}
+      <div className="card card--no-pad au-table-card">
+        {loading ? (
+          <table className="au-table">
+            <thead>
+              <tr>
+                <th>User</th>
+                <th>ID</th>
+                <th>Role</th>
+                <th>Status</th>
+                <th className="au-col-dept">Department</th>
+                <th className="au-col-login">Last Login</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {Array.from({ length: 6 }).map((_, i) => (
+                <tr key={i} className="au-skeleton-row">
+                  <td>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div className="au-skeleton-circle" />
+                      <div style={{ flex: 1 }}>
+                        <div className="au-skeleton-line" style={{ width: '55%', marginBottom: 6 }} />
+                        <div className="au-skeleton-line" style={{ width: '75%' }} />
+                      </div>
+                    </div>
+                  </td>
+                  <td><div className="au-skeleton-line" style={{ width: 60 }} /></td>
+                  <td><div className="au-skeleton-line" style={{ width: 64 }} /></td>
+                  <td><div className="au-skeleton-line" style={{ width: 56 }} /></td>
+                  <td className="au-col-dept"><div className="au-skeleton-line" style={{ width: '70%' }} /></td>
+                  <td className="au-col-login"><div className="au-skeleton-line" style={{ width: 80 }} /></td>
+                  <td><div className="au-skeleton-line" style={{ width: 120 }} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : users.length === 0 ? (
+          <div className="au-empty">
+            <div className="au-empty__icon">👥</div>
+            <div className="au-empty__title">No users found</div>
+            <div className="au-empty__sub">
+              {hasFilters ? 'No users match the current filters.' : 'No users in the system yet.'}
+            </div>
+            {hasFilters && (
+              <button className="btn btn--secondary btn--sm" onClick={resetFilters}>
+                Reset Filters
+              </button>
+            )}
+          </div>
+        ) : (
+          <>
+            <table className="au-table">
+              <thead>
+                <tr>
+                  <th>User</th>
+                  <th>ID</th>
+                  <th>Role</th>
+                  <th>Status</th>
+                  <th className="au-col-dept">Department</th>
+                  <th className="au-col-login">Last Login</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {users.map(u => (
+                  <tr key={u.id}>
+                    <td>
+                      <div className="au-user-cell">
+                        <UserAvatar user={u} />
+                        <div>
+                          <div className="au-user-name">{u.first_name} {u.last_name}</div>
+                          <div className="au-user-email">{u.email}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td style={{ fontFamily: 'monospace', fontSize: 12.5, color: 'var(--text-muted)' }}>
+                      {u.student_id || '—'}
+                    </td>
+                    <td><UserRoleBadge role={u.role} /></td>
+                    <td><UserStatusBadge status={u.status} /></td>
+                    <td className="au-col-dept" style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+                      {u.department || '—'}
+                    </td>
+                    <td className="au-col-login" style={{ fontSize: 12.5, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                      {formatDate(u.last_login)}
+                    </td>
+                    <td>
+                      <div className="au-actions">
+                        <button className="au-btn-edit" onClick={() => openEdit(u)} title="Edit user">
+                          ✎ Edit
+                        </button>
+                        {u.id !== currentUser?.id && (
+                          u.status === 'active' ? (
+                            <button className="au-btn-suspend" onClick={() => openStatusToggle(u)} title="Suspend user">
+                              ⏸ Suspend
+                            </button>
+                          ) : (
+                            <button className="au-btn-activate" onClick={() => openStatusToggle(u)} title="Activate user">
+                              ▶ Activate
+                            </button>
+                          )
+                        )}
+                        {isSuperAdmin && u.id !== currentUser?.id && (
+                          <button className="au-btn-delete" onClick={() => setDelUser(u)} title="Delete user">
+                            🗑 Delete
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div className="au-pagination">
+              <Pagination pagination={pagination} onPageChange={setPage} />
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* ── Mobile cards ───────────────────────────────────────── */}
+      {!loading && users.length > 0 && (
+        <div className="au-cards">
+          {users.map(u => (
+            <div key={u.id} className="au-card">
+              <div className="au-card__top">
+                <UserAvatar user={u} size={40} />
+                <div className="au-card__info">
+                  <div className="au-user-name">{u.first_name} {u.last_name}</div>
+                  <div className="au-user-email">{u.email}</div>
+                </div>
+              </div>
+              <div className="au-card__badges">
+                <UserRoleBadge role={u.role} />
+                <UserStatusBadge status={u.status} />
+              </div>
+              {(u.student_id || u.department || u.last_login) && (
+                <div className="au-card__meta">
+                  {u.student_id  && <span className="au-card__meta-item"><span className="au-card__meta-key">ID:</span> {u.student_id}</span>}
+                  {u.department  && <span className="au-card__meta-item"><span className="au-card__meta-key">Dept:</span> {u.department}</span>}
+                  {u.last_login  && <span className="au-card__meta-item"><span className="au-card__meta-key">Login:</span> {formatDate(u.last_login)}</span>}
+                </div>
+              )}
+              <div className="au-card__actions">
+                <button className="au-btn-edit" onClick={() => openEdit(u)}>✎ Edit</button>
+                {u.id !== currentUser?.id && (
+                  u.status === 'active' ? (
+                    <button className="au-btn-suspend" onClick={() => openStatusToggle(u)}>⏸ Suspend</button>
+                  ) : (
+                    <button className="au-btn-activate" onClick={() => openStatusToggle(u)}>▶ Activate</button>
+                  )
+                )}
+                {isSuperAdmin && u.id !== currentUser?.id && (
+                  <button className="au-btn-delete" onClick={() => setDelUser(u)}>🗑 Delete</button>
+                )}
+              </div>
+            </div>
+          ))}
+          <div style={{ background: '#fff', borderRadius: 8, border: '1px solid var(--border)', padding: '0 16px', marginTop: 8 }}>
+            <Pagination pagination={pagination} onPageChange={setPage} />
+          </div>
+        </div>
+      )}
+
+      {/* ── Edit modal ──────────────────────────────────────────── */}
+      <Modal
+        open={!!editUser}
+        onClose={() => setEditUser(null)}
+        title={`Edit User`}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setEditUser(null)} disabled={editLoading}>
+              Cancel
+            </Button>
+            <Button variant="primary" onClick={handleSaveEdit} loading={editLoading}>
               Save Changes
             </Button>
+          </>
+        }
+      >
+        {editUser && (
+          <div>
+            {/* Basic Info */}
+            <div className="au-modal-section">
+              <div className="au-modal-section-title">Basic Info</div>
+              <div className="au-modal-user-preview">
+                <UserAvatar user={editUser} size={40} />
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: 14 }}>{editUser.first_name} {editUser.last_name}</div>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{editUser.email}</div>
+                  {editUser.student_id && (
+                    <div style={{ fontSize: 11.5, color: 'var(--text-muted)', fontFamily: 'monospace', marginTop: 2 }}>
+                      ID: {editUser.student_id}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Role & Department */}
+            <div className="au-modal-section">
+              <div className="au-modal-section-title">Role & Department</div>
+              <Select
+                label="Role"
+                value={editForm.role}
+                onChange={e => setEditForm(f => ({ ...f, role: e.target.value }))}
+                options={[
+                  { value: 'student',         label: 'Student' },
+                  { value: 'professor',        label: 'Professor' },
+                  { value: 'department_head',  label: 'Department Head' },
+                  { value: 'dean',             label: 'Dean' },
+                  { value: 'admin',            label: 'Admin' },
+                  { value: 'super_admin',      label: 'Super Admin' },
+                ]}
+              />
+              <Input
+                label="Department"
+                value={editForm.department}
+                onChange={e => setEditForm(f => ({ ...f, department: e.target.value }))}
+                placeholder="e.g. Computer Engineering"
+              />
+            </div>
+
+            {/* Account Status */}
+            <div className="au-modal-section">
+              <div className="au-modal-section-title">Account Status</div>
+              <Select
+                label="Status"
+                value={editForm.status}
+                onChange={e => setEditForm(f => ({ ...f, status: e.target.value }))}
+                options={[
+                  { value: 'active',    label: 'Active' },
+                  { value: 'inactive',  label: 'Inactive' },
+                  { value: 'suspended', label: 'Suspended' },
+                ]}
+              />
+            </div>
           </div>
         )}
       </Modal>
 
-      {/* Delete confirm */}
+      {/* ── Status toggle confirm ────────────────────────────────── */}
       <ConfirmDialog
-        open={!!delUser} onClose={() => setDelUser(null)}
-        onConfirm={handleDelete} loading={delLoading} danger
+        open={!!statusTarget}
+        onClose={() => setStatusTarget(null)}
+        onConfirm={confirmStatusToggle}
+        loading={statusLoading}
+        danger={statusTarget?.newStatus === 'suspended'}
+        title={statusTarget?.newStatus === 'active' ? 'Activate User' : 'Suspend User'}
+        message={
+          statusTarget?.newStatus === 'active'
+            ? `Activate ${statusTarget?.user.first_name} ${statusTarget?.user.last_name}? They will regain full access to the system.`
+            : `Suspend ${statusTarget?.user.first_name} ${statusTarget?.user.last_name}? They will lose access until reactivated.`
+        }
+      />
+
+      {/* ── Delete confirm ────────────────────────────────────────── */}
+      <ConfirmDialog
+        open={!!delUser}
+        onClose={() => setDelUser(null)}
+        onConfirm={handleDelete}
+        loading={delLoading}
+        danger
         title="Delete User"
-        message={`Are you sure you want to delete ${delUser?.first_name} ${delUser?.last_name}? This action cannot be undone.`}
+        message={`Permanently delete ${delUser?.first_name} ${delUser?.last_name}? This action cannot be undone. If this user has enrollments, grades, or teaching data, those records may also be affected.`}
       />
     </div>
   );
+}
+
+// ─── AdminUsers helpers ───────────────────────────────────────
+function UserAvatar({ user, size = 34 }) {
+  const initials = `${user.first_name?.[0] || ''}${user.last_name?.[0] || ''}`;
+  const cls = `au-avatar au-avatar--${user.role}`;
+  const style = { width: size, height: size, fontSize: Math.round(size * 0.35) };
+  if (user.avatar_url) {
+    return (
+      <div className={cls} style={style}>
+        <img src={publicUrl(user.avatar_url)} alt={initials} />
+      </div>
+    );
+  }
+  return <div className={cls} style={style}>{initials}</div>;
+}
+
+function UserRoleBadge({ role }) {
+  const variantMap = {
+    student:         'blue',
+    professor:       'green',
+    department_head: 'green',
+    dean:            'green',
+    admin:           'amber',
+    super_admin:     'red',
+  };
+  const labelMap = {
+    student:         'Student',
+    professor:       'Professor',
+    department_head: 'Dept Head',
+    dean:            'Dean',
+    admin:           'Admin',
+    super_admin:     'Super Admin',
+  };
+  return (
+    <Badge variant={variantMap[role] || 'gray'}>
+      {labelMap[role] || role}
+    </Badge>
+  );
+}
+
+function UserStatusBadge({ status }) {
+  const variant = statusBadgeClass(status).replace('badge--', '');
+  return <Badge variant={variant}>{statusLabel(status)}</Badge>;
 }
 
 // ─── Admin Floors ─────────────────────────────────────────────
