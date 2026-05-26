@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { publicUrl } from '../../utils/publicUrl';
 import './AdminUsersPage.css';
+import './AdminDashboardPage.css';
 import {
   userAPI,
   roomAPI,
@@ -11,7 +12,9 @@ import {
   notificationAPI,
   floorAPI,
   courseAPI,
-  instructorAPI
+  instructorAPI,
+  semesterAPI,
+  studyPlanAPI,
 } from '../../api/index';
 import { useAsync, useAllSections, useRoomTypes } from '../../hooks/index';
 import { RoomFormModal } from './AdminRoomsPage';
@@ -23,157 +26,365 @@ import {
 import {
   formatDate, formatTime, daysArrayToString, statusBadgeClass,
   statusLabel, roomTypeLabel, roomTypeBadgeClass, getErrorMessage, semesterLabel,
+  timeAgo, formatDateTime,
 } from '../../utils/helpers';
 import toast from 'react-hot-toast';
 import { RoomAvailabilityMap } from '../../components/map/RoomAvailabilityMap';
 
 
 // ─── Admin Dashboard ──────────────────────────────────────────
+const QUICK_ACTION_GROUPS = [
+  {
+    group: 'Academic',
+    actions: [
+      { to: '/admin/semester',    label: '📅 Semester' },
+      { to: '/admin/study-plans', label: '🎓 Study Plans' },
+      { to: '/admin/courses',     label: '📖 Courses' },
+      { to: '/admin/doctors',     label: '👨‍🏫 Doctors' },
+    ],
+  },
+  {
+    group: 'Campus',
+    actions: [
+      { to: '/admin/floors',     label: '🏢 Floors & Maps' },
+      { to: '/admin/map-editor', label: '✏️ Map Editor' },
+    ],
+  },
+  {
+    group: 'Communication',
+    actions: [
+      { to: '/admin/notifications', label: '🔔 Notifications' },
+      { to: '/admin/announcements', label: '📢 Announcements' },
+    ],
+  },
+  {
+    group: 'Users',
+    actions: [
+      { to: '/admin/users', label: '👥 Manage Users' },
+    ],
+  },
+];
+
 export function AdminDashboard() {
-  const { data, loading } = useAsync(() => userAPI.getStats(), []);
+  const [showAllRooms, setShowAllRooms] = useState(false);
 
-  if (loading) return <Spinner center />;
+  // Primary data — if this fails the error banner shows
+  const { data: statsData, loading: statsLoading, error: statsError } = useAsync(
+    () => userAPI.getStats(), []
+  );
+  // Secondary — semesters (reg period card + academic overview counts)
+  const { data: semData } = useAsync(() => semesterAPI.list(), []);
+  // Secondary — counts for academic overview
+  const { data: courseData } = useAsync(() => courseAPI.getAll({ limit: 1 }), []);
+  const { data: instrData  } = useAsync(() => instructorAPI.getAll({ limit: 1 }), []);
+  const { data: planData   } = useAsync(() => studyPlanAPI.list(), []);
+  // Secondary — recent announcements
+  const { data: annData } = useAsync(() => announcementAPI.getAll({ limit: 4 }), []);
 
-  const stats = data || {};
+  // ── Derived values ─────────────────────────────────────────
+  const stats = statsData || {};
 
-  const roomTypes = Array.isArray(stats.rooms?.by_type)
-    ? stats.rooms.by_type
-    : [];
+  const rawRoomTypes = Array.isArray(stats.rooms?.by_type) ? stats.rooms.by_type : [];
+  const roomTypes    = [...rawRoomTypes]
+    .filter(r => Number(r.count) > 0)
+    .sort((a, b) => Number(b.count) - Number(a.count));
+  const maxRoomCount = Number(roomTypes[0]?.count) || 1;
+  const ROOM_SHOW    = 8;
 
-  const activeSections =
-    stats.sections?.spring_active ??
-    stats.sections?.active ??
-    0;
+  const semesters     = semData?.semesters || [];
+  const publishedSems = semesters.filter(s => s.status === 'published');
+  const latestPub     = publishedSems[0] || null;
+  const regState      = dashCalcRegState(latestPub);
+
+  const courseCount = courseData?.pagination?.total ?? null;
+  const instrCount  = instrData?.pagination?.total  ?? null;
+  const planCount   = Array.isArray(planData) ? planData.length : null;
+
+  const announcements = annData?.announcements || [];
+
+  // ── Stat cards data ─────────────────────────────────────────
+  const STAT_CARDS = [
+    {
+      icon: '👥', label: 'Total Users',
+      value: stats.users?.total || 0, color: 'navy',
+      sub: `${stats.users?.active || 0} active · ${stats.users?.suspended || 0} suspended`,
+    },
+    {
+      icon: '🎓', label: 'Students',
+      value: stats.users?.students || 0, color: 'blue',
+      sub: 'Registered students',
+    },
+    {
+      icon: '👨‍🏫', label: 'Professors',
+      value: stats.users?.professors || 0, color: 'green',
+      sub: 'Faculty members',
+    },
+    {
+      icon: '🏢', label: 'Total Rooms',
+      value: stats.rooms?.total || 0, color: 'gold',
+      sub: `Across ${stats.buildings?.total || 0} buildings`,
+    },
+    {
+      icon: '📅', label: 'Active Sections',
+      value: stats.sections?.active || 0, color: 'green',
+      sub: 'All active sections',
+    },
+    {
+      icon: '🔔', label: 'Notifications',
+      value: stats.notifications?.published || 0, color: 'amber',
+      sub: `${stats.notifications?.total || 0} total`,
+    },
+  ];
+
+  // ── Date label for header ───────────────────────────────────
+  const todayLabel = new Date().toLocaleDateString('en-US', {
+    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+  });
 
   return (
     <div>
-      <div className="page-header">
-        <h1 className="page-title">Admin Dashboard</h1>
-        <p className="page-sub">System overview for An-Najah Smart Campus</p>
+      {/* Header */}
+      <div className="adm-header">
+        <div className="page-header" style={{ marginBottom: 0 }}>
+          <h1 className="page-title">Admin Dashboard</h1>
+          <p className="page-sub">System overview — An-Najah Smart Campus</p>
+        </div>
+        <div className="adm-header-date">📆 {todayLabel}</div>
       </div>
 
-      <div className="grid-4" style={{ marginBottom: 'var(--space-xl)' }}>
-        <StatCard
-          label="Total Students"
-          value={stats.users?.students || 0}
-          sub={`${stats.users?.active || 0} active users`}
-          color="blue"
-        />
+      {/* Error banner */}
+      {statsError && (
+        <div className="adm-error">
+          ⚠ Failed to load dashboard statistics. Please refresh the page.
+        </div>
+      )}
 
-        <StatCard
-          label="Total Rooms"
-          value={stats.rooms?.total || 0}
-          sub="All active mapped locations"
-          color="green"
-        />
+      {/* ── Stats row ─────────────────────────────────────────── */}
+      {statsLoading ? (
+        <div className="adm-stats-grid" style={{ marginBottom: 24 }}>
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="card adm-skel-card">
+              <span className="adm-skel" style={{ height: 24, width: '35%', marginBottom: 10 }} />
+              <span className="adm-skel" style={{ height: 34, width: '55%', marginBottom: 8 }} />
+              <span className="adm-skel" style={{ height: 11, width: '80%' }} />
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="adm-stats-grid">
+          {STAT_CARDS.map(card => (
+            <div key={card.label} className={`stat-card stat-card--${card.color}`}>
+              <div className="stat-card__icon">{card.icon}</div>
+              <div className="stat-card__label">{card.label}</div>
+              <div className="stat-card__value">{card.value}</div>
+              <div className="stat-card__sub">{card.sub}</div>
+            </div>
+          ))}
+        </div>
+      )}
 
-        <StatCard
-          label="Spring Sections"
-          value={activeSections}
-          sub="Spring 2025/2026"
-          color="gold"
-        />
+      {/* ── Main body (two columns) ───────────────────────────── */}
+      <div className="adm-body">
 
-        <StatCard
-          label="Buildings"
-          value={stats.buildings?.total || 0}
-          sub="Active buildings"
-          color="blue"
-        />
-      </div>
+        {/* ── Left column ─────────────────────────────────────── */}
+        <div className="adm-col">
 
-      <div className="grid-2">
-        <div className="card">
-          <SectionHeader title="Room Types From Database" />
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {/* Campus Room Overview */}
+          <div className="card">
+            <div className="adm-card-header">
+              <span className="adm-card-title">🏢 Campus Room Overview</span>
+              <Link to="/admin/rooms" className="adm-card-link">View rooms →</Link>
+            </div>
             {roomTypes.length === 0 ? (
-              <div
-                style={{
-                  fontSize: 13,
-                  color: 'var(--text-muted)',
-                  padding: '10px 0'
-                }}
-              >
-                No room type statistics found. Restart the backend and make sure
-                <code style={{ marginLeft: 4 }}>rooms.by_type</code> is returned
-                from <code>/api/users/stats</code>.
+              <div style={{ fontSize: 13, color: 'var(--text-muted)', padding: '10px 0' }}>
+                No room data available. Ensure the backend is running.
               </div>
             ) : (
-              roomTypes.map((item) => (
-                <div
-                  key={item.type}
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    padding: '7px 0',
-                    borderBottom: '1px solid var(--border)'
-                  }}
-                >
-                  <span style={{ fontSize: 13 }}>
-                    {roomTypeLabel(item.type)}
-                  </span>
+              <div className="adm-room-list">
+                {roomTypes.slice(0, showAllRooms ? undefined : ROOM_SHOW).map(rt => (
+                  <div key={rt.type} className="adm-room-row">
+                    <span className="adm-room-label">{roomTypeLabel(rt.type)}</span>
+                    <div className="adm-room-bar-track">
+                      <div
+                        className="adm-room-bar-fill"
+                        style={{
+                          width: `${(Number(rt.count) / maxRoomCount * 100).toFixed(1)}%`,
+                          background: dashRoomBarColor(rt.type),
+                        }}
+                      />
+                    </div>
+                    <span className="adm-room-count">{rt.count}</span>
+                  </div>
+                ))}
+                {roomTypes.length > ROOM_SHOW && (
+                  <button
+                    className="adm-room-show-all"
+                    onClick={() => setShowAllRooms(p => !p)}
+                  >
+                    {showAllRooms
+                      ? 'Show less'
+                      : `Show all ${roomTypes.length} room types`}
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
 
-                  <Badge variant={getRoomTypeBadgeVariant(item.type)}>
-                    {Number(item.count) || 0}
-                  </Badge>
-                </div>
-              ))
+          {/* Recent Announcements */}
+          <div className="card">
+            <div className="adm-card-header">
+              <span className="adm-card-title">📢 Recent Announcements</span>
+              <Link to="/admin/announcements" className="adm-card-link">View all →</Link>
+            </div>
+            {announcements.length === 0 ? (
+              <div className="adm-ann-empty">
+                <div style={{ fontSize: 28, marginBottom: 8 }}>📭</div>
+                No announcements yet.{' '}
+                <Link to="/admin/announcements" style={{ color: 'var(--navy)', textDecoration: 'underline' }}>
+                  Create one
+                </Link>
+              </div>
+            ) : (
+              <div className="adm-ann-list">
+                {announcements.map(a => (
+                  <Link key={a.id} to={`/announcements/${a.id}`} className="adm-ann-item">
+                    <div className={`adm-ann-dot${a.is_pinned ? ' adm-ann-dot--pinned' : ''}`} />
+                    <div className="adm-ann-body">
+                      <div className="adm-ann-title">{a.title}</div>
+                      {a.content && (
+                        <div className="adm-ann-preview">{a.content}</div>
+                      )}
+                      <div className="adm-ann-footer">
+                        <span className="adm-ann-time">{timeAgo(a.published_at)}</span>
+                        {a.is_pinned && (
+                          <Badge variant="amber">Pinned</Badge>
+                        )}
+                      </div>
+                    </div>
+                  </Link>
+                ))}
+              </div>
             )}
           </div>
         </div>
 
-        <div className="card">
-          <SectionHeader title="Quick Actions" />
+        {/* ── Right column ────────────────────────────────────── */}
+        <div className="adm-col">
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            {[
-              {
-                group: 'Academic',
-                actions: [
-                  { to: '/admin/semester',    label: '📅 Semester' },
-                  { to: '/admin/study-plans', label: '🎓 Study Plans' },
-                  { to: '/admin/courses',     label: '📖 Courses' },
-                  { to: '/admin/doctors',     label: '👨‍🏫 Doctors' },
-                ],
-              },
-              {
-                group: 'Campus',
-                actions: [
-                  { to: '/admin/floors',      label: '🏢 Floors & Maps' },
-                  { to: '/admin/map-editor',  label: '✏️ Map Editor' },
-                ],
-              },
-              {
-                group: 'Communication',
-                actions: [
-                  { to: '/admin/notifications', label: '🔔 Notifications' },
-                  { to: '/admin/announcements', label: '📢 Announcements' },
-                ],
-              },
-              {
-                group: 'Users',
-                actions: [
-                  { to: '/admin/users', label: '👥 Manage Users' },
-                ],
-              },
-            ].map(({ group, actions }) => (
-              <div key={group}>
-                <div style={{
-                  fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase',
-                  letterSpacing: '0.07em', color: 'var(--text-muted)',
-                  marginBottom: 6,
-                }}>
-                  {group}
+          {/* Registration Period Status */}
+          <div className="card">
+            <div className="adm-card-header">
+              <span className="adm-card-title">📋 Registration Period</span>
+              <Link to="/admin/semester" className="adm-card-link">Manage →</Link>
+            </div>
+            {!latestPub ? (
+              <div className="adm-reg-empty">
+                <div className="adm-reg-empty__icon">📅</div>
+                <div className="adm-reg-empty__text">No published semester found.</div>
+                <Link to="/admin/semester" className="btn btn--secondary btn--sm">
+                  Go to Semester Management
+                </Link>
+              </div>
+            ) : (
+              <>
+                <div className="adm-reg-sem-label">
+                  {latestPub.label || `${latestPub.semester} ${latestPub.academic_year}`}
                 </div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                <div className={`adm-reg-status-banner adm-reg-status-banner--${regState}`}>
+                  <span className="adm-reg-status-icon">
+                    {regState === 'open'         ? '🟢'
+                    : regState === 'not_open_yet' ? '🟡'
+                    : regState === 'closed'       ? '🔴'
+                    : '⚪'}
+                  </span>
+                  <span className="adm-reg-status-text">
+                    {regState === 'open'          ? 'Registration Open'
+                    : regState === 'not_open_yet' ? 'Registration Not Yet Open'
+                    : regState === 'closed'        ? 'Registration Closed'
+                    : 'No Registration Window Set'}
+                  </span>
+                </div>
+                {(latestPub.registration_start || latestPub.registration_end || latestPub.drop_deadline) && (
+                  <div className="adm-reg-dates">
+                    {latestPub.registration_start && (
+                      <div className="adm-reg-date-row">
+                        <span className="adm-reg-date-key">Opens:</span>
+                        <span className="adm-reg-date-val">
+                          {formatDate(latestPub.registration_start, 'dd MMM yyyy, HH:mm')}
+                        </span>
+                      </div>
+                    )}
+                    {latestPub.registration_end && (
+                      <div className="adm-reg-date-row">
+                        <span className="adm-reg-date-key">Closes:</span>
+                        <span className="adm-reg-date-val">
+                          {formatDate(latestPub.registration_end, 'dd MMM yyyy, HH:mm')}
+                        </span>
+                      </div>
+                    )}
+                    {latestPub.drop_deadline && (
+                      <div className="adm-reg-date-row">
+                        <span className="adm-reg-date-key">Drop deadline:</span>
+                        <span className={`adm-reg-date-val${
+                          new Date(latestPub.drop_deadline) < new Date()
+                            ? ' adm-reg-date-val--warn' : ''
+                        }`}>
+                          {formatDate(latestPub.drop_deadline, 'dd MMM yyyy, HH:mm')}
+                          {new Date(latestPub.drop_deadline) < new Date() ? ' (Passed)' : ''}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
+          {/* Academic Overview */}
+          <div className="card">
+            <div className="adm-card-title" style={{ marginBottom: 14 }}>
+              📊 Academic Overview
+            </div>
+            <div className="adm-academic-grid">
+              <Link to="/admin/semester" className="adm-academic-item">
+                <div className="adm-academic-value">{publishedSems.length}</div>
+                <div className="adm-academic-label">Published Semesters</div>
+              </Link>
+              <Link to="/admin/courses" className="adm-academic-item">
+                <div className="adm-academic-value">
+                  {courseCount !== null ? courseCount : <span className="adm-skel" style={{ height: 26, width: 50, display: 'inline-block' }} />}
+                </div>
+                <div className="adm-academic-label">Total Courses</div>
+              </Link>
+              <Link to="/admin/doctors" className="adm-academic-item">
+                <div className="adm-academic-value">
+                  {instrCount !== null ? instrCount : <span className="adm-skel" style={{ height: 26, width: 50, display: 'inline-block' }} />}
+                </div>
+                <div className="adm-academic-label">Instructors</div>
+              </Link>
+              <Link to="/admin/study-plans" className="adm-academic-item">
+                <div className="adm-academic-value">
+                  {planCount !== null ? planCount : <span className="adm-skel" style={{ height: 26, width: 50, display: 'inline-block' }} />}
+                </div>
+                <div className="adm-academic-label">Study Plans</div>
+              </Link>
+            </div>
+          </div>
+
+          {/* Quick Actions */}
+          <div className="card">
+            <div className="adm-card-title" style={{ marginBottom: 14 }}>
+              ⚡ Quick Actions
+            </div>
+            {QUICK_ACTION_GROUPS.map(({ group, actions }) => (
+              <div key={group} className="adm-quick-group">
+                <div className="adm-quick-group-title">{group}</div>
+                <div className="adm-quick-actions">
                   {actions.map(action => (
                     <Link
                       key={action.to}
                       to={action.to}
-                      className="btn btn--secondary"
-                      style={{ justifyContent: 'flex-start', fontSize: 12.5, flex: '1 1 140px' }}
+                      className="btn btn--secondary adm-quick-btn"
                     >
                       {action.label}
                     </Link>
@@ -182,6 +393,7 @@ export function AdminDashboard() {
               </div>
             ))}
           </div>
+
         </div>
       </div>
     </div>
@@ -226,6 +438,29 @@ function getRoomTypeBadgeVariant(type) {
   return map[type] || 'gray';
 }
 
+// ─── Dashboard helpers ────────────────────────────────────────
+function dashCalcRegState(sem) {
+  if (!sem) return 'none';
+  const { registration_start: rs, registration_end: re } = sem;
+  if (!rs && !re) return 'no_window';
+  const now = Date.now();
+  if (rs && now < new Date(rs).getTime()) return 'not_open_yet';
+  if (re && now > new Date(re).getTime()) return 'closed';
+  return 'open';
+}
+
+function dashRoomBarColor(type) {
+  if (['classroom', 'lecture_hall', 'amphitheater',
+       'engineering_drawing_room', 'engineering_drawing_studio'].includes(type))
+    return '#03184a';
+  if (type === 'lab')
+    return '#0d7a4a';
+  if (['office', 'meeting_room', 'professor_lounge'].includes(type))
+    return '#966200';
+  if (['library', 'cafeteria', 'bookstore'].includes(type))
+    return '#0d9488';
+  return '#6474a0';
+}
 
 // ─── Admin Users ──────────────────────────────────────────────
 export function AdminUsers() {
