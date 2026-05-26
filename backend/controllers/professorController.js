@@ -3,16 +3,16 @@ const https = require('https');
 
 function letterGrade(total) {
   if (total >= 90) return 'A';
-  if (total >= 85) return 'A-';
-  if (total >= 80) return 'B+';
-  if (total >= 75) return 'B';
-  if (total >= 70) return 'B-';
-  if (total >= 65) return 'C+';
-  if (total >= 60) return 'C';
-  if (total >= 55) return 'C-';
-  if (total >= 50) return 'D+';
-  if (total >= 45) return 'D';
-  if (total >= 40) return 'D-';
+  if (total >= 88) return 'A-';
+  if (total >= 85) return 'B+';
+  if (total >= 80) return 'B';
+  if (total >= 78) return 'B-';
+  if (total >= 73) return 'C+';
+  if (total >= 70) return 'C';
+  if (total >= 65) return 'C-';
+  if (total >= 63) return 'D+';
+  if (total >= 60) return 'D';
+  if (total >= 45) return 'D-';
   return 'E';
 }
 
@@ -224,8 +224,9 @@ async function getDashboard(req, res, next) {
         LEFT JOIN enrollments e ON e.section_id = s.id
         WHERE s.instructor_id = $1
           AND s.is_active = TRUE
+          ${sectionsFilter}
         `,
-        [profId]
+        sectionsParams
       ),
 
       query(
@@ -253,6 +254,7 @@ async function getDashboard(req, res, next) {
         WHERE s.instructor_id = $1
           AND e.status = 'enrolled'
           AND s.is_active = TRUE
+          ${sectionsFilter}
         GROUP BY
           u.id,
           u.first_name,
@@ -267,7 +269,7 @@ async function getDashboard(req, res, next) {
         ORDER BY attendance_pct
         LIMIT 10
         `,
-        [profId]
+        sectionsParams
       ),
 
       // Distinct terms this professor has sections in, most recent first.
@@ -304,6 +306,7 @@ async function getDashboard(req, res, next) {
       )
     ]);
 
+    res.set('Cache-Control', 'no-store');
     res.json({
       success: true,
       data: {

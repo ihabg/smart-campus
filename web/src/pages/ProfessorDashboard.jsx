@@ -207,6 +207,7 @@ export default function ProfessorDashboard() {
 
   const [gradeEdit, setGradeEdit] = useState({});
   const [savingGrades, setSavingGrades] = useState(false);
+  const [hasUnsavedGrades, setHasUnsavedGrades] = useState(false);
 
   const [roomOptions, setRoomOptions] = useState([]);
   const [changeModal, setChangeModal] = useState(null);
@@ -314,13 +315,22 @@ export default function ProfessorDashboard() {
     const gen = ++dashGen.current;
     setLoading(true);
     setData(null);
+    // Clear per-section state so stale data from the previous semester never shows
+    setActiveSection(null);
+    setStudents([]);
+    setAttSummary([]);
+    setGradeEdit({});
+    setAttRecs({});
     try {
       const r = await axiosInstance.get('/professor/dashboard', {
-        params: { semester, academic_year: academicYear }
+        params: { semester, academic_year: academicYear },
       });
-      if (gen === dashGen.current) setData(r.data.data);
-    } catch {
-      if (gen === dashGen.current) showToast('Failed to load dashboard', 'error');
+      if (gen === dashGen.current) setData(r.data?.data ?? null);
+    } catch (err) {
+      if (gen === dashGen.current) {
+        const msg = err?.response?.data?.message || err?.message || 'Failed to load dashboard';
+        showToast(msg, 'error');
+      }
     } finally {
       if (gen === dashGen.current) setLoading(false);
     }
@@ -513,6 +523,7 @@ export default function ProfessorDashboard() {
         };
       });
       setGradeEdit(ge);
+      setHasUnsavedGrades(false);
 
       const ar = {};
       studs.forEach((s) => {
@@ -911,7 +922,18 @@ export default function ProfessorDashboard() {
 
       showToast('✅ All grades saved');
       const r = await axiosInstance.get(`/professor/sections/${activeSection.id}/students`);
-      setStudents(r.data.data.students || []);
+      const freshStudents = r.data.data.students || [];
+      setStudents(freshStudents);
+      const ge = {};
+      freshStudents.forEach((s) => {
+        ge[s.id] = {
+          midterm: s.midterm || '',
+          assignments: s.assignments || '',
+          final: s.final || ''
+        };
+      });
+      setGradeEdit(ge);
+      setHasUnsavedGrades(false);
     } catch {
       showToast('Failed to save grades', 'error');
     } finally {
@@ -1516,6 +1538,11 @@ export default function ProfessorDashboard() {
                 <h3>👥 Students & Grades</h3>
                 <div className="prof-header-actions">
                   <button className="btn btn--secondary btn--sm" onClick={exportGrades}>⬇ Export grades</button>
+                  {hasUnsavedGrades && (
+                    <span style={{ fontSize: 12, color: '#d97706', fontWeight: 600, alignSelf: 'center' }}>
+                      Unsaved changes
+                    </span>
+                  )}
                   <button className="btn btn--primary btn--sm" onClick={saveAllGrades} disabled={savingGrades}>
                     {savingGrades ? 'Saving...' : '💾 Save All Grades'}
                   </button>
@@ -1549,9 +1576,9 @@ export default function ProfessorDashboard() {
                             total >= 85 ? 'B+' :
                               total >= 80 ? 'B' :
                                 total >= 78 ? 'B-' :
-                                  total >= 75 ? 'C+' :
+                                  total >= 73 ? 'C+' :
                                     total >= 70 ? 'C' :
-                                      total >= 66 ? 'C-' :
+                                      total >= 65 ? 'C-' :
                                         total >= 63 ? 'D+' :
                                           total >= 60 ? 'D' :
                                             total >= 45 ? 'D-' :
@@ -1589,6 +1616,7 @@ export default function ProfessorDashboard() {
                                       [field]: value
                                     }
                                   }));
+                                  setHasUnsavedGrades(true);
                                 }}
                                 placeholder="—"
                               />
