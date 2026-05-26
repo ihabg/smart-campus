@@ -211,7 +211,7 @@ export default function Navbar({ onMenuToggle }) {
                   </Link>
 
                   <Link
-                    to="/schedule"
+                    to={['professor', 'department_head', 'dean'].includes(user?.role) ? '/professor/schedule' : '/schedule'}
                     className="profile-dropdown__item"
                     onClick={() => setProfileOpen(false)}
                   >
