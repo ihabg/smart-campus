@@ -356,6 +356,58 @@ async function getStudyPlan(req, res, next) {
           };
         });
 
+        // Attach prerequisite data (with student's passing status) to each plan course.
+        // Concurrent satisfaction against a specific term is handled on the frontend
+        // using the already-loaded myEnrolled list.
+        if (plan_courses.length > 0) {
+          const courseIds = plan_courses.map(pc => pc.course_id);
+          const prereqRes = await query(`
+            SELECT
+              cp.course_id,
+              cp.prerequisite_id,
+              cp.is_concurrent,
+              c.code,
+              c.name,
+              c.name_ar,
+              c.credit_hours,
+              EXISTS (
+                SELECT 1
+                FROM enrollments e
+                JOIN sections s ON s.id = e.section_id
+                LEFT JOIN grades g
+                  ON g.student_id = e.student_id AND g.section_id = e.section_id
+                WHERE e.student_id   = $2
+                  AND s.course_id    = cp.prerequisite_id
+                  AND e.status      != 'dropped'
+                  AND g.letter_grade IS NOT NULL
+                  AND g.letter_grade NOT IN ('D-', 'E')
+              ) AS passed
+            FROM course_prerequisites cp
+            JOIN courses c ON c.id = cp.prerequisite_id
+            WHERE cp.course_id = ANY($1::uuid[])
+            ORDER BY c.code
+          `, [courseIds, studentId]);
+
+          const prereqMap = new Map();
+          for (const row of prereqRes.rows) {
+            if (!prereqMap.has(row.course_id)) prereqMap.set(row.course_id, []);
+            prereqMap.get(row.course_id).push({
+              course_id:     row.prerequisite_id,
+              code:          row.code,
+              name:          row.name,
+              name_ar:       row.name_ar || null,
+              credit_hours:  row.credit_hours,
+              is_concurrent: row.is_concurrent,
+              passed:        row.passed,
+            });
+          }
+
+          plan_courses = plan_courses.map(pc => ({
+            ...pc,
+            prerequisites: prereqMap.get(pc.course_id) || [],
+          }));
+        }
+
         category_requirements = catReqsRes.rows;
       }
     }

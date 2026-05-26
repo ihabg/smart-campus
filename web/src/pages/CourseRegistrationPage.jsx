@@ -26,11 +26,12 @@ const COURSE_STATUS_META = {
 };
 
 const SEC_STATUS_META = {
-  available:          { label: 'Available',     css: 'cr-ss--available',  canEnroll: true  },
-  full:               { label: 'Full',          css: 'cr-ss--full',       canEnroll: false },
-  time_conflict:      { label: 'Time Conflict', css: 'cr-ss--conflict',   canEnroll: false },
-  already_registered: { label: 'Registered',    css: 'cr-ss--registered', canEnroll: false },
-  course_registered:  { label: 'Other Section', css: 'cr-ss--other',      canEnroll: false },
+  available:          { label: 'Available',            css: 'cr-ss--available',  canEnroll: true  },
+  full:               { label: 'Full',                 css: 'cr-ss--full',       canEnroll: false },
+  time_conflict:      { label: 'Time Conflict',        css: 'cr-ss--conflict',   canEnroll: false },
+  prereq_missing:     { label: 'Prerequisite Missing', css: 'cr-ss--prereq',     canEnroll: false },
+  already_registered: { label: 'Registered',           css: 'cr-ss--registered', canEnroll: false },
+  course_registered:  { label: 'Other Section',        css: 'cr-ss--other',      canEnroll: false },
 };
 
 const FILTER_OPTS = [
@@ -99,12 +100,32 @@ function getCourseStatus(planCourse, enrolledByCourseId) {
   return 'not_taken';
 }
 
-function getSectionStatus(section, enrolledBySectionId, enrolledByCourseId, myEnrolled) {
+// prereqOk = false means at least one prerequisite is unmet for this course
+function getSectionStatus(section, enrolledBySectionId, enrolledByCourseId, myEnrolled, prereqOk = true) {
   if (enrolledBySectionId[section.id]) return 'already_registered';
   if (enrolledByCourseId[section.course_id]) return 'course_registered';
+  if (!prereqOk) return 'prereq_missing';
   if (detectConflict(section, myEnrolled)) return 'time_conflict';
   if (section.max_capacity && section.enrolled >= section.max_capacity) return 'full';
   return 'available';
+}
+
+// Returns { ok, missing[] } — missing prereqs for this plan course given the currently enrolled
+// courses this term. Concurrent prereqs are satisfied if the student is enrolled in them this term.
+function getPrereqStatus(planCourse, enrolledByCourseId) {
+  const prereqs = planCourse.prerequisites || [];
+  if (!prereqs.length) return { ok: true, missing: [] };
+  const missing = prereqs
+    .filter(p => {
+      if (p.passed) return false;
+      if (p.is_concurrent && enrolledByCourseId[p.course_id]) return false;
+      return true;
+    })
+    .map(p => ({
+      ...p,
+      reason: p.is_concurrent ? 'not_currently_enrolled' : 'not_completed',
+    }));
+  return { ok: missing.length === 0, missing };
 }
 
 function matchesFilter(planCourse, courseStatus, sectionCount, filter) {
@@ -193,7 +214,7 @@ function DropConfirmModal({ target, dropping, onConfirm, onCancel }) {
 
 // ─── SectionRow ──────────────────────────────────────────────
 
-function SectionRow({ section, secStatus, onEnroll, onOpenDrop, isEnrolling }) {
+function SectionRow({ section, secStatus, onEnroll, onOpenDrop, isEnrolling, missingPrereqs }) {
   const meta = SEC_STATUS_META[secStatus] || SEC_STATUS_META.available;
   const pct = section.max_capacity
     ? Math.min(100, Math.round((section.enrolled / section.max_capacity) * 100))
@@ -246,13 +267,27 @@ function SectionRow({ section, secStatus, onEnroll, onOpenDrop, isEnrolling }) {
           </button>
         ) : (
           <button className="cr-btn cr-btn--ghost cr-btn--sm" disabled>
-            {secStatus === 'full' ? 'Full'
-              : secStatus === 'time_conflict' ? 'Conflict'
-              : secStatus === 'course_registered' ? 'Other Sec'
+            {secStatus === 'full'             ? 'Full'
+              : secStatus === 'time_conflict'    ? 'Conflict'
+              : secStatus === 'prereq_missing'   ? 'Locked'
+              : secStatus === 'course_registered'? 'Other Sec'
               : '—'}
           </button>
         )}
       </div>
+
+      {secStatus === 'prereq_missing' && missingPrereqs?.length > 0 && (
+        <div className="cr-sec-row__prereq-hint">
+          {missingPrereqs.map(p => (
+            <span key={p.course_id} className="cr-prereq-hint">
+              Requires: <strong>{p.code}</strong> {p.name}
+              {p.is_concurrent
+                ? ' — complete it or register concurrently this term'
+                : ' — must be completed first'}
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -264,11 +299,12 @@ function CourseRow({
   myEnrolled, enrolledBySectionId, enrolledByCourseId,
   onEnroll, onOpenDrop, enrolling, expanded, onToggle,
 }) {
-  const csMeta   = COURSE_STATUS_META[courseStatus] || COURSE_STATUS_META.not_taken;
-  const hasSecs  = sections.length > 0;
+  const csMeta      = COURSE_STATUS_META[courseStatus] || COURSE_STATUS_META.not_taken;
+  const hasSecs     = sections.length > 0;
   const isCompleted = courseStatus === 'completed';
   const canExpand   = !isCompleted && (hasSecs || courseStatus === 'in_progress');
   const noSection   = !hasSecs && !isCompleted && courseStatus !== 'in_progress';
+  const prereqStatus = getPrereqStatus(planCourse, enrolledByCourseId);
 
   function handleKeyDown(e) {
     if (canExpand && (e.key === 'Enter' || e.key === ' ')) {
@@ -307,6 +343,12 @@ function CourseRow({
               <span className="cr-course__name-ar">{planCourse.course_name_ar}</span>
             )}
           </div>
+
+          {prereqStatus.missing.length > 0 && !isCompleted && (
+            <div className="cr-course__prereq-line">
+              Requires: {prereqStatus.missing.map(p => p.code).join(', ')}
+            </div>
+          )}
         </div>
 
         <div className="cr-course__right">
@@ -388,7 +430,7 @@ function CourseRow({
                 <span></span>
               </div>
               {sections.map(sec => {
-                const ss = getSectionStatus(sec, enrolledBySectionId, enrolledByCourseId, myEnrolled);
+                const ss = getSectionStatus(sec, enrolledBySectionId, enrolledByCourseId, myEnrolled, prereqStatus.ok);
                 return (
                   <SectionRow
                     key={sec.id}
@@ -400,6 +442,7 @@ function CourseRow({
                       planCourse,
                     })}
                     isEnrolling={enrolling.has(sec.id)}
+                    missingPrereqs={ss === 'prereq_missing' ? prereqStatus.missing : null}
                   />
                 );
               })}
@@ -611,7 +654,14 @@ export default function CourseRegistrationPage() {
       await loadTerm(selectedTerm);
     } catch (err) {
       const data = err.response?.data;
-      toast.error(data?.conflict ? (data.message || 'Schedule conflict.') : (getErrorMessage(err) || 'Could not register.'));
+      if (data?.prerequisite_failed) {
+        const names = (data.missing || []).map(m => m.code).join(', ');
+        toast.error(names ? `Missing prerequisites: ${names}` : (data.message || 'Missing prerequisites.'));
+      } else if (data?.conflict) {
+        toast.error(data.message || 'Schedule conflict.');
+      } else {
+        toast.error(getErrorMessage(err) || 'Could not register.');
+      }
     } finally {
       setEnrolling(prev => { const s = new Set(prev); s.delete(sectionId); return s; });
     }

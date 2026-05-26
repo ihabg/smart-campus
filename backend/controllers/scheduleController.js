@@ -842,6 +842,65 @@ async function deleteSection(req, res, next) {
 
 // ─── Student schedule conflict helper ───────────────────────
 // Returns null if no conflict, or a structured conflict object.
+// ─── Prerequisite check ──────────────────────────────────────
+// Returns { ok: true, missing: [] } or { ok: false, missing: [...] }
+// Passing grade: any letter_grade that is NOT 'D-' or 'E' (and not from a dropped enrollment).
+// Concurrent prerequisite: satisfied if already passed OR currently enrolled in same term.
+async function checkCoursePrerequisites(studentId, courseId, semester, academicYear) {
+  const result = await query(
+    `SELECT
+       cp.prerequisite_id AS course_id,
+       cp.is_concurrent,
+       c.code,
+       c.name,
+       c.name_ar,
+       EXISTS (
+         SELECT 1
+         FROM enrollments e
+         JOIN sections s ON s.id = e.section_id
+         LEFT JOIN grades g
+           ON g.student_id = e.student_id AND g.section_id = e.section_id
+         WHERE e.student_id    = $2
+           AND s.course_id     = cp.prerequisite_id
+           AND e.status       != 'dropped'
+           AND g.letter_grade IS NOT NULL
+           AND g.letter_grade NOT IN ('D-', 'E')
+       ) AS passed,
+       EXISTS (
+         SELECT 1
+         FROM enrollments e2
+         JOIN sections s2 ON s2.id = e2.section_id
+         WHERE e2.student_id   = $2
+           AND s2.course_id    = cp.prerequisite_id
+           AND s2.semester::text = $3
+           AND s2.academic_year  = $4
+           AND e2.status         = 'enrolled'
+       ) AS currently_enrolled
+     FROM course_prerequisites cp
+     JOIN courses c ON c.id = cp.prerequisite_id
+     WHERE cp.course_id = $1
+     ORDER BY c.code`,
+    [courseId, studentId, semester, academicYear]
+  );
+
+  if (!result.rows.length) return { ok: true, missing: [] };
+
+  const missing = [];
+  for (const row of result.rows) {
+    if (row.passed) continue;
+    if (row.is_concurrent && row.currently_enrolled) continue;
+    missing.push({
+      course_id:     row.course_id,
+      code:          row.code,
+      name:          row.name,
+      name_ar:       row.name_ar || null,
+      is_concurrent: row.is_concurrent,
+      reason:        row.is_concurrent ? 'not_currently_enrolled' : 'not_completed',
+    });
+  }
+  return { ok: missing.length === 0, missing };
+}
+
 // Uses section_meetings as the canonical source of truth.
 // Both enrollStudent (self-registration) and adminEnrollStudent call this.
 async function checkStudentScheduleConflict(student_id, section_id) {
@@ -894,7 +953,7 @@ async function enrollStudent(req, res, next) {
     const student_id = req.user.id;
 
     const sec = await query(
-      'SELECT id, max_capacity, enrolled FROM sections WHERE id = $1 AND is_active = TRUE',
+      'SELECT id, max_capacity, enrolled, course_id, semester, academic_year FROM sections WHERE id = $1 AND is_active = TRUE',
       [section_id]
     );
 
@@ -902,7 +961,17 @@ async function enrollStudent(req, res, next) {
       return res.status(404).json({ success: false, message: 'Section not found.' });
     }
 
-    const { max_capacity, enrolled } = sec.rows[0];
+    const { max_capacity, enrolled, course_id, semester, academic_year } = sec.rows[0];
+
+    const prereqCheck = await checkCoursePrerequisites(student_id, course_id, semester, academic_year);
+    if (!prereqCheck.ok) {
+      return res.status(409).json({
+        success:             false,
+        prerequisite_failed: true,
+        message:             'Missing prerequisites for this course.',
+        missing:             prereqCheck.missing,
+      });
+    }
 
     if (max_capacity && enrolled >= max_capacity) {
       return res.status(409).json({ success: false, message: 'Section is full.' });
