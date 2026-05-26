@@ -34,4 +34,34 @@ router.delete(
   ctrl.deleteCourse
 );
 
+// ─── Prerequisite management ──────────────────────────────────
+
+router.get('/:id/prerequisites', validateUUID('id'), ctrl.getCoursePrerequisites);
+
+router.post(
+  '/:id/prerequisites',
+  protect,
+  restrictTo('admin', 'super_admin'),
+  validateUUID('id'),
+  ctrl.addCoursePrerequisite
+);
+
+router.patch(
+  '/:id/prerequisites/:prerequisiteId',
+  protect,
+  restrictTo('admin', 'super_admin'),
+  validateUUID('id'),
+  validateUUID('prerequisiteId'),
+  ctrl.updateCoursePrerequisite
+);
+
+router.delete(
+  '/:id/prerequisites/:prerequisiteId',
+  protect,
+  restrictTo('admin', 'super_admin'),
+  validateUUID('id'),
+  validateUUID('prerequisiteId'),
+  ctrl.removeCoursePrerequisite
+);
+
 module.exports = router;

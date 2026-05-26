@@ -4,6 +4,166 @@ import { courseAPI } from '../../api/index';
 import { Spinner } from '../../components/ui/index';
 import './AdminCoursesPage.css';
 
+// ─── Prerequisites Section (inside Edit modal) ─────────────────
+
+function PrerequisitesSection({ courseId }) {
+  const [prereqs,       setPrereqs]       = useState([]);
+  const [loading,       setLoading]       = useState(true);
+  const [searchTerm,    setSearchTerm]    = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [searching,     setSearching]     = useState(false);
+  const [adding,        setAdding]        = useState(null);
+  const [removing,      setRemoving]      = useState(null);
+
+  useEffect(() => {
+    courseAPI.getPrerequisites(courseId)
+      .then(r => setPrereqs(r.data?.data?.prerequisites || []))
+      .catch(() => toast.error('Failed to load prerequisites.'))
+      .finally(() => setLoading(false));
+  }, [courseId]);
+
+  useEffect(() => {
+    if (!searchTerm.trim()) { setSearchResults([]); return; }
+    const t = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const res = await courseAPI.getAll({ search: searchTerm, active_only: 'true', limit: 8 });
+        const courses = res.data?.data?.courses || [];
+        const existing = new Set(prereqs.map(p => p.prerequisite_id));
+        setSearchResults(courses.filter(c => c.id !== courseId && !existing.has(c.id)));
+      } catch { /* ignore */ } finally {
+        setSearching(false);
+      }
+    }, 300);
+    return () => clearTimeout(t);
+  }, [searchTerm, prereqs, courseId]);
+
+  async function handleAdd(course) {
+    setAdding(course.id);
+    try {
+      const res = await courseAPI.addPrerequisite(courseId, { prerequisite_id: course.id });
+      setPrereqs(res.data?.data?.prerequisites || []);
+      setSearchTerm('');
+      setSearchResults([]);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to add prerequisite.');
+    } finally {
+      setAdding(null);
+    }
+  }
+
+  async function handleToggleConcurrent(prereqId, current) {
+    try {
+      await courseAPI.updatePrerequisite(courseId, prereqId, { is_concurrent: !current });
+      setPrereqs(ps => ps.map(p =>
+        p.prerequisite_id === prereqId ? { ...p, is_concurrent: !current } : p
+      ));
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to update prerequisite.');
+    }
+  }
+
+  async function handleRemove(prereqId) {
+    setRemoving(prereqId);
+    try {
+      await courseAPI.removePrerequisite(courseId, prereqId);
+      setPrereqs(ps => ps.filter(p => p.prerequisite_id !== prereqId));
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to remove prerequisite.');
+    } finally {
+      setRemoving(null);
+    }
+  }
+
+  return (
+    <div className="acp-prereq">
+      <div className="acp-prereq__head">
+        <span className="acp-prereq__title">Prerequisites</span>
+        {prereqs.length > 0 && (
+          <span className="acp-prereq__count">{prereqs.length}</span>
+        )}
+      </div>
+
+      {loading ? (
+        <div className="acp-prereq__loading"><Spinner size="sm" /></div>
+      ) : (
+        <>
+          {prereqs.length === 0 ? (
+            <p className="acp-prereq__empty">No prerequisites set.</p>
+          ) : (
+            <ul className="acp-prereq__list">
+              {prereqs.map(p => (
+                <li key={p.prerequisite_id} className="acp-prereq__item">
+                  <div className="acp-prereq__item-info">
+                    <span className="acp-code">{p.code}</span>
+                    <span className="acp-prereq__item-name">{p.name}</span>
+                    {p.credit_hours != null && (
+                      <span className="acp-prereq__item-hrs">{p.credit_hours}h</span>
+                    )}
+                  </div>
+                  <div className="acp-prereq__item-actions">
+                    <label className="acp-prereq__concurrent">
+                      <input
+                        type="checkbox"
+                        checked={!!p.is_concurrent}
+                        onChange={() => handleToggleConcurrent(p.prerequisite_id, p.is_concurrent)}
+                      />
+                      <span>Concurrent</span>
+                    </label>
+                    <button
+                      type="button"
+                      className="acp-prereq__remove"
+                      disabled={removing === p.prerequisite_id}
+                      onClick={() => handleRemove(p.prerequisite_id)}
+                      aria-label="Remove prerequisite"
+                    >
+                      ×
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <div className="acp-prereq__add">
+            <div className="acp-prereq__search-wrap">
+              <input
+                className="acp-input"
+                placeholder="Search courses to add as prerequisite…"
+                value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
+              />
+              {searching && (
+                <span className="acp-prereq__search-spin"><Spinner size="sm" /></span>
+              )}
+            </div>
+            {searchResults.length > 0 && (
+              <ul className="acp-prereq__results">
+                {searchResults.map(c => (
+                  <li key={c.id} className="acp-prereq__result-item">
+                    <div className="acp-prereq__result-info">
+                      <span className="acp-code">{c.code}</span>
+                      <span className="acp-prereq__item-name">{c.name}</span>
+                    </div>
+                    <button
+                      type="button"
+                      className="acp-prereq__add-btn"
+                      disabled={adding === c.id}
+                      onClick={() => handleAdd(c)}
+                    >
+                      {adding === c.id ? '…' : '+ Add'}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ─── Course Modal (Add / Edit) ─────────────────────────────────
 
 function CourseModal({ course, departments, onSave, onClose }) {
@@ -117,6 +277,8 @@ function CourseModal({ course, departments, onSave, onClose }) {
             </button>
           </div>
         </form>
+
+        {isEdit && <PrerequisitesSection courseId={course.id} />}
       </div>
     </div>
   );

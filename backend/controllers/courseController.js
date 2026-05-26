@@ -333,6 +333,162 @@ async function deleteCourse(req, res, next) {
   }
 }
 
+// ─── Prerequisite management ─────────────────────────────────
+
+async function getCoursePrerequisites(req, res, next) {
+  try {
+    const { id } = req.params;
+
+    const courseCheck = await query('SELECT id FROM courses WHERE id = $1', [id]);
+    if (!courseCheck.rows.length) {
+      return res.status(404).json({ success: false, message: 'Course not found.' });
+    }
+
+    const result = await query(
+      `SELECT cp.is_concurrent,
+              c.id   AS prerequisite_id,
+              c.code, c.name, c.name_ar, c.credit_hours
+       FROM course_prerequisites cp
+       JOIN courses c ON c.id = cp.prerequisite_id
+       WHERE cp.course_id = $1
+       ORDER BY c.code`,
+      [id]
+    );
+
+    res.json({ success: true, data: { prerequisites: result.rows } });
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function addCoursePrerequisite(req, res, next) {
+  try {
+    const { id } = req.params;
+    const { prerequisite_id, is_concurrent = false } = req.body;
+
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!prerequisite_id || !UUID_RE.test(String(prerequisite_id))) {
+      return res.status(400).json({ success: false, message: 'prerequisite_id must be a valid UUID.' });
+    }
+
+    if (id === prerequisite_id) {
+      return res.status(400).json({ success: false, message: 'A course cannot be its own prerequisite.' });
+    }
+
+    const [courseRes, prereqRes] = await Promise.all([
+      query('SELECT id FROM courses WHERE id = $1', [id]),
+      query('SELECT id, code, name FROM courses WHERE id = $1', [prerequisite_id]),
+    ]);
+
+    if (!courseRes.rows.length) {
+      return res.status(404).json({ success: false, message: 'Course not found.' });
+    }
+    if (!prereqRes.rows.length) {
+      return res.status(404).json({ success: false, message: 'Prerequisite course not found.' });
+    }
+
+    const existing = await query(
+      'SELECT 1 FROM course_prerequisites WHERE course_id = $1 AND prerequisite_id = $2',
+      [id, prerequisite_id]
+    );
+    if (existing.rows.length) {
+      return res.status(409).json({
+        success: false,
+        message: `${prereqRes.rows[0].code} is already a prerequisite of this course.`,
+      });
+    }
+
+    // Cycle detection: check if prerequisite_id already (transitively) requires id
+    const cycleRes = await query(
+      `WITH RECURSIVE chain AS (
+         SELECT prerequisite_id AS node
+         FROM course_prerequisites WHERE course_id = $1
+         UNION
+         SELECT cp.prerequisite_id
+         FROM course_prerequisites cp
+         JOIN chain c ON cp.course_id = c.node
+       )
+       SELECT 1 FROM chain WHERE node = $2 LIMIT 1`,
+      [prerequisite_id, id]
+    );
+    if (cycleRes.rows.length) {
+      return res.status(409).json({
+        success: false,
+        message: `Adding ${prereqRes.rows[0].code} as a prerequisite would create a circular dependency.`,
+      });
+    }
+
+    await query(
+      'INSERT INTO course_prerequisites (course_id, prerequisite_id, is_concurrent) VALUES ($1, $2, $3)',
+      [id, prerequisite_id, !!is_concurrent]
+    );
+
+    const updated = await query(
+      `SELECT cp.is_concurrent, c.id AS prerequisite_id, c.code, c.name, c.name_ar, c.credit_hours
+       FROM course_prerequisites cp
+       JOIN courses c ON c.id = cp.prerequisite_id
+       WHERE cp.course_id = $1 ORDER BY c.code`,
+      [id]
+    );
+
+    res.status(201).json({
+      success: true,
+      message: `${prereqRes.rows[0].code} added as prerequisite.`,
+      data: { prerequisites: updated.rows },
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function updateCoursePrerequisite(req, res, next) {
+  try {
+    const { id, prerequisiteId } = req.params;
+    const { is_concurrent } = req.body;
+
+    if (is_concurrent === undefined || is_concurrent === null) {
+      return res.status(400).json({ success: false, message: 'is_concurrent is required.' });
+    }
+
+    const result = await query(
+      `UPDATE course_prerequisites
+       SET is_concurrent = $1
+       WHERE course_id = $2 AND prerequisite_id = $3
+       RETURNING *`,
+      [!!is_concurrent, id, prerequisiteId]
+    );
+
+    if (!result.rows.length) {
+      return res.status(404).json({ success: false, message: 'Prerequisite relationship not found.' });
+    }
+
+    res.json({ success: true, message: 'Prerequisite updated.', data: { prerequisite: result.rows[0] } });
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function removeCoursePrerequisite(req, res, next) {
+  try {
+    const { id, prerequisiteId } = req.params;
+
+    const result = await query(
+      `DELETE FROM course_prerequisites
+       WHERE course_id = $1 AND prerequisite_id = $2
+       RETURNING prerequisite_id`,
+      [id, prerequisiteId]
+    );
+
+    if (!result.rows.length) {
+      return res.status(404).json({ success: false, message: 'Prerequisite relationship not found.' });
+    }
+
+    res.json({ success: true, message: 'Prerequisite removed.' });
+  } catch (error) {
+    next(error);
+  }
+}
+
 async function getDepartments(req, res, next) {
   try {
     const result = await query(
@@ -363,5 +519,9 @@ module.exports = {
   createCourse,
   updateCourse,
   deleteCourse,
-  getDepartments
+  getDepartments,
+  getCoursePrerequisites,
+  addCoursePrerequisite,
+  updateCoursePrerequisite,
+  removeCoursePrerequisite,
 };

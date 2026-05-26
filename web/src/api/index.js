@@ -304,7 +304,17 @@ export const courseAPI = {
 
   update: (id, data) => api.patch(`/courses/${id}`, data),
 
-  delete: (id) => api.delete(`/courses/${id}`)
+  delete: (id) => api.delete(`/courses/${id}`),
+
+  getPrerequisites: (id) => api.get(`/courses/${id}/prerequisites`),
+
+  addPrerequisite: (id, data) => api.post(`/courses/${id}/prerequisites`, data),
+
+  updatePrerequisite: (id, prerequisiteId, data) =>
+    api.patch(`/courses/${id}/prerequisites/${prerequisiteId}`, data),
+
+  removePrerequisite: (id, prerequisiteId) =>
+    api.delete(`/courses/${id}/prerequisites/${prerequisiteId}`),
 };
 
 // ─── instructorAPI ────────────────────────────────────────────
