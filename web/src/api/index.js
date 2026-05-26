@@ -106,6 +106,9 @@ export const scheduleAPI = {
 
   getMyTerms: () =>
     api.get('/schedule/my/terms'),
+
+  getPublishedSemesters: () =>
+    api.get('/schedule/published-semesters'),
 };
 
 // ─── searchAPI ───────────────────────────────────────────────

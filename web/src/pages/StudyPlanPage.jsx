@@ -6,21 +6,24 @@ import { Spinner, Badge } from '../components/ui/index';
 import { getErrorMessage } from '../utils/helpers';
 import './StudyPlanPage.css';
 
-// ─── Helpers ──────────────────────────────────────────────────
+// ─── Constants ────────────────────────────────────────────────
 
 const SEMESTER_LABELS = { fall: 'Fall', spring: 'Spring', summer: 'Summer' };
 
-// Maps internal category keys → display labels (EN + AR).
-// Includes legacy keys as fallbacks in case any cached data still uses them.
 const CAT_LABEL = {
-  major_required:      'Major Required',      // إجباري تخصص
-  university_required: 'University Required', // إجباري جامعة
-  major_elective:      'Major Elective',      // اختياري تخصص
-  free_elective:       'Free Elective',       // مساق حر
+  major_required:      'Major Required',
+  university_required: 'University Required',
+  major_elective:      'Major Elective',
+  free_elective:       'Free Elective',
   // legacy fallbacks
-  required:            'Required',
-  elective:            'Elective',
-  general:             'General',
+  required: 'Required', elective: 'Elective', general: 'General',
+};
+
+const CAT_AR = {
+  major_required:      'إجباري تخصص',
+  university_required: 'إجباري جامعة',
+  major_elective:      'اختياري تخصص',
+  free_elective:       'مساق حر',
 };
 
 const CAT_CSS = {
@@ -30,26 +33,56 @@ const CAT_CSS = {
   free_elective:       'sp-cat-tag--free-elec',
 };
 
-function semesterLabel(semester, academicYear) {
-  return `${SEMESTER_LABELS[semester] || semester} ${academicYear}`;
+const CAT_ACCENT = {
+  major_required:      'major-req',
+  university_required: 'univ-req',
+  major_elective:      'major-elec',
+  free_elective:       'free-elec',
+};
+
+const CAT_ORDER     = ['major_required', 'university_required', 'major_elective', 'free_elective'];
+const ELECTIVE_CATS = new Set(['major_elective', 'free_elective']);
+const FAILING       = new Set(['D-', 'E']);
+const SEM_RANK      = { fall: 1, spring: 2, summer: 3 };
+
+function gradeColor(letter) {
+  if (!letter) return 'var(--text-muted)';
+  return FAILING.has(letter) ? '#dc2626' : '#16a34a';
 }
 
 const STATUS_META = {
-  completed:   { label: 'Completed',    css: 'sp-badge--completed'   },
-  in_progress: { label: 'In Progress',  css: 'sp-badge--in_progress' },
-  failed:      { label: 'Needs Repeat', css: 'sp-badge--failed'      },
-  dropped:     { label: 'Dropped',      css: 'sp-badge--dropped'     },
-  not_taken:   { label: 'Not Taken',    css: 'sp-badge--not_taken'   },
+  completed:        { label: 'Completed',       css: 'sp-badge--completed'        },
+  in_progress:      { label: 'In Progress',      css: 'sp-badge--in_progress'      },
+  failed:           { label: 'Needs Repeat',     css: 'sp-badge--failed'           },
+  dropped:          { label: 'Dropped',          css: 'sp-badge--dropped'          },
+  not_taken:        { label: 'Not Taken',        css: 'sp-badge--not_taken'        },
+  available_option: { label: 'Available Option', css: 'sp-badge--available_option' },
 };
 
-const FILTERS = [
+// Plan-tab filter buttons — includes Available Option
+const PLAN_FILTERS = [
+  { key: 'all',              label: 'All'              },
+  { key: 'completed',        label: 'Completed'        },
+  { key: 'in_progress',      label: 'In Progress'      },
+  { key: 'failed',           label: 'Needs Repeat'     },
+  { key: 'not_taken',        label: 'Not Taken'        },
+  { key: 'available_option', label: 'Available Option' },
+];
+
+// History-tab filter buttons — no Available Option
+const HISTORY_FILTERS = [
   { key: 'all',         label: 'All'          },
   { key: 'completed',   label: 'Completed'    },
   { key: 'in_progress', label: 'In Progress'  },
   { key: 'failed',      label: 'Needs Repeat' },
   { key: 'dropped',     label: 'Dropped'      },
-  { key: 'not_taken',   label: 'Not Taken'    },
 ];
+
+// ─── Helpers ──────────────────────────────────────────────────
+
+function semesterLabel(semester, academicYear) {
+  return `${SEMESTER_LABELS[semester] || semester} ${academicYear}`;
+}
 
 function StatusBadge({ status }) {
   const meta = STATUS_META[status] || { label: status, css: 'sp-badge--dropped' };
@@ -71,15 +104,270 @@ function groupBySemester(enrollments) {
   return groups;
 }
 
-function groupByYear(planCourses) {
-  const yearMap = new Map();
+// Returns display status for a plan course.
+// Elective/free not_taken → 'available_option' (student doesn't have to take every option).
+function displayStatus(course, catKey) {
+  if (course.computed_status !== 'not_taken') return course.computed_status;
+  return ELECTIVE_CATS.has(catKey) ? 'available_option' : 'not_taken';
+}
+
+// Groups plan courses by category in the canonical order.
+// Within each group sorted by: recommended_year, recommended_semester, sort_order, course_code.
+function groupByCategory(planCourses) {
+  const map = {};
+  for (const cat of CAT_ORDER) map[cat] = [];
   for (const c of planCourses) {
-    const key = c.recommended_year ?? 0;
-    if (!yearMap.has(key)) yearMap.set(key, []);
-    yearMap.get(key).push(c);
+    const cat = CAT_ORDER.includes(c.category) ? c.category : 'major_required';
+    map[cat].push(c);
   }
-  const keys = [...yearMap.keys()].sort((a, b) => a === 0 ? 1 : b === 0 ? -1 : a - b);
-  return keys.map(k => ({ year: k, courses: yearMap.get(k) }));
+  for (const cat of CAT_ORDER) {
+    map[cat].sort((a, b) => {
+      const yr = (a.recommended_year ?? 99) - (b.recommended_year ?? 99);
+      if (yr !== 0) return yr;
+      const sr = (SEM_RANK[a.recommended_semester] ?? 0) - (SEM_RANK[b.recommended_semester] ?? 0);
+      if (sr !== 0) return sr;
+      const so = (a.sort_order ?? 0) - (b.sort_order ?? 0);
+      if (so !== 0) return so;
+      return (a.course_code || '').localeCompare(b.course_code || '');
+    });
+  }
+  return CAT_ORDER.map(cat => ({ category: cat, courses: map[cat] }));
+}
+
+// Computes progress stats for one category.
+function computeCatProgress(catKey, courses, reqs) {
+  const req          = (reqs || []).find(r => r.category === catKey);
+  const requiredHours = req ? Number(req.required_hours) : 0;
+
+  if (ELECTIVE_CATS.has(catKey)) {
+    const completedHours   = courses
+      .filter(c => c.computed_status === 'completed')
+      .reduce((s, c) => s + Number(c.credit_hours || 0), 0);
+    const totalListedHours = courses.reduce((s, c) => s + Number(c.credit_hours || 0), 0);
+    const isConfigured     = requiredHours > 0;
+    const isSatisfied      = isConfigured && completedHours >= requiredHours;
+    return {
+      type: 'elective',
+      completedHours,
+      requiredHours,
+      totalListedHours,
+      totalOptions: courses.length,
+      isConfigured,
+      isSatisfied,
+    };
+  }
+
+  // Required categories: count courses where is_required !== false
+  const reqCourses     = courses.filter(c => c.is_required !== false);
+  const completedReq   = reqCourses.filter(c => c.computed_status === 'completed').length;
+  const completedHours = reqCourses
+    .filter(c => c.computed_status === 'completed')
+    .reduce((s, c) => s + Number(c.credit_hours || 0), 0);
+  const totalHours     = reqCourses.reduce((s, c) => s + Number(c.credit_hours || 0), 0);
+  return {
+    type: 'required',
+    completedCourses: completedReq,
+    totalCourses:     reqCourses.length,
+    completedHours,
+    totalHours,
+    requiredHours,
+    isSatisfied: reqCourses.length > 0 && completedReq === reqCourses.length,
+  };
+}
+
+// Aggregates per-category progress into a single plan-level hours summary.
+// Required cats: prefer required_hours from config; fallback to sum of listed course hours.
+// Elective/free cats: use required_hours only; cap completed at required_hours.
+function computePlanProgress(categoryGroups, reqs) {
+  let totalPlanHours     = 0;
+  let completedPlanHours = 0;
+  let hasUnconfigured    = false;
+
+  for (const { category: catKey, courses } of categoryGroups) {
+    if (courses.length === 0) continue;
+    const prog = computeCatProgress(catKey, courses, reqs);
+
+    if (prog.type === 'required') {
+      const catTotal = prog.requiredHours > 0 ? prog.requiredHours : prog.totalHours;
+      totalPlanHours     += catTotal;
+      completedPlanHours += prog.completedHours;
+    } else {
+      if (!prog.isConfigured) {
+        hasUnconfigured = true;
+        // count 0 toward total; completed in unconfigured category not added
+      } else {
+        totalPlanHours     += prog.requiredHours;
+        completedPlanHours += Math.min(prog.completedHours, prog.requiredHours);
+      }
+    }
+  }
+
+  return { totalPlanHours, completedPlanHours, hasUnconfigured };
+}
+
+// ─── Category Section ─────────────────────────────────────────
+
+function CategorySection({ catKey, filteredCourses, progress }) {
+  const catName = CAT_LABEL[catKey] || catKey;
+  const catAr   = CAT_AR[catKey]    || '';
+  const accent  = CAT_ACCENT[catKey] || '';
+
+  let statusLabel, statusCls;
+  if (progress.type === 'required') {
+    if (progress.isSatisfied) { statusLabel = 'Complete';    statusCls = 'sp-cat-status--complete'; }
+    else                      { statusLabel = 'In Progress'; statusCls = 'sp-cat-status--progress'; }
+  } else {
+    if (!progress.isConfigured)     { statusLabel = 'Not Configured';       statusCls = 'sp-cat-status--muted';    }
+    else if (progress.isSatisfied)  { statusLabel = 'Requirement Complete'; statusCls = 'sp-cat-status--complete'; }
+    else                            { statusLabel = 'Still Needed';         statusCls = 'sp-cat-status--needed';   }
+  }
+
+  const showBar = progress.type === 'required'
+    ? progress.totalCourses > 0
+    : progress.isConfigured;
+
+  let barPct = 0;
+  if (showBar) {
+    barPct = progress.type === 'required'
+      ? Math.min(100, Math.round(progress.completedCourses / progress.totalCourses * 100))
+      : Math.min(100, Math.round(progress.completedHours   / progress.requiredHours   * 100));
+  }
+
+  return (
+    <div className="sp-cat-section">
+
+      {/* Category header card */}
+      <div className={`sp-cat-header sp-cat-header--${accent}`}>
+        <div className="sp-cat-header__left">
+          <div className="sp-cat-header__names">
+            <span className="sp-cat-name">{catName}</span>
+            {catAr && <span className="sp-cat-name-ar">{catAr}</span>}
+          </div>
+
+          {progress.type === 'required' ? (
+            <div className="sp-cat-stats">
+              <span className="sp-cat-stats__main">
+                {progress.completedCourses} / {progress.totalCourses} courses completed
+              </span>
+              {progress.totalHours > 0 && (
+                <span className="sp-cat-stats__sub">
+                  {progress.completedHours} / {progress.totalHours} hours
+                  {progress.requiredHours > 0 && progress.requiredHours !== progress.totalHours && (
+                    <> &middot; {progress.requiredHours}h required</>
+                  )}
+                </span>
+              )}
+            </div>
+          ) : (
+            <div className="sp-cat-stats">
+              {progress.isConfigured ? (
+                <span className="sp-cat-stats__main">
+                  {progress.completedHours} / {progress.requiredHours} hours completed
+                  {!progress.isSatisfied && progress.requiredHours > progress.completedHours && (
+                    <span className="sp-cat-stats__needed">
+                      {' '}&middot; {progress.requiredHours - progress.completedHours}h still needed
+                    </span>
+                  )}
+                </span>
+              ) : (
+                <span className="sp-cat-stats__muted">Required hours not configured yet</span>
+              )}
+              <span className="sp-cat-stats__sub">
+                {progress.totalOptions} option{progress.totalOptions !== 1 ? 's' : ''} listed
+                {progress.totalListedHours > 0 && (
+                  <> &middot; {progress.totalListedHours}h available</>
+                )}
+              </span>
+            </div>
+          )}
+        </div>
+
+        <div className="sp-cat-header__right">
+          {showBar && (
+            <div className="sp-cat-progress-wrap">
+              <div className="sp-cat-progress-bar">
+                <div
+                  className={`sp-cat-progress-bar__fill sp-cat-progress-bar__fill--${progress.isSatisfied ? 'complete' : 'progress'}`}
+                  style={{ width: `${barPct}%` }}
+                />
+              </div>
+              <span className="sp-cat-progress-pct">{barPct}%</span>
+            </div>
+          )}
+          <span className={`sp-cat-status ${statusCls}`}>{statusLabel}</span>
+        </div>
+      </div>
+
+      {/* Course rows */}
+      {filteredCourses.length > 0 && (
+        <>
+          {/* Desktop table */}
+          <div className="sp-table-wrap">
+            <table className="sp-table">
+              <thead>
+                <tr>
+                  <th>Code</th>
+                  <th>Course</th>
+                  <th style={{ textAlign: 'center' }}>Hours</th>
+                  <th style={{ textAlign: 'center' }}>Grade</th>
+                  <th style={{ textAlign: 'right'  }}>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredCourses.map(c => (
+                  <tr key={c.plan_course_id}>
+                    <td><span className="sp-table__code">{c.course_code}</span></td>
+                    <td>
+                      <div className="sp-table__name">{c.course_name}</div>
+                      {c.course_name_ar && <div className="sp-table__name-ar">{c.course_name_ar}</div>}
+                    </td>
+                    <td className="sp-table__hours">{c.credit_hours}</td>
+                    <td>
+                      <span className="sp-table__grade" style={{ color: gradeColor(c.letter_grade) }}>
+                        {c.letter_grade || '—'}
+                      </span>
+                    </td>
+                    <td style={{ textAlign: 'right' }}>
+                      <StatusBadge status={displayStatus(c, catKey)} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Mobile cards */}
+          <div className="sp-card-list">
+            {filteredCourses.map(c => (
+              <div key={c.plan_course_id} className="sp-course-card">
+                <div className="sp-course-card__top">
+                  <div>
+                    <div className="sp-course-card__code">{c.course_code}</div>
+                    <div className="sp-course-card__name">{c.course_name}</div>
+                    {c.course_name_ar && <div className="sp-course-card__name-ar">{c.course_name_ar}</div>}
+                  </div>
+                  <StatusBadge status={displayStatus(c, catKey)} />
+                </div>
+                <div className="sp-course-card__footer">
+                  <span>{c.credit_hours} credit hour{c.credit_hours !== 1 ? 's' : ''}</span>
+                  <span className={`sp-cat-tag ${CAT_CSS[c.category] || ''}`}>
+                    {CAT_LABEL[c.category] || c.category}
+                  </span>
+                  {c.letter_grade ? (
+                    <span className="sp-course-card__grade" style={{ color: gradeColor(c.letter_grade) }}>
+                      Grade: {c.letter_grade}{c.total_grade != null ? ` (${Math.round(c.total_grade)})` : ''}
+                    </span>
+                  ) : (
+                    <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>No grade yet</span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
 }
 
 // ─── Study Plan Page ──────────────────────────────────────────
@@ -109,7 +397,6 @@ export default function StudyPlanPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  // ── Loading ──────────────────────────────────────────────────
   if (loading) {
     return (
       <div className="sp-page">
@@ -121,7 +408,6 @@ export default function StudyPlanPage() {
     );
   }
 
-  // ── Error ────────────────────────────────────────────────────
   if (error) {
     return (
       <div className="sp-page">
@@ -138,22 +424,23 @@ export default function StudyPlanPage() {
 
   if (!data) return null;
 
-  const { student, summary, gpa_summary = {}, enrollments, has_official_plan, plan_meta, plan_courses = [] } = data;
+  const {
+    student,
+    summary,
+    gpa_summary = {},
+    enrollments,
+    has_official_plan,
+    plan_meta,
+    plan_courses          = [],
+    category_requirements = [],
+  } = data;
 
   const semGpaMap = new Map(
     (gpa_summary.semester_gpa || []).map(g => [`${g.academic_year}||${g.semester}`, g.gpa])
   );
 
-  const FAILING = new Set(['D-', 'E']);
-  function gradeColor(letter) {
-    if (!letter) return 'var(--text-muted)';
-    return FAILING.has(letter) ? '#dc2626' : '#16a34a';
-  }
-
-  // The effective tab: force 'history' when no official plan exists
   const tab = has_official_plan ? activeTab : 'history';
 
-  // Switch tab and reset search/filter so state doesn't bleed across tabs
   function switchTab(t) {
     setActiveTab(t);
     setSearch('');
@@ -162,17 +449,34 @@ export default function StudyPlanPage() {
 
   const q = search.trim().toLowerCase();
 
-  // ── Filtered datasets per tab ────────────────────────────────
+  // ── Plan tab: filter + category grouping ─────────────────────
 
+  // Filter uses displayStatus so 'available_option' and 'not_taken' filters work correctly
   const planFiltered = plan_courses.filter(c => {
-    if (activeFilter !== 'all' && c.computed_status !== activeFilter) return false;
+    const ds = displayStatus(c, c.category);
+    if (activeFilter !== 'all' && ds !== activeFilter) return false;
     if (q) return (
       (c.course_code || '').toLowerCase().includes(q) ||
       (c.course_name || '').toLowerCase().includes(q)
     );
     return true;
   });
-  const planGroups = groupByYear(planFiltered);
+
+  const categoryGroups = groupByCategory(plan_courses);
+  const filteredIds    = new Set(planFiltered.map(c => c.plan_course_id));
+
+  // Plan header — course count subtext (required categories only, is_required !== false)
+  const allRequiredCourses = plan_courses.filter(c => !ELECTIVE_CATS.has(c.category) && c.is_required !== false);
+  const requiredTotal      = allRequiredCourses.length;
+  const requiredCompleted  = allRequiredCourses.filter(c => c.computed_status === 'completed').length;
+
+  // Plan header — total hours progress (aggregated across all 4 categories)
+  const planProgress = computePlanProgress(categoryGroups, category_requirements);
+  const planBarPct   = planProgress.totalPlanHours > 0
+    ? Math.min(100, Math.round(planProgress.completedPlanHours / planProgress.totalPlanHours * 100))
+    : 0;
+
+  // ── History tab filter ───────────────────────────────────────
 
   const histFiltered = enrollments.filter(e => {
     if (activeFilter !== 'all' && e.computed_status !== activeFilter) return false;
@@ -184,15 +488,9 @@ export default function StudyPlanPage() {
   });
   const histGroups = groupBySemester(histFiltered);
 
-  // ── Plan progress stats (always based on unfiltered list) ────
-  const requiredTotal     = plan_courses.filter(c => c.is_required).length;
-  const requiredCompleted = plan_courses.filter(c => c.is_required && c.computed_status === 'completed').length;
-
-  const initials =
-    `${student?.first_name?.[0] || ''}${student?.last_name?.[0] || ''}`.toUpperCase();
-
-  // Show search/filter only when the active tab has something to search
-  const showControls = tab === 'plan' ? plan_courses.length > 0 : enrollments.length > 0;
+  const initials      = `${student?.first_name?.[0] || ''}${student?.last_name?.[0] || ''}`.toUpperCase();
+  const showControls  = tab === 'plan' ? plan_courses.length > 0 : enrollments.length > 0;
+  const activeFilters = tab === 'plan' ? PLAN_FILTERS : HISTORY_FILTERS;
 
   return (
     <div className="sp-page">
@@ -269,7 +567,7 @@ export default function StudyPlanPage() {
         </div>
       </div>
 
-      {/* ── Pending banner: shown when no official plan (Phase 1) ── */}
+      {/* ── Pending banner ── */}
       {!has_official_plan && (
         <div className="sp-pending">
           <span className="sp-pending__icon">📋</span>
@@ -284,7 +582,7 @@ export default function StudyPlanPage() {
         </div>
       )}
 
-      {/* ── Tab strip: only when official plan exists ── */}
+      {/* ── Tab strip ── */}
       {has_official_plan && (
         <div className="sp-tabs">
           <button
@@ -305,7 +603,7 @@ export default function StudyPlanPage() {
         </div>
       )}
 
-      {/* ── Search / filter (applies to the active tab) ── */}
+      {/* ── Search / filter ── */}
       {showControls && (
         <div className="sp-controls">
           <input
@@ -315,7 +613,7 @@ export default function StudyPlanPage() {
             onChange={e => setSearch(e.target.value)}
           />
           <div className="sp-filters">
-            {FILTERS.map(f => (
+            {activeFilters.map(f => (
               <button
                 key={f.key}
                 className={`sp-filter-btn${activeFilter === f.key ? ' sp-filter-btn--active' : ''}`}
@@ -336,20 +634,45 @@ export default function StudyPlanPage() {
           {/* Plan header card */}
           {has_official_plan && plan_meta && (
             <div className="sp-official-plan__head">
-              <div>
+              <div className="sp-official-plan__info">
                 <div className="sp-official-plan__title">Official Study Plan</div>
                 <div className="sp-official-plan__meta">
                   {plan_meta.department_name} &middot; Batch {plan_meta.plan_year}
                   {plan_meta.label && ` · ${plan_meta.label}`}
                 </div>
               </div>
-              {requiredTotal > 0 && (
-                <div className="sp-official-plan__progress">
-                  <span className="sp-official-plan__progress-val">{requiredCompleted}</span>
-                  <span className="sp-official-plan__progress-sep"> / {requiredTotal}</span>
-                  <span className="sp-official-plan__progress-label"> required completed</span>
-                </div>
-              )}
+
+              <div className="sp-plan-progress">
+                {planProgress.totalPlanHours > 0 ? (
+                  <>
+                    <div className="sp-plan-progress__hours">
+                      <span className="sp-plan-progress__val">{planProgress.completedPlanHours}</span>
+                      <span className="sp-plan-progress__sep"> / {planProgress.totalPlanHours}</span>
+                      <span className="sp-plan-progress__label"> hours completed</span>
+                    </div>
+                    <div className="sp-plan-progress-bar">
+                      <div
+                        className={`sp-plan-progress-bar__fill${planBarPct >= 100 ? ' sp-plan-progress-bar__fill--done' : ''}`}
+                        style={{ width: `${planBarPct}%` }}
+                      />
+                    </div>
+                    {requiredTotal > 0 && (
+                      <div className="sp-plan-progress__courses">
+                        {requiredCompleted} / {requiredTotal} required courses completed
+                      </div>
+                    )}
+                    {planProgress.hasUnconfigured && (
+                      <div className="sp-plan-progress__warn">
+                        Some category hour requirements are not configured
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="sp-plan-progress__unconfigured">
+                    Plan hours not configured yet
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
@@ -369,100 +692,20 @@ export default function StudyPlanPage() {
             </div>
           )}
 
-          {/* Year-grouped plan courses */}
-          {planGroups.map(({ year, courses }) => (
-            <div key={year} className="sp-group">
-              <div className="sp-group-head">
-                <span className="sp-group-head__label">
-                  {year === 0 ? 'Other Courses' : `Year ${year}`}
-                </span>
-                <span className="sp-group-head__count">
-                  {courses.length} course{courses.length !== 1 ? 's' : ''}
-                </span>
-              </div>
-
-              {/* Desktop table */}
-              <div className="sp-table-wrap">
-                <table className="sp-table">
-                  <thead>
-                    <tr>
-                      <th>Code</th>
-                      <th>Course</th>
-                      <th style={{ textAlign:'center' }}>Hours</th>
-                      <th style={{ textAlign:'center' }}>Category</th>
-                      <th style={{ textAlign:'center' }}>Grade</th>
-                      <th style={{ textAlign:'right'  }}>Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {courses.map(c => (
-                      <tr key={c.plan_course_id}>
-                        <td><span className="sp-table__code">{c.course_code}</span></td>
-                        <td>
-                          <div className="sp-table__name">{c.course_name}</div>
-                          {c.course_name_ar && (
-                            <div className="sp-table__name-ar">{c.course_name_ar}</div>
-                          )}
-                        </td>
-                        <td className="sp-table__hours">{c.credit_hours}</td>
-                        <td style={{ textAlign:'center' }}>
-                          <span className={`sp-cat-tag ${CAT_CSS[c.category] || ''}`}>
-                            {CAT_LABEL[c.category] || c.category}
-                          </span>
-                        </td>
-                        <td>
-                          <span
-                            className="sp-table__grade"
-                            style={{ color: gradeColor(c.letter_grade) }}
-                          >
-                            {c.letter_grade || '—'}
-                          </span>
-                        </td>
-                        <td style={{ textAlign:'right' }}>
-                          <StatusBadge status={c.computed_status} />
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Mobile cards */}
-              <div className="sp-card-list">
-                {courses.map(c => (
-                  <div key={c.plan_course_id} className="sp-course-card">
-                    <div className="sp-course-card__top">
-                      <div>
-                        <div className="sp-course-card__code">{c.course_code}</div>
-                        <div className="sp-course-card__name">{c.course_name}</div>
-                        {c.course_name_ar && (
-                          <div className="sp-course-card__name-ar">{c.course_name_ar}</div>
-                        )}
-                      </div>
-                      <StatusBadge status={c.computed_status} />
-                    </div>
-                    <div className="sp-course-card__footer">
-                      <span>{c.credit_hours} credit hour{c.credit_hours !== 1 ? 's' : ''}</span>
-                      <span className="sp-cat-tag">
-                        {c.category.charAt(0).toUpperCase() + c.category.slice(1)}
-                      </span>
-                      {c.letter_grade ? (
-                        <span
-                          className="sp-course-card__grade"
-                          style={{ color: gradeColor(c.letter_grade) }}
-                        >
-                          Grade: {c.letter_grade}
-                          {c.total_grade != null ? ` (${Math.round(c.total_grade)})` : ''}
-                        </span>
-                      ) : (
-                        <span style={{ color:'var(--text-muted)', fontSize:12 }}>No grade yet</span>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
+          {/* Category-grouped plan courses */}
+          {plan_courses.length > 0 && planFiltered.length > 0 && categoryGroups.map(({ category: catKey, courses: allCourses }) => {
+            if (allCourses.length === 0) return null;
+            const filteredCourses = allCourses.filter(c => filteredIds.has(c.plan_course_id));
+            if (filteredCourses.length === 0) return null;
+            return (
+              <CategorySection
+                key={catKey}
+                catKey={catKey}
+                filteredCourses={filteredCourses}
+                progress={computeCatProgress(catKey, allCourses, category_requirements)}
+              />
+            );
+          })}
         </>
       )}
 
@@ -471,7 +714,6 @@ export default function StudyPlanPage() {
           ════════════════════════════════════════════════════════ */}
       {tab === 'history' && (
         <>
-          {/* No enrollment records at all */}
           {enrollments.length === 0 && (
             <div className="card sp-empty">
               <div className="sp-empty__icon">📚</div>
@@ -483,7 +725,6 @@ export default function StudyPlanPage() {
             </div>
           )}
 
-          {/* No results after filter/search */}
           {enrollments.length > 0 && histFiltered.length === 0 && (
             <div className="card sp-empty">
               <div className="sp-empty__icon">🔍</div>
@@ -491,95 +732,87 @@ export default function StudyPlanPage() {
             </div>
           )}
 
-          {/* Semester-grouped enrollment rows */}
           {histGroups.map(group => {
             const semGpa = semGpaMap.get(`${group.academic_year}||${group.semester}`);
             return (
-            <div key={group.key} className="sp-group">
-              <div className="sp-group-head">
-                <span className="sp-group-head__label">
-                  {semesterLabel(group.semester, group.academic_year)}
-                </span>
-                <span className="sp-group-head__count">
-                  {group.courses.length} course{group.courses.length !== 1 ? 's' : ''}
-                  {semGpa !== undefined && (
-                    <span className="sp-group-head__gpa"> · GPA {semGpa.toFixed(2)}</span>
-                  )}
-                </span>
-              </div>
+              <div key={group.key} className="sp-group">
+                <div className="sp-group-head">
+                  <span className="sp-group-head__label">
+                    {semesterLabel(group.semester, group.academic_year)}
+                  </span>
+                  <span className="sp-group-head__count">
+                    {group.courses.length} course{group.courses.length !== 1 ? 's' : ''}
+                    {semGpa !== undefined && (
+                      <span className="sp-group-head__gpa"> · GPA {semGpa.toFixed(2)}</span>
+                    )}
+                  </span>
+                </div>
 
-              {/* Desktop table */}
-              <div className="sp-table-wrap">
-                <table className="sp-table">
-                  <thead>
-                    <tr>
-                      <th>Code</th>
-                      <th>Course</th>
-                      <th style={{ textAlign:'center' }}>Hours</th>
-                      <th style={{ textAlign:'center' }}>Grade</th>
-                      <th style={{ textAlign:'right'  }}>Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {group.courses.map(e => (
-                      <tr key={e.enrollment_id}>
-                        <td><span className="sp-table__code">{e.course_code}</span></td>
-                        <td>
-                          <div className="sp-table__name">{e.course_name}</div>
-                          {e.course_name_ar && (
-                            <div className="sp-table__name-ar">{e.course_name_ar}</div>
-                          )}
-                        </td>
-                        <td className="sp-table__hours">{e.credit_hours}</td>
-                        <td>
-                          <span
-                            className="sp-table__grade"
-                            style={{ color: gradeColor(e.letter_grade) }}
-                          >
-                            {e.letter_grade || '—'}
-                          </span>
-                        </td>
-                        <td>
-                          <StatusBadge status={e.computed_status} />
-                        </td>
+                {/* Desktop table */}
+                <div className="sp-table-wrap">
+                  <table className="sp-table">
+                    <thead>
+                      <tr>
+                        <th>Code</th>
+                        <th>Course</th>
+                        <th style={{ textAlign:'center' }}>Hours</th>
+                        <th style={{ textAlign:'center' }}>Grade</th>
+                        <th style={{ textAlign:'right'  }}>Status</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {group.courses.map(e => (
+                        <tr key={e.enrollment_id}>
+                          <td><span className="sp-table__code">{e.course_code}</span></td>
+                          <td>
+                            <div className="sp-table__name">{e.course_name}</div>
+                            {e.course_name_ar && (
+                              <div className="sp-table__name-ar">{e.course_name_ar}</div>
+                            )}
+                          </td>
+                          <td className="sp-table__hours">{e.credit_hours}</td>
+                          <td>
+                            <span className="sp-table__grade" style={{ color: gradeColor(e.letter_grade) }}>
+                              {e.letter_grade || '—'}
+                            </span>
+                          </td>
+                          <td>
+                            <StatusBadge status={e.computed_status} />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
 
-              {/* Mobile cards */}
-              <div className="sp-card-list">
-                {group.courses.map(e => (
-                  <div key={e.enrollment_id} className="sp-course-card">
-                    <div className="sp-course-card__top">
-                      <div>
-                        <div className="sp-course-card__code">{e.course_code}</div>
-                        <div className="sp-course-card__name">{e.course_name}</div>
-                        {e.course_name_ar && (
-                          <div className="sp-course-card__name-ar">{e.course_name_ar}</div>
+                {/* Mobile cards */}
+                <div className="sp-card-list">
+                  {group.courses.map(e => (
+                    <div key={e.enrollment_id} className="sp-course-card">
+                      <div className="sp-course-card__top">
+                        <div>
+                          <div className="sp-course-card__code">{e.course_code}</div>
+                          <div className="sp-course-card__name">{e.course_name}</div>
+                          {e.course_name_ar && (
+                            <div className="sp-course-card__name-ar">{e.course_name_ar}</div>
+                          )}
+                        </div>
+                        <StatusBadge status={e.computed_status} />
+                      </div>
+                      <div className="sp-course-card__footer">
+                        <span>{e.credit_hours} credit hour{e.credit_hours !== 1 ? 's' : ''}</span>
+                        {e.letter_grade ? (
+                          <span className="sp-course-card__grade" style={{ color: gradeColor(e.letter_grade) }}>
+                            Grade: {e.letter_grade}{e.total_grade != null ? ` (${Math.round(e.total_grade)})` : ''}
+                          </span>
+                        ) : (
+                          <span style={{ color:'var(--text-muted)', fontSize:12 }}>No grade recorded</span>
                         )}
                       </div>
-                      <StatusBadge status={e.computed_status} />
                     </div>
-                    <div className="sp-course-card__footer">
-                      <span>{e.credit_hours} credit hour{e.credit_hours !== 1 ? 's' : ''}</span>
-                      {e.letter_grade ? (
-                        <span
-                          className="sp-course-card__grade"
-                          style={{ color: gradeColor(e.letter_grade) }}
-                        >
-                          Grade: {e.letter_grade}
-                          {e.total_grade != null ? ` (${Math.round(e.total_grade)})` : ''}
-                        </span>
-                      ) : (
-                        <span style={{ color:'var(--text-muted)', fontSize:12 }}>No grade recorded</span>
-                      )}
-                    </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
-            </div>
             );
           })}
         </>

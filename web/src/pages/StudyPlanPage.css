@@ -473,26 +473,85 @@
   opacity: 0.75;
 }
 
-.sp-official-plan__progress { text-align: right; white-space: nowrap; }
+.sp-official-plan__info { flex: 1; min-width: 0; }
 
-.sp-official-plan__progress-val {
+/* ── Plan-level hours progress (right side of plan header) ───── */
+
+.sp-plan-progress {
+  min-width: 180px;
+  max-width: 260px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  align-items: flex-end;
+}
+
+.sp-plan-progress__hours {
+  white-space: nowrap;
+  line-height: 1;
+}
+
+.sp-plan-progress__val {
   font-size: 22px;
   font-weight: 700;
   color: #16a34a;
   font-family: var(--font-mono);
 }
 
-.sp-official-plan__progress-sep {
+.sp-plan-progress__sep {
   font-size: 14px;
   font-weight: 600;
-  color: var(--text-muted);
+  color: var(--navy);
   font-family: var(--font-mono);
+  opacity: 0.7;
 }
 
-.sp-official-plan__progress-label {
+.sp-plan-progress__label {
   font-size: 11px;
-  color: var(--text-muted);
-  display: block;
+  color: var(--navy);
+  opacity: 0.65;
+}
+
+.sp-plan-progress-bar {
+  width: 100%;
+  height: 6px;
+  border-radius: 99px;
+  background: rgba(3, 24, 74, 0.15);
+  overflow: hidden;
+}
+
+.sp-plan-progress-bar__fill {
+  height: 100%;
+  border-radius: 99px;
+  background: var(--navy, #03184a);
+  transition: width 0.4s ease;
+}
+
+.sp-plan-progress-bar__fill--done {
+  background: #16a34a;
+}
+
+.sp-plan-progress__courses {
+  font-size: 11px;
+  color: var(--navy);
+  opacity: 0.65;
+  white-space: nowrap;
+}
+
+.sp-plan-progress__warn {
+  font-size: 10.5px;
+  color: #92400e;
+  background: rgba(254, 243, 199, 0.7);
+  padding: 2px 7px;
+  border-radius: 9999px;
+  white-space: nowrap;
+}
+
+.sp-plan-progress__unconfigured {
+  font-size: 12px;
+  color: var(--navy);
+  opacity: 0.6;
+  font-style: italic;
 }
 
 /* ── Category tag ────────────────────────────────────────────── */
@@ -547,6 +606,27 @@
   .sp-summary {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
+
+  /* Plan header stacks on tablet */
+  .sp-official-plan__head {
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .sp-plan-progress {
+    align-items: flex-start;
+    min-width: 0;
+    max-width: none;
+    width: 100%;
+  }
+
+  .sp-plan-progress-bar {
+    width: 100%;
+  }
+
+  .sp-plan-progress__hours,
+  .sp-plan-progress__courses,
+  .sp-plan-progress__warn { white-space: normal; }
 
   .sp-table-wrap { display: none; }
   .sp-card-list  { display: block; }
@@ -616,4 +696,227 @@
   }
 
   .sp-tab__count { display: none; }
+}
+
+/* ── Available Option badge ──────────────────────────────────── */
+
+.sp-badge--available_option {
+  background: #f3f4f6;
+  color: #6b7280;
+  border: 1px solid #e5e7eb;
+}
+
+/* ── Category Section ────────────────────────────────────────── */
+
+.sp-cat-section {
+  margin-bottom: 24px;
+}
+
+/* Header card — color-accented top border per category */
+.sp-cat-header {
+  background: var(--surface, #fff);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md, 10px);
+  padding: 16px 20px;
+  margin-bottom: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  border-top-width: 3px;
+}
+
+.sp-cat-header + .sp-table-wrap,
+.sp-cat-header + .sp-card-list {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
+/* Top-border accent colours */
+.sp-cat-header--major-req  { border-top-color: #3b82f6; }
+.sp-cat-header--univ-req   { border-top-color: #22c55e; }
+.sp-cat-header--major-elec { border-top-color: #f59e0b; }
+.sp-cat-header--free-elec  { border-top-color: #a855f7; }
+
+/* Left side */
+.sp-cat-header__left {
+  flex: 1;
+  min-width: 180px;
+}
+
+.sp-cat-header__names {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+
+.sp-cat-name {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.sp-cat-name-ar {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  direction: rtl;
+}
+
+.sp-cat-stats__main {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  margin-bottom: 3px;
+}
+
+.sp-cat-stats__sub {
+  display: block;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.sp-cat-stats__muted {
+  display: block;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-style: italic;
+  margin-bottom: 3px;
+}
+
+.sp-cat-stats__needed {
+  color: #b45309;
+}
+
+/* Right side */
+.sp-cat-header__right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  min-width: 130px;
+}
+
+.sp-cat-progress-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  justify-content: flex-end;
+}
+
+.sp-cat-progress-bar {
+  flex: 1;
+  max-width: 150px;
+  height: 7px;
+  border-radius: 99px;
+  background: var(--surface-2, #f0f2fa);
+  overflow: hidden;
+}
+
+.sp-cat-progress-bar__fill {
+  height: 100%;
+  border-radius: 99px;
+  transition: width 0.4s ease;
+}
+
+.sp-cat-progress-bar__fill--complete { background: #16a34a; }
+.sp-cat-progress-bar__fill--progress { background: var(--navy, #03184a); }
+
+.sp-cat-progress-pct {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+  white-space: nowrap;
+  min-width: 32px;
+  text-align: right;
+}
+
+/* Category status badge */
+.sp-cat-status {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.sp-cat-status--complete { background: #dcfce7; color: #166534; }
+.sp-cat-status--progress { background: var(--najah-light, #dce8ff); color: var(--navy, #03184a); }
+.sp-cat-status--needed   { background: #fef9c3; color: #92400e; }
+.sp-cat-status--muted    { background: #f3f4f6; color: #6b7280; }
+
+/* Table / cards attached below header — remove gap, share border radius */
+.sp-cat-section .sp-table-wrap {
+  border: 1px solid var(--border);
+  border-top: none;
+  border-bottom-left-radius: var(--r-md, 10px);
+  border-bottom-right-radius: var(--r-md, 10px);
+  overflow: hidden;
+  margin-bottom: 0;
+}
+
+.sp-cat-section .sp-table {
+  border-radius: 0;
+}
+
+.sp-cat-section .sp-card-list {
+  border: 1px solid var(--border);
+  border-top: none;
+  border-bottom-left-radius: var(--r-md, 10px);
+  border-bottom-right-radius: var(--r-md, 10px);
+  overflow: hidden;
+  margin-bottom: 0;
+}
+
+.sp-cat-section .sp-course-card {
+  border-radius: 0;
+  border-left: none;
+  border-right: none;
+  border-top: none;
+}
+
+.sp-cat-section .sp-course-card:last-child {
+  border-bottom: none;
+}
+
+/* ── Responsive: category header ─────────────────────────────── */
+
+@media (max-width: 768px) {
+  .sp-cat-header {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .sp-cat-header__right {
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .sp-cat-progress-wrap {
+    flex: 1;
+    justify-content: flex-start;
+  }
+
+  .sp-cat-progress-bar {
+    max-width: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .sp-cat-header {
+    padding: 14px 16px;
+  }
+
+  .sp-cat-name { font-size: 14px; }
 }
