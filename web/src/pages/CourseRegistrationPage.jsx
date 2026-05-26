@@ -144,6 +144,14 @@ function matchesFilter(planCourse, courseStatus, sectionCount, filter) {
   }
 }
 
+function fmtPeriodDate(isoStr) {
+  if (!isoStr) return '';
+  return new Date(isoStr).toLocaleString(undefined, {
+    month: 'short', day: 'numeric', year: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+  });
+}
+
 // ─── DropConfirmModal ────────────────────────────────────────
 
 function DropConfirmModal({ target, dropping, onConfirm, onCancel }) {
@@ -214,7 +222,7 @@ function DropConfirmModal({ target, dropping, onConfirm, onCancel }) {
 
 // ─── SectionRow ──────────────────────────────────────────────
 
-function SectionRow({ section, secStatus, onEnroll, onOpenDrop, isEnrolling, missingPrereqs }) {
+function SectionRow({ section, secStatus, onEnroll, onOpenDrop, isEnrolling, missingPrereqs, registrationOpen, dropAllowed }) {
   const meta = SEC_STATUS_META[secStatus] || SEC_STATUS_META.available;
   const pct = section.max_capacity
     ? Math.min(100, Math.round((section.enrolled / section.max_capacity) * 100))
@@ -254,8 +262,17 @@ function SectionRow({ section, secStatus, onEnroll, onOpenDrop, isEnrolling, mis
       <div className="cr-sec-row__right">
         <span className={`cr-sec-badge ${meta.css}`}>{meta.label}</span>
         {secStatus === 'already_registered' ? (
-          <button className="cr-btn cr-btn--drop cr-btn--sm" onClick={onOpenDrop}>
-            Drop
+          <button
+            className="cr-btn cr-btn--drop cr-btn--sm"
+            onClick={dropAllowed ? onOpenDrop : undefined}
+            disabled={!dropAllowed}
+            title={!dropAllowed ? 'Drop deadline has passed' : undefined}
+          >
+            {dropAllowed ? 'Drop' : 'Drop Closed'}
+          </button>
+        ) : meta.canEnroll && !registrationOpen ? (
+          <button className="cr-btn cr-btn--ghost cr-btn--sm" disabled title="Registration is currently closed">
+            Closed
           </button>
         ) : meta.canEnroll ? (
           <button
@@ -298,6 +315,7 @@ function CourseRow({
   planCourse, sections, enrolledSection, courseStatus,
   myEnrolled, enrolledBySectionId, enrolledByCourseId,
   onEnroll, onOpenDrop, enrolling, expanded, onToggle,
+  registrationOpen, dropAllowed,
 }) {
   const csMeta      = COURSE_STATUS_META[courseStatus] || COURSE_STATUS_META.not_taken;
   const hasSecs     = sections.length > 0;
@@ -411,9 +429,11 @@ function CourseRow({
               </div>
               <button
                 className="cr-btn cr-btn--drop cr-btn--sm"
-                onClick={() => onOpenDrop({ section: enrolledSection, planCourse })}
+                onClick={dropAllowed ? () => onOpenDrop({ section: enrolledSection, planCourse }) : undefined}
+                disabled={!dropAllowed}
+                title={!dropAllowed ? 'Drop deadline has passed' : undefined}
               >
-                Drop
+                {dropAllowed ? 'Drop' : 'Drop Closed'}
               </button>
             </div>
           )}
@@ -443,6 +463,8 @@ function CourseRow({
                     })}
                     isEnrolling={enrolling.has(sec.id)}
                     missingPrereqs={ss === 'prereq_missing' ? prereqStatus.missing : null}
+                    registrationOpen={registrationOpen}
+                    dropAllowed={dropAllowed}
                   />
                 );
               })}
@@ -464,6 +486,7 @@ function CategoryGroup({
   category, filteredCourses, sectionsByCourseId,
   enrolledByCourseId, enrolledBySectionId, myEnrolled,
   onEnroll, onOpenDrop, enrolling, expandedCourses, toggleCourse,
+  registrationOpen, dropAllowed,
 }) {
   const catMeta = CAT_META[category] || { en: category, ar: '', accent: 'blue' };
   if (!filteredCourses.length) return null;
@@ -502,6 +525,8 @@ function CategoryGroup({
               enrolling={enrolling}
               expanded={isExpanded}
               onToggle={() => toggleCourse(pc.course_id)}
+              registrationOpen={registrationOpen}
+              dropAllowed={dropAllowed}
             />
           );
         })}
@@ -620,6 +645,19 @@ export default function CourseRegistrationPage() {
     return { registered, totalCredits, available, noSection, conflicts };
   }, [planData, sectionsByCourseId, enrolledByCourseId, myEnrolled]);
 
+  // ── Registration period ───────────────────────────────────
+  const { registrationOpen, dropAllowed } = useMemo(() => {
+    if (!selectedTerm) return { registrationOpen: true, dropAllowed: true };
+    const now = new Date();
+    const rs = selectedTerm.registration_start ? new Date(selectedTerm.registration_start) : null;
+    const re = selectedTerm.registration_end   ? new Date(selectedTerm.registration_end)   : null;
+    const dd = selectedTerm.drop_deadline      ? new Date(selectedTerm.drop_deadline)       : null;
+    return {
+      registrationOpen: (!rs || now >= rs) && (!re || now <= re),
+      dropAllowed:      !dd || now <= dd,
+    };
+  }, [selectedTerm]);
+
   // ── Filtered + grouped courses ───────────────────────────
   const groupedCourses = useMemo(() => {
     const planCourses = planData?.plan_courses || [];
@@ -654,7 +692,9 @@ export default function CourseRegistrationPage() {
       await loadTerm(selectedTerm);
     } catch (err) {
       const data = err.response?.data;
-      if (data?.prerequisite_failed) {
+      if (data?.registration_closed) {
+        toast.error(data.message || 'Registration is currently closed for this semester.');
+      } else if (data?.prerequisite_failed) {
         const names = (data.missing || []).map(m => m.code).join(', ');
         toast.error(names ? `Missing prerequisites: ${names}` : (data.message || 'Missing prerequisites.'));
       } else if (data?.conflict) {
@@ -681,7 +721,12 @@ export default function CourseRegistrationPage() {
       setDropTarget(null);
       await loadTerm(selectedTerm);
     } catch (err) {
-      toast.error(getErrorMessage(err) || 'Could not drop course.');
+      const data = err.response?.data;
+      if (data?.drop_deadline_passed) {
+        toast.error(data.message || 'The drop deadline for this semester has passed.');
+      } else {
+        toast.error(getErrorMessage(err) || 'Could not drop course.');
+      }
     } finally {
       setDropping(false);
     }
@@ -755,6 +800,36 @@ export default function CourseRegistrationPage() {
           </select>
         </div>
       </div>
+
+      {/* ── Registration period banner ───────────────────── */}
+      {selectedTerm && (!registrationOpen || !dropAllowed) && (
+        <div className="cr-period-banner">
+          <span className="cr-period-banner__icon">🔒</span>
+          <div className="cr-period-banner__body">
+            {!registrationOpen && (
+              <div className="cr-period-banner__title">
+                {selectedTerm.registration_end && new Date() > new Date(selectedTerm.registration_end)
+                  ? 'Registration is closed for this semester.'
+                  : 'Registration has not opened yet for this semester.'}
+              </div>
+            )}
+            {!dropAllowed && (
+              <div className="cr-period-banner__title">Drop deadline has passed.</div>
+            )}
+            <div className="cr-period-banner__dates">
+              {selectedTerm.registration_start && (
+                <span>Opens: {fmtPeriodDate(selectedTerm.registration_start)}</span>
+              )}
+              {selectedTerm.registration_end && (
+                <span>Closes: {fmtPeriodDate(selectedTerm.registration_end)}</span>
+              )}
+              {selectedTerm.drop_deadline && (
+                <span>Drop deadline: {fmtPeriodDate(selectedTerm.drop_deadline)}</span>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── No official plan ─────────────────────────────── */}
       {!planData?.has_official_plan ? (
@@ -865,6 +940,8 @@ export default function CourseRegistrationPage() {
                   enrolling={enrolling}
                   expandedCourses={expandedCourses}
                   toggleCourse={toggleCourse}
+                  registrationOpen={registrationOpen}
+                  dropAllowed={dropAllowed}
                 />
               ))}
             </div>

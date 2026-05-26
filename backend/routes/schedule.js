@@ -140,6 +140,13 @@ router.patch(
   ctrl.unpublishSemester
 );
 
+router.patch(
+  '/semesters/period',
+  protect,
+  restrictTo('admin', 'super_admin'),
+  ctrl.setRegistrationPeriod
+);
+
 // Admin CRUD routes
 router.post(
   '/',
