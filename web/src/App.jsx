@@ -20,6 +20,7 @@ import { NotificationsPage }             from './pages/SearchAndNotifications';
 import { ProfilePage, AnnouncementsPage } from './pages/ProfileAndAnnouncements';
 import StudyPlanPage                        from './pages/StudyPlanPage';
 import CourseRegistrationPage               from './pages/CourseRegistrationPage';
+import RegistrationSummaryPage             from './pages/RegistrationSummaryPage';
 import {
   AdminDashboard,
   AdminUsers,
@@ -103,7 +104,8 @@ export default function App() {
             <Route path="/announcements/:id" element={<AnnouncementDetailPage />} />
             <Route path="/profile"       element={<ProfilePage />} />
             <Route path="/study-plan"           element={<StudyPlanPage />} />
-            <Route path="/course-registration" element={<CourseRegistrationPage />} />
+            <Route path="/course-registration"   element={<CourseRegistrationPage />} />
+            <Route path="/registration-summary" element={<RegistrationSummaryPage />} />
             <Route path="/professor"                    element={<ProfessorDashboard />} />
             <Route path="/professor/schedule"           element={<ProfessorDashboard />} />
             <Route path="/professor/students"           element={<ProfessorDashboard />} />
