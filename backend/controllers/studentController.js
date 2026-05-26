@@ -248,10 +248,11 @@ async function getStudyPlan(req, res, next) {
       }));
 
     const gpa_summary = {
-      cumulative_gpa:      cumulativeGpa,
-      semester_gpa:        semesterGpa,
-      gpa_hours:           totalGpaHours,
-      skipped_gpa_courses: skippedGpaCourses,
+      cumulative_gpa:       cumulativeGpa,
+      semester_gpa:         semesterGpa,
+      gpa_hours:            totalGpaHours,
+      graded_courses_count: latestAttempt.size,
+      skipped_gpa_courses:  skippedGpaCourses,
     };
 
     // ── 6. Official study plan ─────────────────────────────────

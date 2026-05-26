@@ -455,6 +455,39 @@
   box-shadow: var(--shadow-md, 0 4px 16px rgba(3,24,74,0.10));
 }
 
+/* ── GPA card ────────────────────────────────────────────────── */
+
+.prof-gpa-display {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.prof-gpa__value {
+  font-family: var(--font-mono);
+  font-size: 40px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+
+.prof-gpa__value--green { color: #16a34a; }
+.prof-gpa__value--blue  { color: var(--navy, #03184a); }
+.prof-gpa__value--red   { color: #dc2626; }
+
+.prof-gpa__scale {
+  font-family: var(--font-mono);
+  font-size: 15px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+/* Sub-stat values inside the GPA card are smaller than the standard 24px */
+.prof-gpa-stat__value {
+  font-size: 20px !important;
+}
+
 /* ── Loading / error state in right column ───────────────────── */
 
 .prof-right-loading {

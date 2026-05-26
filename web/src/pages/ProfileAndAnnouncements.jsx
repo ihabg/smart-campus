@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { userAPI, announcementAPI, professorAPI, instructorAPI, scheduleAPI } from '../api/index';
+import { userAPI, announcementAPI, professorAPI, instructorAPI, scheduleAPI, studentAPI } from '../api/index';
 import { useAsync } from '../hooks/index';
 import { Button, Input, Spinner, Badge } from '../components/ui/index';
 import { getErrorMessage, timeAgo, formatTime } from '../utils/helpers';
@@ -170,6 +170,7 @@ export function ProfilePage() {
   const [stuTerm,     setStuTerm]     = useState(null);
   const [stuSections, setStuSections] = useState([]);
   const [stuGrades,   setStuGrades]   = useState([]);
+  const [gpaData,     setGpaData]     = useState(null);
 
   // ── Shared handlers ───────────────────────────────────────────
   const set   = k => e => setForm(f => ({ ...f, [k]: e.target.value }));
@@ -264,12 +265,13 @@ export function ProfilePage() {
       const latest = terms[0] || null;
       setStuTerm(latest);
 
-      // Step 2: schedule for that term + all course grades — independent failures
-      const [schedS, gradesS] = await Promise.allSettled([
+      // Step 2: schedule, grades, and GPA — all independent failures
+      const [schedS, gradesS, planS] = await Promise.allSettled([
         latest
           ? scheduleAPI.getMy({ semester: latest.semester, academic_year: latest.academic_year })
           : Promise.resolve({ data: { data: { sections: [] } } }),
         scheduleAPI.getGrades(),
+        studentAPI.getStudyPlan(),
       ]);
 
       if (schedS.status === 'fulfilled') {
@@ -278,6 +280,9 @@ export function ProfilePage() {
       if (gradesS.status === 'fulfilled') {
         // grades table entries — professor-entered per-course grades only, NOT GPA
         setStuGrades(gradesS.value.data?.data?.grades || []);
+      }
+      if (planS.status === 'fulfilled') {
+        setGpaData(planS.value.data?.data?.gpa_summary || null);
       }
     } catch (err) {
       setStuError(getErrorMessage(err));
@@ -698,8 +703,54 @@ export function ProfilePage() {
                   <span className="prof-field__label">Role</span>
                   <span className="prof-field__value">Student</span>
                 </div>
-                {/* GPA is intentionally absent — no cumulative or semester GPA exists in the database */}
               </div>
+            </div>
+
+            {/* ── Academic Performance (GPA) ── */}
+            <div className="prof-card">
+              <div className="prof-card__head">
+                <span className="prof-card__head-icon">📊</span>
+                Academic Performance
+              </div>
+              {gpaData === null || (gpaData.cumulative_gpa === null || gpaData.cumulative_gpa === undefined) ? (
+                <div className="prof-fields">
+                  <div>
+                    <span className="prof-field__label">Cumulative GPA</span>
+                    <span className="prof-field__value" style={{ color: 'var(--text-muted)' }}>GPA not available yet</span>
+                  </div>
+                  <div>
+                    <span className="prof-field__label">GPA Hours</span>
+                    <span className="prof-field__value prof-field__value--mono">{gpaData?.gpa_hours ?? '—'}</span>
+                  </div>
+                  <div>
+                    <span className="prof-field__label">Graded Courses</span>
+                    <span className="prof-field__value prof-field__value--mono">{gpaData?.graded_courses_count ?? '—'}</span>
+                  </div>
+                </div>
+              ) : (
+                <div className="prof-fields">
+                  <div>
+                    <span className="prof-field__label">Cumulative GPA</span>
+                    <div className="prof-gpa-display" style={{ marginBottom: 0 }}>
+                      <span className={`prof-gpa__value prof-gpa__value--${
+                        gpaData.cumulative_gpa >= 3.0 ? 'green' :
+                        gpaData.cumulative_gpa >= 2.0 ? 'blue' : 'red'
+                      }`}>
+                        {gpaData.cumulative_gpa.toFixed(2)}
+                      </span>
+                      <span className="prof-gpa__scale">/ 4.00</span>
+                    </div>
+                  </div>
+                  <div>
+                    <span className="prof-field__label">GPA Hours</span>
+                    <span className="prof-field__value prof-field__value--mono">{gpaData.gpa_hours ?? 0}</span>
+                  </div>
+                  <div>
+                    <span className="prof-field__label">Graded Courses</span>
+                    <span className="prof-field__value prof-field__value--mono">{gpaData.graded_courses_count ?? 0}</span>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* ── Current Semester Summary ── */}
@@ -716,27 +767,28 @@ export function ProfilePage() {
                   No enrollments found for {stuTerm ? termLabel(stuTerm) : 'current term'}.
                 </p>
               ) : (
-                <div className="prof-stats">
-                  <div className="prof-stat">
-                    <div className="prof-stat__label">Courses</div>
-                    <div className="prof-stat__value">{stuCourseCount}</div>
+                <div className="prof-fields">
+                  <div>
+                    <span className="prof-field__label">Enrolled Courses</span>
+                    <span className="prof-field__value prof-field__value--mono">{stuCourseCount}</span>
                   </div>
-                  <div className="prof-stat">
-                    <div className="prof-stat__label">Credit Hours</div>
-                    <div className="prof-stat__value">{stuCreditHours}</div>
+                  <div>
+                    <span className="prof-field__label">Credit Hours</span>
+                    <span className="prof-field__value prof-field__value--mono">{stuCreditHours}</span>
                   </div>
-                  <div className="prof-stat">
-                    <div className="prof-stat__label" style={{ color: stuDeprived > 0 ? '#dc2626' : undefined }}>
-                      Deprived
-                    </div>
-                    <div className="prof-stat__value" style={{ color: stuDeprived > 0 ? '#dc2626' : undefined }}>
+                  <div>
+                    <span className="prof-field__label">Deprived Sections</span>
+                    <span
+                      className="prof-field__value prof-field__value--mono"
+                      style={{ color: stuDeprived > 0 ? '#dc2626' : undefined }}
+                    >
                       {stuDeprived}
-                    </div>
+                    </span>
                   </div>
-                  <div className="prof-stat">
-                    {/* Labeled as "Grades Recorded" — these are per-course official grades, NOT GPA */}
-                    <div className="prof-stat__label">Grades Recorded</div>
-                    <div className="prof-stat__value">{stuGradeCount}</div>
+                  <div>
+                    {/* stuGradeCount = enrolled active sections across all active semesters (no term filter) */}
+                    <span className="prof-field__label">Active Courses</span>
+                    <span className="prof-field__value prof-field__value--mono">{stuGradeCount}</span>
                   </div>
                 </div>
               )}
