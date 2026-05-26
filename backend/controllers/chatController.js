@@ -10,111 +10,167 @@ try {
 }
 
 const useGemini = process.env.USE_GEMINI === 'true';
-
-const genAI =
-  useGemini && process.env.GEMINI_API_KEY && GoogleGenerativeAI
-    ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
-    : null;
+const genAI = useGemini && process.env.GEMINI_API_KEY && GoogleGenerativeAI
+  ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
+  : null;
 
 if (!genAI) {
   console.warn('⚠ GEMINI_API_KEY missing or @google/generative-ai not installed. Chatbot will use local smart replies.');
 }
 
-function detectLang(text = '') {
-  return /[\u0600-\u06FF]/.test(text) ? 'ar' : 'en';
+function cleanTime(value) {
+  return String(value || '').slice(0, 5);
 }
 
-function cleanTime(time) {
-  return String(time || '').slice(0, 5);
-}
-
-function toMinutes(time = '') {
-  const [h, m] = cleanTime(time).split(':').map(Number);
+function toMinutes(value = '') {
+  const [h, m] = cleanTime(value).split(':').map(Number);
   return (h || 0) * 60 + (m || 0);
 }
 
-function extractSearchTerm(text = '') {
-  const roomCode =
-    text.match(/\b([A-Z]?\d{3,6}[A-Z]?)\b/i) ||
-    text.match(/\b(B\d{3,5}|G\d{3,5})\b/i);
+function normalizeText(value = '') {
+  return String(value || '').trim().toLowerCase();
+}
 
-  if (roomCode) return roomCode[1];
+
+function wordDigit(token = '') {
+  const map = {
+    zero: '0', one: '1', two: '2', three: '3', four: '4', five: '5',
+    six: '6', seven: '7', eight: '8', nine: '9', oh: '0', o: '0',
+    0: '0', 1: '1', 2: '2', 3: '3', 4: '4', 5: '5', 6: '6', 7: '7', 8: '8', 9: '9'
+  };
+  return map[String(token).toLowerCase()] || '';
+}
+
+function wordsToDigits(value = '') {
+  const map = {
+    zero: '0', one: '1', two: '2', three: '3', four: '4', five: '5',
+    six: '6', seven: '7', eight: '8', nine: '9', oh: '0', o: '0'
+  };
+
+  return String(value || '')
+    .toLowerCase()
+    .split(/\s+/)
+    .map((part) => map[part] ?? (part.match(/^\d+$/) ? part : ''))
+    .join('')
+    .slice(0, 5);
+}
+
+function isSpoken180(value = '') {
+  const text = String(value || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  return /^(180|0180|one eighty|one eight zero|one zero eight zero|zero one eighty|zero one eight zero|eighteen zero|one hundred eighty)$/.test(text);
+}
+
+function normalizeRoomCode(value = '') {
+  const text = String(value || '')
+    .toLowerCase()
+    .replace(/\brome\b/g, 'room')
+    .replace(/\bgee\b/g, 'g')
+    .replace(/\bbee\b/g, 'b')
+    .replace(/\boh\b|\bo\b/g, 'zero')
+    .replace(/[-_]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const direct = text.match(/\b([gb])\s*0*([0-9]{3,4})\b/i);
+  if (direct) {
+    const prefix = direct[1].toUpperCase();
+    let digits = direct[2];
+    if (digits.length === 3) digits = `0${digits}`;
+    return `${prefix}${digits}`;
+  }
+
+  const prefixMatch = text.match(/\b(?:room\s+)?([gb])\s+(.+)$/i);
+  if (!prefixMatch) return null;
+
+  const prefix = prefixMatch[1].toUpperCase();
+  const tail = prefixMatch[2]
+    .replace(/\bnumber\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (prefix === 'G' && isSpoken180(tail)) return 'G0180';
+
+  if (prefix === 'B') {
+    const bFloor = tail.match(/^(one|two|1|2)\s+(.+)$/i);
+    if (bFloor && isSpoken180(bFloor[2])) {
+      return `B${wordDigit(bFloor[1])}180`;
+    }
+  }
+
+  const digits = wordsToDigits(tail);
+  if (!digits) return null;
+  return `${prefix}${digits.length === 3 ? `0${digits}` : digits}`;
+}
+
+function extractSearchTerm(text = '') {
+  const normalizedRoom = normalizeRoomCode(text);
+  if (normalizedRoom) return normalizedRoom;
+
+  const roomCode =
+    text.match(/\b(B\s*\d{3,5}|G\s*\d{3,5})\b/i) ||
+    text.match(/\b([A-Z]?\d{3,6}[A-Z]?)\b/i);
+
+  if (roomCode) {
+    const raw = String(roomCode[1]).replace(/\s+/g, '').toUpperCase();
+    const fixed = normalizeRoomCode(raw);
+    return fixed || raw;
+  }
 
   return text
-    .replace(/وين|فين|أين|where|find|room|غرفة|قاعة|مختبر|lab|office|مكتب|is|the|show|map/gi, '')
+    .replace(/where|find|room|rome|classroom|lecture hall|hall|lab|office|map|show|open|go to|take me to|is|the|please/gi, '')
     .trim()
-    .slice(0, 50);
+    .slice(0, 60);
 }
 
 function extractInstructorTerm(text = '') {
   return text
-    .replace(/دكتور|الدكتور|أستاذ|استاذ|doctor|dr\.?|professor|prof\.?|instructor|teacher|where|office|مكتب|وين|فين|أين/gi, '')
+    .replace(/doctor|dr\.?|professor|prof\.?|instructor|teacher|where|office|find|show|open|is|the|please/gi, '')
     .trim()
-    .slice(0, 50);
+    .slice(0, 60);
 }
 
-function parseGeminiResponse(raw = '') {
-  const re = /\[ACTION:(\{[^[\]]*\})\]/g;
-  const actions = [];
-  let match;
-
-  while ((match = re.exec(raw)) !== null) {
-    try {
-      actions.push(JSON.parse(match[1]));
-    } catch {
-      // ignore invalid action
-    }
-  }
-
-  return {
-    text: raw.replace(/\[ACTION:[^\]]*\]/g, '').replace(/\n{3,}/g, '\n\n').trim(),
-    action: actions[0] || null
-  };
+function wantsGreeting(text = '') {
+  return /^(hi|hello|hey|good morning|good afternoon|good evening)\b/i.test(text.trim());
 }
 
-async function dbRooms(term) {
-  if (!term || term.length < 2) return [];
+function wantsSchedule(text = '') {
+  return /schedule|class|classes|lecture|lectures|today|tomorrow|next class|course|courses|timetable/i.test(text);
+}
 
-  const result = await query(
-    `
-    SELECT
-      r.id,
-      r.room_number,
-      r.name,
-      r.type,
-      r.capacity,
-      r.coord_x,
-      r.coord_y,
-      r.coord_width,
-      r.coord_height,
-      f.id AS floor_id,
-      f.floor_number,
-      f.floor_label,
-      b.id AS building_id,
-      b.code AS building_code,
-      b.name AS building_name
-    FROM rooms r
-    JOIN floors f ON f.id = r.floor_id
-    JOIN buildings b ON b.id = f.building_id
-    WHERE r.is_active = true
-      AND (
-        r.room_number ILIKE $1
-        OR r.name ILIKE $1
-        OR r.type::text ILIKE $1
-        OR COALESCE(r.department, '') ILIKE $1
-      )
-    ORDER BY r.room_number
-    LIMIT 6
-    `,
-    [`%${term}%`]
-  );
+function wantsFullSchedule(text = '') {
+  return /full schedule|all schedule|whole schedule|all classes|my timetable/i.test(text);
+}
 
-  return result.rows;
+function wantsAttendance(text = '') {
+  return /attendance|attend|absence|absent|missed|percentage|warning/i.test(text);
+}
+
+function wantsRoom(text = '') {
+  return /room|classroom|where|map|lab|office|hall|lecture hall|building|floor|show.*map|open.*map|navigate|go to|take me/i.test(text);
+}
+
+function wantsInstructor(text = '') {
+  return /doctor|dr\b|professor|prof\b|instructor|teacher|office/i.test(text);
+}
+
+function wantsNotification(text = '') {
+  return /notification|notifications|alert|alerts|unread/i.test(text);
+}
+
+function wantsAnnouncement(text = '') {
+  return /announcement|announcements|news/i.test(text);
+}
+
+function wantsAssessments(text = '') {
+  return /quiz|quizzes|assessment|assessments|assignment|assignments|homework|exam|due|deadline|submit|submission/i.test(text);
+}
+
+function wantsStudyPlan(text = '') {
+  return /study plan|plan|next semester|semester plan|graduate|graduation|credit hours|prerequisite/i.test(text);
 }
 
 async function dbTodaySchedule(userId) {
   if (!userId) return [];
-
   const day = new Date().getDay();
 
   const result = await query(
@@ -123,7 +179,6 @@ async function dbTodaySchedule(userId) {
       s.id AS section_id,
       c.code,
       c.name AS course_name,
-      COALESCE(c.name_ar, c.name) AS course_name_ar,
       COALESCE(sm.day_of_week, d.day_value) AS day_of_week,
       COALESCE(sm.start_time, s.start_time) AS start_time,
       COALESCE(sm.end_time, s.end_time) AS end_time,
@@ -138,27 +193,21 @@ async function dbTodaySchedule(userId) {
     JOIN sections s ON s.id = e.section_id
     JOIN courses c ON c.id = s.course_id
     LEFT JOIN instructors i ON i.id = s.instructor_id
-    LEFT JOIN section_meetings sm
-      ON sm.section_id = s.id
-     AND sm.day_of_week = $2
-    LEFT JOIN LATERAL unnest(s.day_of_week) AS d(day_value) ON true
+    LEFT JOIN section_meetings sm ON sm.section_id = s.id AND sm.day_of_week = $2
+    LEFT JOIN LATERAL unnest(s.day_of_week) AS d(day_value) ON TRUE
     LEFT JOIN rooms r ON r.id = COALESCE(sm.room_id, s.room_id)
     LEFT JOIN floors f ON f.id = r.floor_id
     LEFT JOIN buildings b ON b.id = f.building_id
     WHERE e.student_id = $1
       AND e.status = 'enrolled'
-      AND s.is_active = true
-      AND (
-        sm.day_of_week = $2
-        OR d.day_value = $2
-      )
+      AND s.is_active = TRUE
+      AND (sm.day_of_week = $2 OR d.day_value = $2)
     ORDER BY COALESCE(sm.start_time, s.start_time), c.code
     `,
     [userId, day]
   );
 
   const seen = new Set();
-
   return result.rows.filter((row) => {
     const key = `${row.section_id}-${row.day_of_week}-${cleanTime(row.start_time)}-${cleanTime(row.end_time)}`;
     if (seen.has(key)) return false;
@@ -166,20 +215,7 @@ async function dbTodaySchedule(userId) {
     return true;
   });
 }
-async function dbDepartments() {
-  const result = await query(`
-    SELECT code, name_en, name_ar
-    FROM departments
-    WHERE is_active = true
-    ORDER BY name_en
-  `);
 
-  return result.rows;
-}
-
-function wantsDepartments(message = '') {
-  return /department|departments|major|majors|engineering majors|specializations|تخصص|تخصصات|اقسام|أقسام|كلية الهندسة/i.test(message);
-}
 async function dbFullSchedule(userId) {
   if (!userId) return [];
 
@@ -190,7 +226,6 @@ async function dbFullSchedule(userId) {
       s.section_number,
       c.code,
       c.name AS course_name,
-      COALESCE(c.name_ar, c.name) AS course_name_ar,
       c.credit_hours,
       COALESCE(sm.day_of_week, d.day_value) AS day_of_week,
       COALESCE(sm.start_time, s.start_time) AS start_time,
@@ -210,7 +245,7 @@ async function dbFullSchedule(userId) {
     LEFT JOIN floors f ON f.id = r.floor_id
     WHERE e.student_id = $1
       AND e.status = 'enrolled'
-      AND s.is_active = true
+      AND s.is_active = TRUE
     ORDER BY COALESCE(sm.day_of_week, d.day_value), COALESCE(sm.start_time, s.start_time), c.code
     `,
     [userId]
@@ -236,16 +271,89 @@ async function dbAttendance(userId) {
     FROM enrollments e
     JOIN sections s ON s.id = e.section_id
     JOIN courses c ON c.id = s.course_id
-    LEFT JOIN attendance a
-      ON a.student_id = e.student_id
-     AND a.section_id = e.section_id
+    LEFT JOIN attendance a ON a.student_id = e.student_id AND a.section_id = e.section_id
     WHERE e.student_id = $1
       AND e.status = 'enrolled'
-      AND s.is_active = true
+      AND s.is_active = TRUE
     GROUP BY c.id, c.code, c.name
     ORDER BY c.code
     `,
     [userId]
+  );
+
+  return result.rows;
+}
+
+async function dbRooms(term) {
+  if (!term || String(term).trim().length < 2) return [];
+
+  const result = await query(
+    `
+    SELECT
+      r.id,
+      r.room_number,
+      r.name,
+      r.type,
+      r.capacity,
+      r.coord_x,
+      r.coord_y,
+      f.id AS floor_id,
+      f.floor_number,
+      f.floor_label,
+      b.id AS building_id,
+      b.code AS building_code,
+      b.name AS building_name
+    FROM rooms r
+    JOIN floors f ON f.id = r.floor_id
+    JOIN buildings b ON b.id = f.building_id
+    WHERE r.is_active = TRUE
+      AND (
+        r.room_number ILIKE $1
+        OR r.name ILIKE $1
+        OR r.type::text ILIKE $1
+        OR COALESCE(r.department, '') ILIKE $1
+      )
+    ORDER BY
+      CASE WHEN r.room_number ILIKE $2 THEN 0 ELSE 1 END,
+      r.room_number
+    LIMIT 8
+    `,
+    [`%${term}%`, `${term}%`]
+  );
+
+  return result.rows;
+}
+
+async function dbInstructor(term) {
+  if (!term || String(term).trim().length < 2) return [];
+
+  const result = await query(
+    `
+    SELECT
+      i.id,
+      i.title,
+      i.first_name,
+      i.last_name,
+      i.department,
+      i.email,
+      COALESCE(r.room_number, 'N/A') AS office,
+      r.id AS room_id,
+      f.id AS floor_id,
+      f.floor_label
+    FROM instructors i
+    LEFT JOIN rooms r ON r.id = i.office_room_id
+    LEFT JOIN floors f ON f.id = r.floor_id
+    WHERE i.is_active = TRUE
+      AND (
+        i.first_name ILIKE $1
+        OR i.last_name ILIKE $1
+        OR CONCAT(i.first_name, ' ', i.last_name) ILIKE $1
+        OR COALESCE(i.email, '') ILIKE $1
+      )
+    ORDER BY i.last_name
+    LIMIT 5
+    `,
+    [`%${term}%`]
   );
 
   return result.rows;
@@ -266,7 +374,7 @@ async function dbNotifications(userId, limit = 5) {
     FROM notification_receipts nr
     JOIN notifications n ON n.id = nr.notification_id
     WHERE nr.user_id = $1
-      AND n.is_published = true
+      AND n.is_published = TRUE
     ORDER BY n.created_at DESC
     LIMIT $2
     `,
@@ -287,7 +395,7 @@ async function dbAnnouncements(limit = 4) {
       published_at,
       created_at
     FROM announcements
-    WHERE is_published = true
+    WHERE is_published = TRUE
       AND (expires_at IS NULL OR expires_at > NOW())
     ORDER BY is_pinned DESC, COALESCE(published_at, created_at) DESC
     LIMIT $1
@@ -298,357 +406,304 @@ async function dbAnnouncements(limit = 4) {
   return result.rows;
 }
 
-async function dbInstructor(term) {
-  if (!term || term.length < 2) return [];
+async function dbAssessments(userId, limit = 8) {
+  if (!userId) return [];
 
   const result = await query(
     `
     SELECT
-      i.id,
-      i.title,
-      i.first_name,
-      i.last_name,
-      i.department,
-      i.email,
-      COALESCE(r.room_number, 'N/A') AS office,
-      r.id AS room_id,
-      f.id AS floor_id,
-      f.floor_label
-    FROM instructors i
-    LEFT JOIN rooms r ON r.id = i.office_room_id
-    LEFT JOIN floors f ON f.id = r.floor_id
-    WHERE i.is_active = true
-      AND (
-        i.first_name ILIKE $1
-        OR i.last_name ILIKE $1
-        OR CONCAT(i.first_name, ' ', i.last_name) ILIKE $1
-        OR COALESCE(i.email, '') ILIKE $1
-      )
-    ORDER BY i.last_name
-    LIMIT 5
+      a.id,
+      a.title,
+      a.description,
+      a.assessment_type,
+      a.opens_at,
+      a.closes_at,
+      a.points,
+      a.duration_minutes,
+      a.allow_review,
+      c.code AS course_code,
+      c.name AS course_name,
+      s.section_number,
+      sub.id AS submission_id,
+      sub.submitted_at,
+      sub.status AS submission_status,
+      sub.grade,
+      att.id AS attempt_id,
+      att.started_at,
+      att.submitted_at AS quiz_submitted_at,
+      att.status AS attempt_status,
+      att.score,
+      CASE
+        WHEN a.assessment_type = 'assignment' AND sub.id IS NOT NULL THEN 'Submitted'
+        WHEN a.assessment_type = 'quiz' AND att.status = 'submitted' THEN 'Submitted'
+        WHEN NOW() < a.opens_at THEN 'Scheduled'
+        WHEN NOW() > a.closes_at THEN 'Closed'
+        ELSE 'Open now'
+      END AS status
+    FROM course_assessments a
+    JOIN sections s ON s.id = a.section_id
+    JOIN courses c ON c.id = a.course_id
+    JOIN enrollments e ON e.section_id = s.id
+    LEFT JOIN assignment_submissions sub ON sub.assessment_id = a.id AND sub.student_id = e.student_id
+    LEFT JOIN quiz_attempts att ON att.assessment_id = a.id AND att.student_id = e.student_id
+    WHERE e.student_id = $1
+      AND e.status = 'enrolled'
+      AND a.is_published = TRUE
+    ORDER BY
+      CASE WHEN NOW() BETWEEN a.opens_at AND a.closes_at THEN 0
+           WHEN NOW() < a.opens_at THEN 1
+           ELSE 2 END,
+      a.closes_at ASC
+    LIMIT $2
     `,
-    [`%${term}%`]
+    [userId, limit]
   );
 
   return result.rows;
 }
 
-function wantsSchedule(text) {
-  return /schedule|class|today|lecture|course|next|جدول|اليوم|محاضرة|مادة|حصة|دوام/i.test(text);
-}
-
-function wantsAttendance(text) {
-  return /attend|attendance|absence|absent|حضور|غياب|نسبة|حرمان/i.test(text);
-}
-
-function wantsNotification(text) {
-  return /notification|notifications|notif|unread|إشعار|اشعار|تنبيه/i.test(text);
-}
-
-function wantsAnnouncement(text) {
-  return /announcement|announcements|news|إعلان|اعلان|أخبار|اخبار/i.test(text);
-}
-
-function wantsRoom(text) {
-  return /room|where|map|lab|office|hall|غرفة|قاعة|مختبر|مكتب|خريطة|وين|فين|أين|اعرض|show/i.test(text);
-}
-
-function wantsInstructor(text) {
-  return /doctor|dr\b|professor|prof\b|instructor|teacher|دكتور|أستاذ|استاذ|مدرس|محاضر/i.test(text);
-}
-
 function buildScheduleCards(schedule) {
-  const nowMins = new Date().getHours() * 60 + new Date().getMinutes();
-
+  const nowMinutes = new Date().getHours() * 60 + new Date().getMinutes();
   return {
     type: 'schedule',
-    items: schedule.map((s) => ({
-      code: s.code,
-      course_name: s.course_name_ar || s.course_name,
-      start_time: cleanTime(s.start_time),
-      end_time: cleanTime(s.end_time),
-      room_number: s.room_number || 'TBA',
-      room_id: s.room_id,
-      floor_id: s.floor_id,
-      instructor: s.instructor || 'TBA',
-      is_current: nowMins >= toMinutes(s.start_time) && nowMins < toMinutes(s.end_time)
+    items: schedule.map((item) => ({
+      section_id: item.section_id,
+      code: item.code,
+      course_name: item.course_name,
+      start_time: cleanTime(item.start_time),
+      end_time: cleanTime(item.end_time),
+      room_number: item.room_number || 'TBA',
+      room_id: item.room_id,
+      floor_id: item.floor_id,
+      instructor: item.instructor || 'TBA',
+      is_current: nowMinutes >= toMinutes(item.start_time) && nowMinutes < toMinutes(item.end_time)
     }))
   };
 }
 
-function buildLocalReply({
-  message,
-  lang,
-  user,
-  todaySchedule,
-  fullSchedule,
-  attendance,
-  notifications,
-  announcements,
-  rooms,
-  instructors,
-  departments
-}) {
-  const isAr = lang === 'ar';
-  const lower = message.toLowerCase();
+function buildRoomCards(rooms) {
+  return {
+    type: 'rooms',
+    items: rooms.map((room) => ({
+      ...room,
+      room_id: room.id
+    }))
+  };
+}
 
-  if (/hello|hi|hey|مرحبا|اهلا|أهلا|السلام/i.test(message)) {
+function buildAssessmentCards(assessments) {
+  return {
+    type: 'assessments',
+    items: assessments.map((item) => ({
+      id: item.id,
+      title: item.title,
+      assessment_type: item.assessment_type,
+      status: item.status,
+      course_code: item.course_code,
+      course_name: item.course_name,
+      section_number: item.section_number,
+      opens_at: item.opens_at,
+      closes_at: item.closes_at,
+      points: item.points,
+      score: item.score,
+      grade: item.grade
+    }))
+  };
+}
+
+function buildLocalReply({ message, user, todaySchedule, fullSchedule, attendance, notifications, announcements, rooms, instructors, assessments }) {
+  const text = normalizeText(message);
+
+  if (wantsGreeting(message)) {
     return {
-      message: isAr
-        ? `أهلاً ${user?.first_name || ''}! أنا مساعد النجاح الذكي. أقدر أساعدك بالجدول، القاعات، الحضور، الإعلانات، والخريطة.`
-        : `Hello ${user?.first_name || ''}! I can help with your schedule, rooms, attendance, announcements, and campus map.`,
+      message: `Hello${user?.first_name ? ` ${user.first_name}` : ''}! 👋 I’m Najah Assistant, your Smart Campus guide. Ask me about your classes, quizzes, assignments, attendance, announcements, or any campus room.`,
       cards: null,
       action: null
     };
-    
   }
-  if (
-  /who are you|what are you|introduce yourself|your name|مين انت|مين انتا|من انت|شو اسمك|اسمك ايش|عرف عن نفسك/i.test(message)
-) {
-  return {
-    message: isAr
-      ? 'أنا مساعد النجاح الذكي، مساعد افتراضي داخل نظام Smart Campus في جامعة النجاح الوطنية. أساعدك في معرفة جدولك، القاعات، الخريطة، الحضور، الإعلانات، ومعلومات المدرسين. يمكنك أن تسألني مثلاً: "شو محاضراتي اليوم؟" أو "وين قاعة 111060؟"'
-      : 'I am Najah Smart Assistant, the virtual assistant inside the Smart Campus system at An-Najah National University. I can help you with your schedule, rooms, campus map, attendance, announcements, and instructor information. For example, ask: “What classes do I have today?” or “Where is room 111060?”',
-    cards: null,
-    action: null
-  };
-  
-}
-if (departments?.length) {
-  const lines = departments.map(
-    (d) => `• ${d.code} — ${d.name_en} (${d.name_ar})`
-  );
 
-  return {
-    message:
-      lang === 'ar'
-        ? `تخصصات كلية الهندسة:\n\n${lines.join('\n')}`
-        : `Faculty of Engineering Departments:\n\n${lines.join('\n')}`,
-    cards: null,
-    action: null
-  };
-}
-  if (wantsSchedule(message)) {
-    if (todaySchedule.length === 0) {
+  if (/who are you|what are you|your name|introduce yourself|tell me about yourself/i.test(message)) {
+    return {
+      message: `I’m Najah Assistant — your personal Smart Campus guide at An-Najah National University. I’m connected to your university database, so I can help you check today’s classes, find rooms on the campus map, review attendance, see quizzes and assignments, follow announcements, and understand your academic information faster. You can ask me naturally, for example: “Do I have quizzes?”, “Where is room 1180?”, or “What classes do I have today?”`,
+      cards: null,
+      action: null
+    };
+  }
+
+  if (wantsAssessments(message)) {
+    const filtered = assessments.filter((item) => {
+      if (/quiz|quizzes/i.test(text)) return item.assessment_type === 'quiz';
+      if (/assignment|assignments|homework|submit|submission/i.test(text)) return item.assessment_type === 'assignment';
+      return true;
+    });
+
+    if (filtered.length === 0) {
       return {
-        message: isAr
-          ? 'لا يوجد لديك محاضرات اليوم حسب الجدول الحالي.'
-          : 'You do not have any classes scheduled today.',
+        message: 'I did not find any published quizzes or assignments for your enrolled courses right now.',
         cards: null,
-        action: { type: 'show_schedule' }
+        action: { type: 'show_assessments' }
       };
     }
 
-    const lines = todaySchedule.map((s) => {
-      const room = s.room_number ? `Room ${s.room_number}` : 'Room TBA';
-      return `• ${s.code} — ${s.course_name_ar || s.course_name}: ${cleanTime(s.start_time)}-${cleanTime(s.end_time)} | ${room}`;
-    });
+    const openCount = filtered.filter((item) => item.status === 'Open now').length;
+    const scheduledCount = filtered.filter((item) => item.status === 'Scheduled').length;
+    const submittedCount = filtered.filter((item) => item.status === 'Submitted').length;
 
     return {
-      message: isAr
-        ? `محاضراتك اليوم:\n${lines.join('\n')}`
-        : `Your classes today:\n${lines.join('\n')}`,
-      cards: buildScheduleCards(todaySchedule),
+      message: `I found ${filtered.length} item(s) for your enrolled courses: ${openCount} open now, ${scheduledCount} scheduled, and ${submittedCount} submitted.`,
+      cards: buildAssessmentCards(filtered),
+      action: { type: 'show_assessments' }
+    };
+  }
+
+  if (wantsFullSchedule(message)) {
+    if (fullSchedule.length === 0) {
+      return { message: 'I could not find a registered schedule for you.', cards: null, action: { type: 'show_schedule' } };
+    }
+    const sectionCount = new Set(fullSchedule.map((item) => item.section_id)).size;
+    return {
+      message: `You have ${sectionCount} registered section(s). Here are the first items from your schedule.`,
+      cards: buildScheduleCards(fullSchedule.slice(0, 8)),
       action: { type: 'show_schedule' }
     };
   }
 
-  if (/all schedule|full schedule|كل الجدول|جدولي كامل/i.test(lower)) {
-    if (fullSchedule.length === 0) {
+  if (wantsSchedule(message)) {
+    if (todaySchedule.length === 0) {
       return {
-        message: isAr ? 'لا يوجد جدول مسجل لك حالياً.' : 'No registered schedule was found.',
+        message: 'You do not have any classes scheduled today.',
         cards: null,
         action: { type: 'show_schedule' }
       };
     }
 
+    const lines = todaySchedule.map((item) => `• ${item.code} — ${item.course_name}: ${cleanTime(item.start_time)}-${cleanTime(item.end_time)} | Room ${item.room_number || 'TBA'}`);
     return {
-      message: isAr
-        ? `لديك ${new Set(fullSchedule.map((s) => s.section_id)).size} مواد مسجلة. اضغط عرض الجدول لرؤية التفاصيل.`
-        : `You have ${new Set(fullSchedule.map((s) => s.section_id)).size} registered sections. Open the schedule page for details.`,
-      cards: buildScheduleCards(fullSchedule.slice(0, 8)),
+      message: `You have ${todaySchedule.length} class(es) today:\n${lines.join('\n')}`,
+      cards: buildScheduleCards(todaySchedule),
       action: { type: 'show_schedule' }
     };
   }
 
   if (wantsAttendance(message)) {
     if (attendance.length === 0) {
-      return {
-        message: isAr
-          ? 'لا توجد بيانات حضور متاحة حالياً.'
-          : 'No attendance data is available yet.',
-        cards: null,
-        action: null
-      };
+      return { message: 'No attendance data is available yet.', cards: null, action: null };
     }
-
     return {
-      message: isAr
-        ? 'هذه نسب الحضور المتوفرة لديك:'
-        : 'Here is your available attendance summary:',
+      message: 'Here is your attendance summary from the database.',
       cards: {
         type: 'attendance',
-        items: attendance.map((a) => ({
-          code: a.code,
-          course_name: a.course_name,
-          present: Number(a.present_count || 0),
-          total: Number(a.total_count || 0),
-          percentage: Number(a.percentage || 0)
+        items: attendance.map((item) => ({
+          code: item.code,
+          course_name: item.course_name,
+          present: Number(item.present_count || 0),
+          total: Number(item.total_count || 0),
+          percentage: Number(item.percentage || 0)
         }))
       },
       action: null
     };
   }
 
+  if (wantsInstructor(message)) {
+    if (instructors.length === 0) {
+      return { message: 'I could not find an instructor with that name. Try the first or last name.', cards: null, action: null };
+    }
+
+    const first = instructors[0];
+    return {
+      message: `${first.title || 'Dr.'} ${first.first_name} ${first.last_name} is in ${first.department || 'N/A'}. Office: ${first.office || 'N/A'}.`,
+      cards: first.room_id ? buildRoomCards([{ ...first, id: first.room_id, room_number: first.office, name: `${first.title || 'Dr.'} ${first.first_name} ${first.last_name} office`, type: 'office' }]) : null,
+      action: first.room_id ? { type: 'show_room', room_id: first.room_id, room_number: first.office, floor_id: first.floor_id } : null
+    };
+  }
+
   if (wantsRoom(message)) {
     if (rooms.length === 0) {
       return {
-        message: isAr
-          ? 'لم أجد قاعة مطابقة. جرّب كتابة رقم القاعة مثل 111060 أو اسم المختبر.'
-          : 'I could not find a matching room. Try a room number like 111060 or a lab name.',
+        message: 'I could not find a matching room. Try a room number like 111060, 1180, or a lab name.',
         cards: null,
         action: { type: 'open_map' }
       };
     }
 
     const first = rooms[0];
-
     return {
-      message: isAr
-        ? `وجدت ${rooms.length} نتيجة. أقرب نتيجة هي **${first.room_number}** في ${first.floor_label || 'floor'} داخل ${first.building_name}.`
-        : `I found ${rooms.length} result(s). The closest match is **${first.room_number}** on ${first.floor_label || 'the floor'} in ${first.building_name}.`,
-      cards: {
-        type: 'rooms',
-        items: rooms.map((r) => ({ ...r, room_id: r.id }))
-      },
-      action: {
-        type: 'show_room',
-        room_id: first.id,
-        floor_id: first.floor_id
-      }
-    };
-  }
-
-  if (wantsInstructor(message)) {
-    if (instructors.length === 0) {
-      return {
-        message: isAr
-          ? 'لم أجد مدرساً بهذا الاسم. جرّب كتابة الاسم الأول أو الأخير.'
-          : 'I could not find an instructor with that name. Try the first or last name.',
-        cards: null,
-        action: null
-      };
-    }
-
-    const first = instructors[0];
-
-    return {
-      message: isAr
-        ? `${first.title || 'د.'} ${first.first_name} ${first.last_name} من قسم ${first.department || 'غير محدد'}. المكتب: ${first.office || 'غير متوفر'}.`
-        : `${first.title || 'Dr.'} ${first.first_name} ${first.last_name} is in ${first.department || 'N/A'}. Office: ${first.office || 'N/A'}.`,
-      cards: null,
-      action: first.room_id
-        ? { type: 'show_room', room_id: first.room_id, floor_id: first.floor_id }
-        : null
+      message: `I found ${rooms.length} matching room(s). The closest match is **${first.room_number}** on ${first.floor_label || 'the selected floor'} in ${first.building_name || 'the building'}. Tap the room card to open it directly on the campus map.`,
+      cards: buildRoomCards(rooms),
+      action: { type: 'show_room', room_id: first.id, room_number: first.room_number, floor_id: first.floor_id }
     };
   }
 
   if (wantsNotification(message)) {
     if (notifications.length === 0) {
-      return {
-        message: isAr ? 'لا توجد إشعارات جديدة.' : 'You have no recent notifications.',
-        cards: null,
-        action: null
-      };
+      return { message: 'You have no recent notifications.', cards: null, action: null };
     }
-
-    return {
-      message: isAr ? 'هذه آخر إشعاراتك:' : 'Here are your latest notifications:',
-      cards: { type: 'notifications', items: notifications },
-      action: null
-    };
+    return { message: 'Here are your latest notifications.', cards: { type: 'notifications', items: notifications }, action: null };
   }
 
   if (wantsAnnouncement(message)) {
     if (announcements.length === 0) {
-      return {
-        message: isAr ? 'لا توجد إعلانات منشورة حالياً.' : 'There are no published announcements right now.',
-        cards: null,
-        action: null
-      };
+      return { message: 'There are no published announcements right now.', cards: null, action: null };
     }
+    return { message: 'Here are the latest published announcements.', cards: { type: 'announcements', items: announcements }, action: null };
+  }
 
+  if (wantsStudyPlan(message)) {
     return {
-      message: isAr ? 'هذه آخر الإعلانات:' : 'Here are the latest announcements:',
-      cards: { type: 'announcements', items: announcements },
+      message: 'I can help you review your study plan. Open the Study Plan page, choose the courses you want for next semester, then ask me to evaluate the plan. I will check credits, prerequisites, and balance.',
+      cards: null,
       action: null
     };
   }
 
   return {
-    message: isAr
-      ? 'أقدر أساعدك في: جدولك، القاعات، الخريطة، الحضور، الإعلانات، أو معلومات المدرسين. جرّب مثلاً: "وين قاعة 111060؟" أو "شو محاضراتي اليوم؟"'
-      : 'I can help with your schedule, rooms, map, attendance, announcements, or instructors. Try: “Where is room 111060?” or “What classes do I have today?”',
+    message: 'I can help with your schedule, rooms, attendance, assignments, quizzes, announcements, and instructors. Try: “Do I have quizzes?”, “Where is room 1180?”, or “What classes do I have today?”',
     cards: null,
     action: null
   };
 }
 
-function buildSystemPrompt({
-  user,
-  todaySchedule,
-  fullSchedule,
-  attendance,
-  notifications,
-  announcements,
-  rooms,
-  instructors
-}) {
-  const today = new Date().toLocaleDateString('en-GB');
-  const time = new Date().toLocaleTimeString('en', {
-    hour: '2-digit',
-    minute: '2-digit'
-  });
+function parseGeminiResponse(raw = '') {
+  const re = /\[ACTION:(\{[^[\]]*\})\]/g;
+  const actions = [];
+  let match;
 
+  while ((match = re.exec(raw)) !== null) {
+    try { actions.push(JSON.parse(match[1])); } catch { /* ignore */ }
+  }
+
+  return {
+    text: raw.replace(/\[ACTION:[^\]]*\]/g, '').replace(/\n{3,}/g, '\n\n').trim(),
+    action: actions[0] || null
+  };
+}
+
+function buildSystemPrompt({ user, todaySchedule, attendance, assessments, rooms, instructors, announcements }) {
+  const now = new Date().toLocaleString('en-US');
   return `
-You are Najah Smart Assistant, the AI assistant inside the Smart Campus system at An-Najah National University.
-
-Current date/time: ${today} ${time}
-
-Rules:
-- Reply in Arabic if the user writes Arabic.
-- Reply in English if the user writes English.
-- Be concise and useful.
-- Never invent schedules, rooms, attendance, instructors, or announcements.
-- Use only the data below.
-- If navigation is useful, append an action marker at the end:
-[ACTION:{"type":"show_room","room_number":"111060"}]
-[ACTION:{"type":"show_schedule"}]
-[ACTION:{"type":"open_map"}]
-
-User:
-${user ? `${user.first_name || ''} ${user.last_name || ''} | ${user.role} | ${user.student_id || ''}` : 'Guest'}
+You are Najah Assistant inside the Smart Campus system at An-Najah National University.
+Reply in English only. Keep answers concise, professional, and based only on the supplied database data.
+Current time: ${now}
+Student: ${user ? `${user.first_name || ''} ${user.last_name || ''} (${user.student_id || user.id})` : 'Guest'}
 
 Today schedule:
-${todaySchedule.length ? todaySchedule.map((s) => `${s.code} ${s.course_name_ar || s.course_name} ${cleanTime(s.start_time)}-${cleanTime(s.end_time)} room ${s.room_number || 'TBA'}`).join('\n') : 'No classes today'}
-
-Full schedule count:
-${fullSchedule.length}
+${todaySchedule.length ? todaySchedule.map((s) => `${s.code} ${s.course_name} ${cleanTime(s.start_time)}-${cleanTime(s.end_time)} room ${s.room_number || 'TBA'}`).join('\n') : 'No classes today'}
 
 Attendance:
 ${attendance.length ? attendance.map((a) => `${a.code}: ${a.percentage || 0}%`).join('\n') : 'No attendance data'}
 
-Notifications:
-${notifications.length ? notifications.map((n) => `${n.is_read ? '' : '[UNREAD] '}${n.title}`).join('\n') : 'No notifications'}
+Assessments:
+${assessments.length ? assessments.map((a) => `${a.assessment_type} ${a.title} ${a.course_code} status ${a.status} due ${a.closes_at}`).join('\n') : 'No assessments'}
+
+Rooms:
+${rooms.length ? rooms.map((r) => `${r.room_number} ${r.name} ${r.floor_label} ${r.building_name}`).join('\n') : 'No room search results'}
+
+Instructors:
+${instructors.length ? instructors.map((i) => `${i.title || ''} ${i.first_name} ${i.last_name} office ${i.office}`).join('\n') : 'No instructor search results'}
 
 Announcements:
 ${announcements.length ? announcements.map((a) => a.title).join('\n') : 'No announcements'}
-
-Room search results:
-${rooms.length ? rooms.map((r) => `${r.room_number} ${r.name} ${r.floor_label} ${r.building_name}`).join('\n') : 'No room search results'}
-
-Instructor search results:
-${instructors.length ? instructors.map((i) => `${i.title || ''} ${i.first_name} ${i.last_name} office ${i.office}`).join('\n') : 'No instructor search results'}
 `;
 }
 
@@ -659,31 +714,27 @@ async function askGemini(systemPrompt, message, history = []) {
     model: process.env.GEMINI_MODEL || 'gemini-1.5-flash',
     systemInstruction: systemPrompt,
     generationConfig: {
-      temperature: 0.35,
+      temperature: 0.25,
       topP: 0.85,
-      maxOutputTokens: 500
+      maxOutputTokens: 420
     }
   });
 
   const safeHistory = history
-    .filter((h) => h.role && h.text)
+    .filter((item) => item.role && item.text)
     .slice(-8)
-    .map((h) => ({
-      role: h.role === 'model' || h.role === 'bot' ? 'model' : 'user',
-      parts: [{ text: String(h.text).slice(0, 1000) }]
+    .map((item) => ({
+      role: item.role === 'model' || item.role === 'bot' ? 'model' : 'user',
+      parts: [{ text: String(item.text).slice(0, 900) }]
     }));
 
   const session = model.startChat({ history: safeHistory });
+  const response = await Promise.race([
+    session.sendMessage(message),
+    new Promise((_, reject) => setTimeout(() => reject(new Error('GEMINI_TIMEOUT')), 9000))
+  ]);
 
-  const geminiCall = session.sendMessage(message);
-  const timeoutGuard = new Promise((_, reject) => {
-    setTimeout(() => reject(new Error('GEMINI_TIMEOUT')), 10000);
-  });
-
-  const result = await Promise.race([geminiCall, timeoutGuard]);
-  const raw = result.response.text();
-
-  return parseGeminiResponse(raw);
+  return parseGeminiResponse(response.response.text());
 }
 
 async function chat(req, res, next) {
@@ -692,112 +743,78 @@ async function chat(req, res, next) {
     const user = req.user || null;
     const userId = user?.id || null;
 
-    if (!message || !message.trim()) {
-      return res.status(400).json({
-        success: false,
-        message: 'Message required.'
-      });
+    if (!message || !String(message).trim()) {
+      return res.status(400).json({ success: false, message: 'Message required.' });
     }
 
-    const text = message.trim();
-    const lang = detectLang(text);
-
+    const text = String(message).trim();
     const roomTerm = wantsRoom(text) ? extractSearchTerm(text) : '';
     const instructorTerm = wantsInstructor(text) ? extractInstructorTerm(text) : '';
 
     const [
-  todaySchedule,
-  fullSchedule,
-  attendance,
-  notifications,
-  announcements,
-  rooms,
-  instructors,
-  departments
-] = await Promise.all([
-      dbTodaySchedule(userId).catch((err) => {
-        console.error('Chat schedule error:', err.message);
-        return [];
-      }),
-      dbFullSchedule(userId).catch((err) => {
-        console.error('Chat full schedule error:', err.message);
-        return [];
-      }),
-      wantsAttendance(text)
-        ? dbAttendance(userId).catch((err) => {
-            console.error('Chat attendance error:', err.message);
-            return [];
-          })
+      todaySchedule,
+      fullSchedule,
+      attendance,
+      notifications,
+      announcements,
+      rooms,
+      instructors,
+      assessments
+    ] = await Promise.all([
+      dbTodaySchedule(userId).catch((err) => { console.error('Chat schedule error:', err.message); return []; }),
+      dbFullSchedule(userId).catch((err) => { console.error('Chat full schedule error:', err.message); return []; }),
+      (wantsAttendance(text) || wantsGreeting(text))
+        ? dbAttendance(userId).catch((err) => { console.error('Chat attendance error:', err.message); return []; })
         : Promise.resolve([]),
       userId
-        ? dbNotifications(userId).catch((err) => {
-            console.error('Chat notifications error:', err.message);
-            return [];
-          })
+        ? dbNotifications(userId).catch((err) => { console.error('Chat notification error:', err.message); return []; })
         : Promise.resolve([]),
-      dbAnnouncements().catch((err) => {
-        console.error('Chat announcements error:', err.message);
-        return [];
-      }),
+      dbAnnouncements().catch((err) => { console.error('Chat announcement error:', err.message); return []; }),
       roomTerm
-  ? dbRooms(roomTerm).catch((err) => {
-      console.error('Chat rooms error:', err.message);
-      return [];
-    })
-  : Promise.resolve([]),
-
-instructorTerm
-  ? dbInstructor(instructorTerm).catch((err) => {
-      console.error('Chat instructor error:', err.message);
-      return [];
-    })
-  : Promise.resolve([]),
-
-wantsDepartments(text)
-  ? dbDepartments().catch(() => [])
-  : Promise.resolve([])
+        ? dbRooms(roomTerm).catch((err) => { console.error('Chat rooms error:', err.message); return []; })
+        : Promise.resolve([]),
+      instructorTerm
+        ? dbInstructor(instructorTerm).catch((err) => { console.error('Chat instructor error:', err.message); return []; })
+        : Promise.resolve([]),
+      userId
+        ? dbAssessments(userId).catch((err) => { console.error('Chat assessments error:', err.message); return []; })
+        : Promise.resolve([])
     ]);
 
     const local = buildLocalReply({
-  message: text,
-  lang,
-  user,
-  todaySchedule,
-  fullSchedule,
-  attendance,
-  notifications,
-  announcements,
-  rooms,
-  instructors,
-  departments
-});
+      message: text,
+      user,
+      todaySchedule,
+      fullSchedule,
+      attendance,
+      notifications,
+      announcements,
+      rooms,
+      instructors,
+      assessments
+    });
 
     let reply = local.message;
     let action = local.action;
     let cards = local.cards;
 
-    const shouldUseAI =
+    const shouldUseAI = Boolean(
       genAI &&
       !wantsRoom(text) &&
-      !wantsAttendance(text) &&
       !wantsSchedule(text) &&
+      !wantsAttendance(text) &&
       !wantsNotification(text) &&
-      !wantsAnnouncement(text);
+      !wantsAnnouncement(text) &&
+      !wantsAssessments(text)
+    );
 
     if (shouldUseAI) {
       try {
-        const systemPrompt = buildSystemPrompt({
-          user,
-          todaySchedule,
-          fullSchedule,
-          attendance,
-          notifications,
-          announcements,
-          rooms,
-          instructors
-        });
-
-        const ai = await askGemini(systemPrompt, text, history);
+        const ai = await askGemini(
+          buildSystemPrompt({ user, todaySchedule, attendance, assessments, rooms, instructors, announcements }),
+          text,
+          history
+        );
 
         if (ai?.text) {
           reply = ai.text;
@@ -814,6 +831,7 @@ wantsDepartments(text)
         action = {
           type: 'show_room',
           room_id: foundRooms[0].id,
+          room_number: foundRooms[0].room_number,
           floor_id: foundRooms[0].floor_id
         };
       }
@@ -823,24 +841,19 @@ wantsDepartments(text)
       success: true,
       data: {
         message: reply,
-        lang,
+        lang: 'en',
         action,
         cards,
         timestamp: new Date().toISOString()
       }
     });
-  } catch (err) {
-    next(err);
+  } catch (error) {
+    next(error);
   }
 }
 
 async function getHistory(req, res) {
-  return res.json({
-    success: true,
-    data: {
-      history: []
-    }
-  });
+  return res.json({ success: true, data: { history: [] } });
 }
 
 module.exports = {

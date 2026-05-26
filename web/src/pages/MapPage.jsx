@@ -849,43 +849,77 @@ const availableRoomIds = useMemo(
   [availableRooms]
 );
 
+function findBlockByDbId(value) {
+  if (!value) return null;
+  const target = String(value);
+
+  for (const [floorKey, floor] of Object.entries(mapFloors)) {
+    const block = floor.blocks.find(item =>
+      String(item.dbId || item.id || '') === target
+    );
+
+    if (block) return { floorKey, block };
+  }
+
+  return null;
+}
+
 useEffect(() => {
   const params = new URLSearchParams(location.search);
-  const roomFromUrl = params.get('room');
+  const state = location.state || {};
 
-  if (!roomFromUrl) return;
+  const roomFromUrl = params.get('room') || state.roomNumber || state.room_number || state.room || '';
+  const roomIdFromUrl = params.get('roomId') || state.roomId || state.room_id || '';
+  // Only open the details popup when the URL/state explicitly asks for it.
+  // A roomId alone should select/highlight the room, not show the popup.
+  const shouldOpenRoom = params.get('open') === '1' || state.openRoom === true;
+
+  if (!roomFromUrl && !roomIdFromUrl) return;
+
+  const targetKey = roomIdFromUrl
+    ? `id:${roomIdFromUrl}:open:${shouldOpenRoom ? '1' : '0'}`
+    : `room:${roomFromUrl}:open:${shouldOpenRoom ? '1' : '0'}`;
 
   // Guard against the auto-refresh loop: mapFloors rebuilds every 5 s, which
   // re-fires this effect. Once we've handled a given target we skip all future
   // re-fires for that same target, so closing the panel keeps it closed.
-  if (scheduleTargetHandledRef.current === roomFromUrl) return;
+  if (scheduleTargetHandledRef.current === targetKey) return;
 
-  const result = findBlockByRoomSearch(roomFromUrl);
+  const result = roomIdFromUrl
+    ? (findBlockByDbId(roomIdFromUrl) || findBlockByRoomSearch(roomFromUrl))
+    : findBlockByRoomSearch(roomFromUrl);
+
+  const displayTarget = roomFromUrl || roomIdFromUrl;
 
   if (!result) {
     // Wait until DB rooms have loaded before showing "not found" to avoid a
     // false-error flash while the async fetch is still in flight.
     if (dbRoomsLoaded) {
-      setRoomSearch(roomFromUrl);
-      setRoomSearchError(`Room "${roomFromUrl}" was not found on the map.`);
-      scheduleTargetHandledRef.current = roomFromUrl;
+      setRoomSearch(displayTarget);
+      setRoomSearchError(`Room "${displayTarget}" was not found on the map.`);
+      scheduleTargetHandledRef.current = targetKey;
     }
     return;
   }
 
-  scheduleTargetHandledRef.current = roomFromUrl;
+  scheduleTargetHandledRef.current = targetKey;
 
   setActiveFloor(result.floorKey);
   setSelectedNeed('all');
   setHoveredBlock(null);
-  setRoomSearch(roomFromUrl);
+  setRoomSearch(result.block.roomNumber || result.block.room_number || displayTarget);
   setRoomSearchError('');
   resetMapView();
 
-  // Highlight the target room without auto-opening the info panel.
-  // The student can click the highlighted block manually to open details.
-  setScheduleHighlightedBlock(result.block);
-  setSelectedBlock(null);
+  if (shouldOpenRoom) {
+    // Only direct room detail links open the popup.
+    setSelectedBlock(result.block);
+    setScheduleHighlightedBlock(null);
+  } else {
+    // Chatbot/search links select and highlight the room without opening the popup.
+    setScheduleHighlightedBlock(result.block);
+    setSelectedBlock(null);
+  }
 
   if (result.floorKey === 'G') {
     setStartNodeId('G_NORTH_ENTRANCE_NODE');
@@ -894,7 +928,7 @@ useEffect(() => {
   if (result.floorKey === 'B2') {
     setStartNodeId('B2_LEFT_STAIRS');
   }
-}, [location.search, mapFloors, dbRoomsLoaded]);
+}, [location.search, location.state, mapFloors, dbRoomsLoaded]);
 
   useEffect(() => {
     if (!selectedBlock?.dbId || !isAcademicSpace(selectedBlock)) {

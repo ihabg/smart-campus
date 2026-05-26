@@ -1,174 +1,164 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import axiosInstance from '../../api/axiosInstance';
 import { useAuth } from '../../context/AuthContext';
 import './Chatbot.css';
 
-// ── Helpers ────────────────────────────────────────────────────
+function fmtTime(value) {
+  return value ? String(value).slice(0, 5) : '';
+}
 
-function timeAgo(dateStr) {
-  const diff = (Date.now() - new Date(dateStr)) / 1000;
-  if (diff < 60)   return 'Just now';
+function timeLabel(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+}
+
+function dateTimeLabel(value) {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+}
+
+function timeAgo(value) {
+  if (!value) return '';
+  const diff = Math.max(0, (Date.now() - new Date(value).getTime()) / 1000);
+  if (diff < 60) return 'Just now';
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
   if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
   return `${Math.floor(diff / 86400)}d ago`;
 }
 
-function fmtTime(str) {
-  if (!str) return '';
-  return str.slice(0, 5);
+function stripForSpeech(text = '') {
+  return String(text)
+    .replace(/[*_`>#•]/g, '')
+    .replace(/\s+/g, ' ')
+    .replace(/\n+/g, '. ')
+    .trim();
 }
 
-const isRtl = (t) => /[؀-ۿ]/.test(t);
 
-// ── Default chips by page context ─────────────────────────────
-function getDefaultChips(path, lang) {
-  const ar = lang === 'ar';
-  if (path.includes('/map')) {
-    return ar
-      ? ['ابحث عن غرفة', 'تنقل', 'جدولي اليوم', 'من أنت؟']
-      : ['Find a room', 'Navigate', 'My schedule', 'Who are you?'];
+function normalizeSpokenRoomText(value = '') {
+  let text = String(value || '').trim();
+  if (!text) return text;
+
+  const original = text;
+  const lower = text
+    .toLowerCase()
+    .replace(/[.,!?]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const roomCode = getRoomCodeFromSpeech(lower);
+  if (!roomCode) {
+    return original;
   }
-  if (path.includes('/schedule')) {
-    return ar
-      ? ['نسبة حضوري', 'وين القاعة؟', 'الإشعارات']
-      : ['My attendance', 'Find classroom', 'My notifications'];
+
+  // Keep short room-only voice commands clean in the chat bubble.
+  if (/^(rome|room|find|show|open|where is|where's|take me to|go to)?\s*(g|gee|b|bee|basement|ground|room|rome|[0-9])/i.test(lower)) {
+    return `Where is room ${roomCode}?`;
   }
-  return ar
-    ? ['جدولي اليوم', 'نسبة حضوري', 'ابحث عن غرفة', 'الإعلانات']
-    : ['My schedule today', 'My attendance', 'Find a room', 'Announcements'];
+
+  return original.replace(/\b(rome|room)\b/i, 'room');
 }
 
-// ── Rich card components ───────────────────────────────────────
+function getRoomCodeFromSpeech(value = '') {
+  const text = String(value || '')
+    .toLowerCase()
+    .replace(/\brome\b/g, 'room')
+    .replace(/\bgee\b/g, 'g')
+    .replace(/\bbee\b/g, 'b')
+    .replace(/\boh\b|\bo\b/g, 'zero')
+    .replace(/[-_]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 
-function ScheduleCard({ item, onShowMap }) {
-  return (
-    <div className={`chat-card chat-card--schedule ${item.is_current ? 'chat-card--active' : ''}`}>
-      <div className="chat-card-header">
-        <span className="chat-card-code">{item.code}</span>
-        {item.is_current && <span className="chat-card-live">Now</span>}
-        <span className="chat-card-time">{fmtTime(item.start_time)} – {fmtTime(item.end_time)}</span>
-      </div>
-      <div className="chat-card-title">{item.course_name}</div>
-      <div className="chat-card-meta">
-        <span>📍 {item.room_number}</span>
-        <span>👨‍🏫 {item.instructor}</span>
-      </div>
-      {item.room_id && (
-        <button className="chat-card-btn" onClick={() => onShowMap(item)}>
-          Show on Map
-        </button>
-      )}
-    </div>
-  );
+  const direct = text.match(/\b([gb])\s*0*([0-9]{3,4})\b/i);
+  if (direct) {
+    const prefix = direct[1].toUpperCase();
+    let digits = direct[2];
+    if (prefix === 'G' && digits.length === 3) digits = `0${digits}`;
+    if (prefix === 'B' && digits.length === 3) digits = `0${digits}`;
+    return `${prefix}${digits}`;
+  }
+
+  const prefixMatch = text.match(/\b(?:room\s+)?([gb])\s+(.+)$/i);
+  if (!prefixMatch) return null;
+
+  const prefix = prefixMatch[1].toUpperCase();
+  const tail = prefixMatch[2]
+    .replace(/\bnumber\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (prefix === 'G' && isSpoken180(tail)) return 'G0180';
+
+  if (prefix === 'B') {
+    const bFloor = tail.match(/^(one|two|1|2)\s+(.+)$/i);
+    if (bFloor && isSpoken180(bFloor[2])) {
+      return `B${wordDigit(bFloor[1])}180`;
+    }
+  }
+
+  const digits = wordsToDigits(tail);
+  if (!digits) return null;
+
+  if (prefix === 'G') {
+    return `G${digits.length === 3 ? `0${digits}` : digits}`;
+  }
+
+  if (prefix === 'B') {
+    return `B${digits.length === 3 ? `0${digits}` : digits}`;
+  }
+
+  return null;
 }
 
-function RoomCard({ item, onShowMap }) {
-  return (
-    <div className="chat-card chat-card--room">
-      <div className="chat-card-header">
-        <span className="chat-card-code">{item.room_number}</span>
-        <span className="chat-card-type">{item.type?.replace(/_/g, ' ')}</span>
-      </div>
-      <div className="chat-card-title">{item.name}</div>
-      <div className="chat-card-meta">
-        <span>🏢 {item.building_name}</span>
-        <span>🏬 {item.floor_label}</span>
-        {item.capacity && <span>👥 {item.capacity} seats</span>}
-      </div>
-      {item.room_id && (
-        <button className="chat-card-btn" onClick={() => onShowMap(item)}>
-          Show on Map
-        </button>
-      )}
-    </div>
-  );
+function wordDigit(token = '') {
+  const map = {
+    zero: '0', one: '1', two: '2', three: '3', four: '4', five: '5',
+    six: '6', seven: '7', eight: '8', nine: '9', ten: '10',
+    0: '0', 1: '1', 2: '2', 3: '3', 4: '4', 5: '5', 6: '6', 7: '7', 8: '8', 9: '9'
+  };
+  return map[String(token).toLowerCase()] || '';
 }
 
-function AttendanceCard({ item }) {
-  const pct = parseInt(item.percentage) || 0;
-  const tier = pct >= 75 ? 'good' : pct >= 50 ? 'warn' : 'bad';
-  return (
-    <div className={`chat-card chat-card--attendance chat-card--att-${tier}`}>
-      <div className="att-card-info">
-        <span className="att-card-code">{item.code}</span>
-        <span className="att-card-pct">{pct}%</span>
-      </div>
-      <div className="att-card-name">{item.course_name}</div>
-      <div className="att-card-bar">
-        <div className="att-bar-track">
-          <div className="att-bar-fill" style={{ width: `${Math.min(pct, 100)}%` }} />
-        </div>
-        <span className="att-bar-label">{item.present}/{item.total}</span>
-      </div>
-    </div>
-  );
+function wordsToDigits(value = '') {
+  const map = {
+    zero: '0', one: '1', two: '2', three: '3', four: '4', five: '5',
+    six: '6', seven: '7', eight: '8', nine: '9', oh: '0', o: '0'
+  };
+
+  return String(value || '')
+    .toLowerCase()
+    .split(/\s+/)
+    .map((part) => map[part] ?? (part.match(/^\d+$/) ? part : ''))
+    .join('')
+    .slice(0, 5);
 }
 
-function NotificationCard({ item }) {
-  return (
-    <div className={`chat-card chat-card--notif ${!item.is_read ? 'chat-card--unread' : ''}`}>
-      {!item.is_read && <div className="notif-unread-dot" />}
-      <div className="chat-card-title notif-title">{item.title}</div>
-      {item.body && (
-        <div className="chat-card-meta notif-body">
-          {item.body.length > 90 ? item.body.slice(0, 90) + '…' : item.body}
-        </div>
-      )}
-      <div className="notif-time">{timeAgo(item.created_at)}</div>
-    </div>
-  );
+function isSpoken180(value = '') {
+  const text = String(value || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  return /^(180|0180|one eighty|one eight zero|one zero eight zero|zero one eighty|zero one eight zero|eighteen zero|one hundred eighty)$/.test(text);
 }
 
-function AnnouncementCard({ item }) {
-  return (
-    <div className="chat-card chat-card--announcement">
-      {item.category && <span className="ann-cat">{item.category}</span>}
-      <div className="chat-card-title">{item.title}</div>
-      {item.body && (
-        <div className="chat-card-meta notif-body">
-          {item.body.length > 100 ? item.body.slice(0, 100) + '…' : item.body}
-        </div>
-      )}
-      <div className="notif-time">{timeAgo(item.created_at)}</div>
-    </div>
-  );
-}
-
-function Cards({ cards, onShowMap }) {
-  if (!cards?.items?.length) return null;
-  return (
-    <div className="chat-cards-wrap">
-      {cards.type === 'schedule' && cards.items.map((item, i) => (
-        <ScheduleCard key={i} item={item} onShowMap={onShowMap} />
-      ))}
-      {cards.type === 'rooms' && cards.items.map((item, i) => (
-        <RoomCard key={i} item={item} onShowMap={onShowMap} />
-      ))}
-      {cards.type === 'attendance' && cards.items.map((item, i) => (
-        <AttendanceCard key={i} item={item} />
-      ))}
-      {cards.type === 'notifications' && cards.items.map((item, i) => (
-        <NotificationCard key={i} item={item} />
-      ))}
-      {cards.type === 'announcements' && cards.items.map((item, i) => (
-        <AnnouncementCard key={i} item={item} />
-      ))}
-    </div>
-  );
-}
-
-// ── Text formatter (bold + line breaks) ───────────────────────
-function Fmt({ text }) {
+function FormattedText({ text }) {
   return (
     <>
-      {text.split('\n').map((line, i, arr) => (
+      {String(text || '').split('\n').map((line, i, arr) => (
         <span key={i}>
-          {line.split(/(\*\*[^*]+\*\*)/).map((p, j) =>
-            p.startsWith('**') && p.endsWith('**')
-              ? <strong key={j}>{p.slice(2, -2)}</strong>
-              : p
-          )}
+          {line.split(/(\*\*[^*]+\*\*)/g).map((part, j) => (
+            part.startsWith('**') && part.endsWith('**')
+              ? <strong key={j}>{part.slice(2, -2)}</strong>
+              : <React.Fragment key={j}>{part}</React.Fragment>
+          ))}
           {i < arr.length - 1 && <br />}
         </span>
       ))}
@@ -176,489 +166,579 @@ function Fmt({ text }) {
   );
 }
 
-// ── Main component ─────────────────────────────────────────────
-const INITIAL_MSG = {
-  id: 1, role: 'bot',
-  text: 'أهلاً! 👋 أنا مساعد النجاح الذكي.\nاكتب بالعربي أو الإنجليزي، أو اضغط 🎤 للتحدث.\n\nHello! I\'m Najah Smart Assistant.\nType in Arabic or English, or press 🎤 to speak.',
-  timestamp: new Date(),
-};
+function AssistantIcon({ size = 18 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M12 3 3 7.5 12 12l9-4.5L12 3Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+      <path d="M3 12l9 4.5 9-4.5" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+      <path d="M3 16.5 12 21l9-4.5" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function OpenIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M14 5h5v5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M19 5 10 14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <path d="M19 14v4a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function ScheduleCard({ item, onRoomOpen }) {
+  const hasRoom = Boolean(item.room_id || item.room_number);
+  return (
+    <article className={`chat-card chat-card--schedule ${item.is_current ? 'chat-card--active' : ''}`}>
+      <div className="chat-card-topline">
+        <span className="chat-card-code">{item.code}</span>
+        {item.is_current && <span className="chat-card-pill live">Now</span>}
+        <span className="chat-card-time">{fmtTime(item.start_time)} – {fmtTime(item.end_time)}</span>
+      </div>
+      <h4 className="chat-card-title">{item.course_name}</h4>
+      <div className="chat-card-meta-row">
+        <span>📍 {item.room_number || 'TBA'}</span>
+        {item.instructor && <span>👨‍🏫 {item.instructor}</span>}
+      </div>
+      {hasRoom && (
+        <button type="button" className="chat-card-action" onClick={() => onRoomOpen(item)}>
+          Open room <OpenIcon />
+        </button>
+      )}
+    </article>
+  );
+}
+
+function RoomCard({ item, onRoomOpen }) {
+  return (
+    <button type="button" className="chat-card chat-card--room chat-card--clickable" onClick={() => onRoomOpen(item)}>
+      <div className="chat-card-topline">
+        <span className="chat-card-code">{item.room_number}</span>
+        {item.type && <span className="chat-card-pill">{String(item.type).replace(/_/g, ' ')}</span>}
+      </div>
+      <h4 className="chat-card-title">{item.name || 'Room'}</h4>
+      <div className="chat-card-meta-row">
+        {item.building_name && <span>🏢 {item.building_name}</span>}
+        {item.floor_label && <span>🏬 {item.floor_label}</span>}
+        {item.capacity ? <span>👥 {item.capacity} seats</span> : null}
+      </div>
+      <span className="chat-card-action chat-card-action--inline">
+        Open this room <OpenIcon />
+      </span>
+    </button>
+  );
+}
+
+function AttendanceCard({ item }) {
+  const pct = Number(item.percentage || 0);
+  const tier = pct >= 75 ? 'good' : pct >= 60 ? 'warn' : 'bad';
+  return (
+    <article className={`chat-card chat-card--attendance chat-card--${tier}`}>
+      <div className="chat-card-topline">
+        <span className="chat-card-code">{item.code}</span>
+        <span className="chat-card-pill">{pct}%</span>
+      </div>
+      <h4 className="chat-card-title">{item.course_name}</h4>
+      <div className="chat-progress"><span style={{ width: `${Math.min(100, pct)}%` }} /></div>
+      <div className="chat-card-meta-row"><span>{item.present}/{item.total} attended</span></div>
+    </article>
+  );
+}
+
+function AssessmentCard({ item, onOpen }) {
+  const isQuiz = item.assessment_type === 'quiz';
+  return (
+    <button type="button" className="chat-card chat-card--assessment chat-card--clickable" onClick={() => onOpen(item)}>
+      <div className="chat-card-topline">
+        <span className="chat-card-code">{isQuiz ? 'Quiz' : 'Assignment'}</span>
+        <span className={`chat-card-pill ${String(item.status || '').toLowerCase().replace(/\s+/g, '-')}`}>{item.status || 'Available'}</span>
+      </div>
+      <h4 className="chat-card-title">{item.title}</h4>
+      <div className="chat-card-meta-row">
+        <span>{item.course_code} §{item.section_number}</span>
+        <span>Due {dateTimeLabel(item.closes_at)}</span>
+        {item.points ? <span>{Number(item.points)} pts</span> : null}
+      </div>
+      <span className="chat-card-action chat-card-action--inline">
+        Open {isQuiz ? 'quiz' : 'assignment'} <OpenIcon />
+      </span>
+    </button>
+  );
+}
+
+function NotificationCard({ item }) {
+  return (
+    <article className={`chat-card chat-card--notification ${!item.is_read ? 'chat-card--unread' : ''}`}>
+      <h4 className="chat-card-title">{item.title}</h4>
+      {item.body && <p className="chat-card-desc">{String(item.body).slice(0, 120)}</p>}
+      <div className="chat-card-meta-row"><span>{timeAgo(item.created_at)}</span></div>
+    </article>
+  );
+}
+
+function AnnouncementCard({ item }) {
+  return (
+    <article className="chat-card chat-card--announcement">
+      <h4 className="chat-card-title">{item.title}</h4>
+      {item.body && <p className="chat-card-desc">{String(item.body).slice(0, 120)}</p>}
+      <div className="chat-card-meta-row"><span>{timeAgo(item.created_at || item.published_at)}</span></div>
+    </article>
+  );
+}
+
+function Cards({ cards, onRoomOpen, onAssessmentOpen }) {
+  if (!cards?.items?.length) return null;
+  return (
+    <div className="chat-cards-wrap">
+      {cards.type === 'schedule' && cards.items.map((item, index) => (
+        <ScheduleCard key={`${item.section_id || item.code}-${index}`} item={item} onRoomOpen={onRoomOpen} />
+      ))}
+      {cards.type === 'rooms' && cards.items.map((item, index) => (
+        <RoomCard key={`${item.room_id || item.id || item.room_number}-${index}`} item={item} onRoomOpen={onRoomOpen} />
+      ))}
+      {cards.type === 'attendance' && cards.items.map((item, index) => (
+        <AttendanceCard key={`${item.code}-${index}`} item={item} />
+      ))}
+      {cards.type === 'assessments' && cards.items.map((item, index) => (
+        <AssessmentCard key={`${item.id}-${index}`} item={item} onOpen={onAssessmentOpen} />
+      ))}
+      {cards.type === 'notifications' && cards.items.map((item, index) => (
+        <NotificationCard key={`${item.id}-${index}`} item={item} />
+      ))}
+      {cards.type === 'announcements' && cards.items.map((item, index) => (
+        <AnnouncementCard key={`${item.id}-${index}`} item={item} />
+      ))}
+    </div>
+  );
+}
+
+function initialMessage(user) {
+  const name = user?.first_name ? `, ${user.first_name}` : '';
+  return {
+    id: 1,
+    role: 'bot',
+    text: `Hello${name}! I’m Najah Assistant. Ask me about your schedule, quizzes, assignments, attendance, or any campus room.`,
+    timestamp: new Date()
+  };
+}
 
 export default function Chatbot() {
-  const { user }    = useAuth();
-  const navigate    = useNavigate();
-  const location    = useLocation();
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
 
-  const [open,        setOpen]        = useState(false);
-  const [messages,    setMessages]    = useState([INITIAL_MSG]);
-  const [history,     setHistory]     = useState([]);
-  const [input,       setInput]       = useState('');
-  const [loading,     setLoading]     = useState(false);
-  const [listening,   setListening]   = useState(false);
-  const [lang,        setLang]        = useState('ar');
-  const [chips,       setChips]       = useState(() => getDefaultChips(location.pathname, 'ar'));
+  const [open, setOpen] = useState(false);
+  const [messages, setMessages] = useState(() => [initialMessage(user)]);
+  const [history, setHistory] = useState([]);
+  const [input, setInput] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [listening, setListening] = useState(false);
 
-  const bodyRef   = useRef(null);
-  const inputRef  = useRef(null);
-  const recRef    = useRef(null);
+  const bodyRef = useRef(null);
+  const inputRef = useRef(null);
+  const recRef = useRef(null);
+  const voicesLoadedRef = useRef(false);
 
-  // Scroll to bottom whenever messages change
+  const unread = useMemo(
+    () => messages.filter((msg) => msg.role === 'bot' && msg.id !== 1).length,
+    [messages]
+  );
+
   useEffect(() => {
-    bodyRef.current?.scrollTo({ top: bodyRef.current.scrollHeight, behavior: 'smooth' });
-  }, [messages, loading]);
-
-  // Focus input on open
-  useEffect(() => {
-    if (open) setTimeout(() => inputRef.current?.focus(), 160);
-  }, [open]);
-
-  // Update chips when page changes
-  useEffect(() => {
-    setChips(getDefaultChips(location.pathname, lang));
-  }, [location.pathname]);
-
-  // Personalize greeting once user loads
-  useEffect(() => {
-    if (user?.first_name) {
-      setMessages(prev => {
-        if (prev[0]?.id !== 1) return prev;
-        const greeting = lang === 'ar'
-          ? `أهلاً ${user.first_name}! 👋 أنا مساعد النجاح الذكي.\nاكتب بالعربي أو الإنجليزي، أو اضغط 🎤 للتحدث.`
-          : `Hello ${user.first_name}! 👋 I'm Najah Smart Assistant.\nType in Arabic or English, or press 🎤 to speak.`;
-        return [{ ...prev[0], text: greeting }, ...prev.slice(1)];
-      });
-    }
+    setMessages((prev) => {
+      if (prev.length !== 1 || prev[0]?.id !== 1) return prev;
+      return [initialMessage(user)];
+    });
   }, [user]);
 
-  // ── Send message ───────────────────────────────────────────
-  const sendMessage = useCallback(async (text) => {
-    const msg = (text || input).trim();
-    if (!msg || loading) return;
+  useEffect(() => {
+    bodyRef.current?.scrollTo({ top: bodyRef.current.scrollHeight, behavior: 'smooth' });
+  }, [messages, loading, open]);
 
-    const arabicMsg = isRtl(msg);
-    const newLang = arabicMsg ? 'ar' : 'en';
+  useEffect(() => {
+    if (open) window.setTimeout(() => inputRef.current?.focus(), 120);
+  }, [open, location.pathname]);
 
-    setInput('');
-    setLang(newLang);
-    setLoading(true);
+  useEffect(() => {
+    if (!window.speechSynthesis) return undefined;
+    const loadVoices = () => {
+      window.speechSynthesis.getVoices();
+      voicesLoadedRef.current = true;
+    };
+    loadVoices();
+    window.speechSynthesis.onvoiceschanged = loadVoices;
+    return () => {
+      window.speechSynthesis.onvoiceschanged = null;
+    };
+  }, []);
 
-    if (inputRef.current) {
-      inputRef.current.style.height = 'auto';
+  const pickFemaleVoice = useCallback(() => {
+    if (!window.speechSynthesis) return null;
+    const voices = window.speechSynthesis.getVoices().filter((voice) => /^en[-_]/i.test(voice.lang || ''));
+    if (!voices.length) return null;
+
+    const preferredNames = [
+      'Jenny',
+      'Aria',
+      'Samantha',
+      'Zira',
+      'Susan',
+      'Hazel',
+      'Google US English',
+      'Google UK English Female',
+      'Microsoft Aria',
+      'Microsoft Jenny',
+      'Microsoft Zira'
+    ];
+
+    return voices.find((voice) => preferredNames.some((name) => voice.name?.toLowerCase().includes(name.toLowerCase())))
+      || voices.find((voice) => /female|woman|jenny|aria|samantha|zira|susan|hazel/i.test(voice.name || ''))
+      || voices.find((voice) => /en-US/i.test(voice.lang))
+      || voices[0];
+  }, []);
+
+  const speak = useCallback((text) => {
+    if (!window.speechSynthesis) return;
+    const clean = stripForSpeech(text);
+    if (!clean) return;
+
+    window.speechSynthesis.cancel();
+
+    const utterance = new SpeechSynthesisUtterance(clean);
+    utterance.lang = 'en-US';
+    utterance.rate = 0.82;
+    utterance.pitch = 1.08;
+    utterance.volume = 0.95;
+
+    const run = () => {
+      const voice = pickFemaleVoice();
+      if (voice) utterance.voice = voice;
+      window.speechSynthesis.speak(utterance);
+    };
+
+    if (!voicesLoadedRef.current) {
+      window.setTimeout(run, 150);
+    } else {
+      run();
     }
+  }, [pickFemaleVoice]);
+
+  const openRoomOnMap = useCallback((item) => {
+    const roomNumber = item.room_number || item.roomNumber || item.room || item.office;
+    const roomId = item.room_id || item.id || item.dbId;
+    const floorId = item.floor_id;
+
+    if (!roomNumber && !roomId) {
+      navigate('/map');
+      setOpen(false);
+      return;
+    }
+
+    // From the chatbot, go to the map and select/highlight the room only.
+    // Do not add open=1, because that opens the full room details popup.
+    const query = roomNumber
+      ? `?room=${encodeURIComponent(roomNumber)}`
+      : `?roomId=${encodeURIComponent(roomId)}`;
+
+    navigate(`/map${query}`, {
+      state: {
+        roomId,
+        roomNumber,
+        floorId,
+        openRoom: false,
+        fromChatbot: true
+      }
+    });
+    setOpen(false);
+  }, [navigate]);
+
+  const openAssessment = useCallback((item) => {
+    navigate('/assessments', {
+      state: {
+        assessmentId: item.id,
+        assessmentType: item.assessment_type,
+        fromChatbot: true
+      }
+    });
+    setOpen(false);
+  }, [navigate]);
+
+  const handleAction = useCallback((action) => {
+    if (!action) return;
+    if (action.type === 'show_room' || action.type === 'open_map') {
+      openRoomOnMap(action);
+    } else if (action.type === 'show_schedule') {
+      navigate('/schedule');
+      setOpen(false);
+    } else if (action.type === 'show_assessments') {
+      navigate('/assessments');
+      setOpen(false);
+    }
+  }, [navigate, openRoomOnMap]);
+
+  const sendMessage = useCallback(async (value) => {
+    const rawText = String(value ?? input).trim();
+    const text = normalizeSpokenRoomText(rawText);
+    if (!text || loading) return;
 
     const userMessage = {
       id: Date.now(),
       role: 'user',
-      text: msg,
-      timestamp: new Date(),
+      text,
+      timestamp: new Date()
     };
-
     const thinkingMessage = {
       id: `thinking-${Date.now()}`,
       role: 'bot',
       text: '',
       isThinking: true,
-      timestamp: new Date(),
+      timestamp: new Date()
     };
 
-    setMessages(prev => [...prev, userMessage, thinkingMessage]);
+    setInput('');
+    setLoading(true);
+    setMessages((prev) => [...prev, userMessage, thinkingMessage]);
 
     try {
-      const { data } = await axiosInstance.post('/chat', {
-        message: msg,
-        history: history.slice(-6),
+      const response = await axiosInstance.post('/chat', {
+        message: text,
+        history: history.slice(-8),
         user_context: user
           ? { name: user.first_name, student_id: user.student_id, role: user.role }
-          : null,
+          : null
       });
 
-      const reply = data.data;
+      const reply = response.data?.data || {};
+      const botText = reply.message || 'I could not prepare an answer right now.';
+      const botMessage = {
+        id: Date.now() + 1,
+        role: 'bot',
+        text: botText,
+        cards: reply.cards || null,
+        action: reply.action || null,
+        timestamp: new Date()
+      };
 
-      setHistory(prev => [
+      setHistory((prev) => [
         ...prev,
-        { role: 'user',  text: msg },
-        { role: 'model', text: reply.message },
+        { role: 'user', text },
+        { role: 'model', text: botText }
+      ].slice(-12));
+
+      setMessages((prev) => [
+        ...prev.filter((msg) => !String(msg.id).startsWith('thinking-')),
+        botMessage
       ]);
 
-      setMessages(prev => [
-        ...prev.filter(m => !String(m.id).startsWith('thinking')),
-        {
-          id: Date.now() + 1,
-          role: 'bot',
-          text: reply.message,
-          cards: reply.cards || null,
-          action: reply.action || null,
-          followUp: reply.follow_up || null,
-          timestamp: new Date(),
-        },
-      ]);
-
-      if (reply.follow_up?.length) {
-        setChips(reply.follow_up);
-      } else {
-        setChips(getDefaultChips(location.pathname, newLang));
-      }
+      window.setTimeout(() => speak(botText), 220);
     } catch (error) {
       console.error('Chatbot error:', error);
-
-      setMessages(prev => [
-        ...prev.filter(m => !String(m.id).startsWith('thinking')),
+      const fallback = 'Sorry, I could not reach the Smart Campus server. Please make sure the backend is running and try again.';
+      setMessages((prev) => [
+        ...prev.filter((msg) => !String(msg.id).startsWith('thinking-')),
         {
           id: Date.now() + 1,
           role: 'bot',
+          text: fallback,
           isError: true,
-          timestamp: new Date(),
-          text: arabicMsg
-            ? 'عذراً، حدث خطأ. تأكد أن السيرفر يعمل ثم حاول مرة أخرى.'
-            : 'Sorry, something went wrong. Make sure the backend is running, then try again.',
-        },
+          timestamp: new Date()
+        }
       ]);
+      window.setTimeout(() => speak(fallback), 220);
     } finally {
       setLoading(false);
-      setTimeout(() => inputRef.current?.focus(), 60);
+      window.setTimeout(() => inputRef.current?.focus(), 80);
     }
-  }, [input, loading, history, user, location.pathname]);
+  }, [history, input, loading, speak, user]);
 
-  // ── Voice input ────────────────────────────────────────────
-  const toggleVoice = () => {
+  const toggleVoice = useCallback(() => {
     if (listening) {
       recRef.current?.stop();
       setListening(false);
       return;
     }
 
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-
-    if (!SR) {
-      setMessages(prev => [
-        ...prev,
-        {
-          id: Date.now(),
-          role: 'bot',
-          isError: true,
-          timestamp: new Date(),
-          text: lang === 'ar'
-            ? 'التعرف على الصوت يعمل بشكل أفضل على Google Chrome.'
-            : 'Voice recognition works best in Google Chrome.',
-        },
-      ]);
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      const msg = 'Voice input works best in Google Chrome.';
+      setMessages((prev) => [...prev, { id: Date.now(), role: 'bot', text: msg, isError: true, timestamp: new Date() }]);
+      speak(msg);
       return;
     }
 
-    const rec = new SR();
-    rec.lang = lang === 'ar' ? 'ar-PS' : 'en-US';
-    rec.continuous = false;
-    rec.interimResults = false;
-    rec.maxAlternatives = 1;
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'en-US';
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
 
-    rec.onstart = () => setListening(true);
-
-    rec.onresult = (event) => {
+    recognition.onstart = () => setListening(true);
+    recognition.onend = () => setListening(false);
+    recognition.onerror = () => {
+      setListening(false);
+      const msg = 'I could not hear you clearly. Please try again.';
+      setMessages((prev) => [...prev, { id: Date.now(), role: 'bot', text: msg, isError: true, timestamp: new Date() }]);
+      speak(msg);
+    };
+    recognition.onresult = (event) => {
       const transcript = event.results?.[0]?.[0]?.transcript?.trim();
       setListening(false);
-
-      if (transcript) {
-        // Voice messages are sent immediately. Typed messages still need the send button or Enter.
-        sendMessage(transcript);
-      }
+      if (transcript) sendMessage(transcript);
     };
 
-    rec.onerror = () => {
-      setListening(false);
-      setMessages(prev => [
-        ...prev,
-        {
-          id: Date.now(),
-          role: 'bot',
-          isError: true,
-          timestamp: new Date(),
-          text: lang === 'ar'
-            ? 'لم أستطع سماعك بوضوح. حاول مرة أخرى.'
-            : 'I could not hear you clearly. Please try again.',
-        },
-      ]);
-    };
+    recRef.current = recognition;
+    recognition.start();
+  }, [listening, sendMessage, speak]);
 
-    rec.onend = () => setListening(false);
-    recRef.current = rec;
-    rec.start();
+  const handleInputChange = (event) => {
+    setInput(event.target.value);
+    event.target.style.height = 'auto';
+    event.target.style.height = `${Math.min(event.target.scrollHeight, 90)}px`;
   };
 
-  // ── TTS ────────────────────────────────────────────────────
-  const speak = (text, msgLang) => {
-    if (!window.speechSynthesis) return;
-    window.speechSynthesis.cancel();
-    const clean = text.replace(/[*•]/g, '').replace(/\n/g, '. ');
-    const u     = new SpeechSynthesisUtterance(clean);
-    u.lang      = msgLang === 'ar' ? 'ar-SA' : 'en-US';
-    u.rate      = 0.9;
-    const voice = window.speechSynthesis.getVoices()
-      .find(v => v.lang.startsWith(msgLang === 'ar' ? 'ar' : 'en'));
-    if (voice) u.voice = voice;
-    window.speechSynthesis.speak(u);
-  };
-
-  // ── Map navigation action ──────────────────────────────────
-  const handleAction = (action) => {
-    if (!action) return;
-    if (action.type === 'show_room' || action.type === 'open_map') {
-      navigate('/map', { state: { roomId: action.room_id, floorId: action.floor_id } });
-      setOpen(false);
+  const handleKeyDown = (event) => {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      sendMessage();
     }
-    if (action.type === 'show_schedule') { navigate('/schedule'); setOpen(false); }
-  };
-
-  const handleShowMap = (item) => {
-    if (item.room_id || item.floor_id) {
-      navigate('/map', { state: { roomId: item.room_id, floorId: item.floor_id } });
-      setOpen(false);
-    }
-  };
-
-  // ── Input auto-resize ──────────────────────────────────────
-  const handleInputChange = (e) => {
-    setInput(e.target.value);
-    e.target.style.height = 'auto';
-    e.target.style.height = Math.min(e.target.scrollHeight, 96) + 'px';
-  };
-
-  const handleKey = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
   };
 
   const clearChat = () => {
-    setMessages([INITIAL_MSG]);
+    window.speechSynthesis?.cancel();
     setHistory([]);
-    setChips(getDefaultChips(location.pathname, lang));
+    setMessages([initialMessage(user)]);
   };
-
-  const unread = messages.filter(m => m.role === 'bot' && m.id !== 1).length;
 
   return (
     <>
-      {/* ── Toggle Button ──────────────────────────────────── */}
       <button
         id="chatbot-toggler"
         className={open ? 'open' : ''}
-        onClick={() => setOpen(o => !o)}
-        aria-label="Toggle chatbot"
+        onClick={() => setOpen((current) => !current)}
+        aria-label="Toggle Najah Assistant"
       >
         <span className="toggler-icon">
           {open ? (
-            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-              <line x1="4" y1="4" x2="16" y2="16" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/>
-              <line x1="16" y1="4" x2="4" y2="16"  stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/>
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+              <path d="M4 4l12 12M16 4 4 16" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
             </svg>
           ) : (
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-              <path d="M20 2H4a2 2 0 0 0-2 2v18l4-4h14a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round"/>
-              <line x1="8" y1="9"  x2="16" y2="9"  stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-              <line x1="8" y1="13" x2="13" y2="13" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M20 3H4a2 2 0 0 0-2 2v16l4-4h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+              <path d="M7 9h10M7 13h6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
             </svg>
           )}
         </span>
-        {!open && unread > 0 && (
-          <span className="chatbot-badge">{unread > 9 ? '9+' : unread}</span>
-        )}
+        {!open && unread > 0 && <span className="chatbot-badge">{unread > 9 ? '9+' : unread}</span>}
       </button>
 
-      {/* ── Chat Popup ─────────────────────────────────────── */}
-      <div className={`chatbot-popup ${open ? 'open' : ''}`}>
-
-        {/* Header */}
-        <div className="chat-header">
+      <section className={`chatbot-popup ${open ? 'open' : ''}`} aria-label="Najah Assistant">
+        <header className="chat-header">
           <div className="chat-header-left">
-            <div className="chat-avatar">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-                <path d="M12 3L2 8l10 5 10-5-10-5Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/>
-                <path d="M2 16l10 5 10-5" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/>
-                <path d="M2 12l10 5 10-5" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/>
-              </svg>
-            </div>
+            <div className="chat-avatar"><AssistantIcon size={22} /></div>
             <div>
-              <h2 className="chat-name">مساعد النجاح</h2>
-              <p className="chat-status">
-                <span className="status-dot" />
-                Najah Smart Assistant
-              </p>
+              <h2 className="chat-name">Najah Assistant</h2>
+              <p className="chat-status"><span className="status-dot" /> Smart Campus database assistant</p>
             </div>
           </div>
           <div className="chat-header-right">
-            <button
-              className="chat-hdr-btn"
-              onClick={() => setLang(l => {
-                const nl = l === 'ar' ? 'en' : 'ar';
-                setChips(getDefaultChips(location.pathname, nl));
-                return nl;
-              })}
-              title="Switch language"
-            >
-              {lang === 'ar' ? 'EN' : 'AR'}
-            </button>
-            <button className="chat-hdr-btn chat-hdr-btn--ghost" onClick={clearChat} title="Clear chat">
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-                <path d="M2 4h12M5 4V2h6v2M6 7v5M10 7v5M3 4l1 10h8l1-10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            <button className="chat-hdr-btn chat-hdr-btn--ghost" onClick={clearChat} title="Clear chat" aria-label="Clear chat">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <path d="M2 4h12M5 4V2h6v2M6 7v5M10 7v5M3 4l1 10h8l1-10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </button>
-            <button className="chat-hdr-btn chat-hdr-btn--ghost" onClick={() => setOpen(false)}>
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-                <line x1="3" y1="3" x2="13" y2="13" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-                <line x1="13" y1="3" x2="3" y2="13"  stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+            <button className="chat-hdr-btn chat-hdr-btn--ghost" onClick={() => setOpen(false)} title="Close" aria-label="Close assistant">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <path d="M3 3l10 10M13 3 3 13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
               </svg>
             </button>
           </div>
-        </div>
+        </header>
 
-        {/* Body */}
-        <div className="chat-body" ref={bodyRef}>
-          {messages.map(msg => (
-            <div
-              key={msg.id}
-              className={`message ${msg.role === 'bot' ? 'bot-msg' : 'user-msg'} ${msg.isError ? 'msg-error' : ''}`}
-              dir={isRtl(msg.text) ? 'rtl' : 'ltr'}
-            >
-              {msg.role === 'bot' && (
-                <div className="bot-avatar">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                    <path d="M12 3L2 8l10 5 10-5-10-5Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/>
-                    <path d="M2 12l10 5 10-5" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/>
-                  </svg>
-                </div>
-              )}
-
+        <main className="chat-body" ref={bodyRef}>
+          {messages.map((msg) => (
+            <div key={msg.id} className={`message ${msg.role === 'bot' ? 'bot-msg' : 'user-msg'} ${msg.isError ? 'msg-error' : ''}`}>
+              {msg.role === 'bot' && <div className="bot-avatar"><AssistantIcon size={15} /></div>}
               <div className="msg-body">
-                {/* Text bubble */}
                 {msg.isThinking ? (
-                  <div className="thinking-dots">
-                    <span/><span/><span/>
-                  </div>
+                  <div className="thinking-dots"><span /><span /><span /></div>
                 ) : (
-                  <div className="msg-bubble">
-                    <p className="msg-text"><Fmt text={msg.text} /></p>
-                  </div>
+                  <div className="msg-bubble"><p className="msg-text"><FormattedText text={msg.text} /></p></div>
                 )}
 
-                {/* Rich cards */}
-                {msg.cards && !msg.isThinking && (
-                  <Cards cards={msg.cards} onShowMap={handleShowMap} />
+                {!msg.isThinking && msg.cards && (
+                  <Cards cards={msg.cards} onRoomOpen={openRoomOnMap} onAssessmentOpen={openAssessment} />
                 )}
 
-                {/* Action buttons */}
                 {!msg.isThinking && msg.action && (
                   <div className="msg-actions">
                     {(msg.action.type === 'show_room' || msg.action.type === 'open_map') && (
                       <button className="msg-action-btn" onClick={() => handleAction(msg.action)}>
-                        <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
-                          <rect x="1" y="3" width="14" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.5"/>
-                          <path d="M5 8.5a3 3 0 1 0 6 0 3 3 0 0 0-6 0Z" stroke="currentColor" strokeWidth="1.5"/>
-                          <path d="M8 8.5V6.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                        </svg>
-                        {isRtl(msg.text) ? 'عرض على الخريطة' : 'Show on Map'}
+                        Open on Campus Map <OpenIcon />
                       </button>
                     )}
                     {msg.action.type === 'show_schedule' && (
-                      <button className="msg-action-btn" onClick={() => handleAction(msg.action)}>
-                        📅 {isRtl(msg.text) ? 'عرض الجدول' : 'View Schedule'}
-                      </button>
+                      <button className="msg-action-btn" onClick={() => handleAction(msg.action)}>Open Schedule <OpenIcon /></button>
+                    )}
+                    {msg.action.type === 'show_assessments' && (
+                      <button className="msg-action-btn" onClick={() => handleAction(msg.action)}>Open Assignments & Quizzes <OpenIcon /></button>
                     )}
                   </div>
                 )}
 
-                {/* TTS + timestamp */}
                 {msg.role === 'bot' && !msg.isThinking && (
-                  <div className="msg-meta">
-                    <button
-                      className="tts-btn"
-                      onClick={() => speak(msg.text, isRtl(msg.text) ? 'ar' : 'en')}
-                      title="Listen"
-                    >
-                      <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
-                        <path d="M3 5.5H1v5h2l4 3v-11L3 5.5Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
-                        <path d="M11.5 5.5a3.5 3.5 0 0 1 0 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                        <path d="M13.5 3.5a6 6 0 0 1 0 9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                      </svg>
-                    </button>
-                    <span className="msg-time">
-                      {msg.timestamp instanceof Date
-                        ? msg.timestamp.toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit' })
-                        : ''}
-                    </span>
-                  </div>
+                  <div className="msg-meta"><span className="msg-time">{timeLabel(msg.timestamp)}</span></div>
                 )}
               </div>
             </div>
           ))}
-        </div>
+        </main>
 
-        {/* Quick chips */}
-        {chips.length > 0 && (
-          <div className="chat-chips" dir="auto">
-            {chips.map((chip, i) => (
-              <button
-                key={i}
-                className="chip"
-                onClick={() => sendMessage(chip)}
-                disabled={loading}
-              >
-                {chip}
-              </button>
-            ))}
-          </div>
-        )}
-
-        {/* Footer */}
-        <div className="chat-footer">
+        <footer className="chat-footer">
           <div className={`chat-form ${loading ? 'loading' : ''}`}>
             <button
+              type="button"
               className={`voice-btn ${listening ? 'listening' : ''}`}
               onClick={toggleVoice}
-              title={lang === 'ar' ? 'تحدث' : 'Speak'}
+              title="Speak"
+              aria-label="Speak to Najah Assistant"
             >
               {listening ? (
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                  <rect x="2"  y="4" width="3" height="8" rx="1"/>
-                  <rect x="6.5" y="2" width="3" height="12" rx="1"/>
-                  <rect x="11" y="5" width="3" height="6" rx="1"/>
+                <svg width="17" height="17" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                  <rect x="2" y="5" width="3" height="6" rx="1" />
+                  <rect x="6.5" y="2" width="3" height="12" rx="1" />
+                  <rect x="11" y="4" width="3" height="8" rx="1" />
                 </svg>
               ) : (
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                  <rect x="5" y="1" width="6" height="9" rx="3" stroke="currentColor" strokeWidth="1.5"/>
-                  <path d="M2 8a6 6 0 0 0 12 0" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                  <line x1="8" y1="14" x2="8" y2="16" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                <svg width="17" height="17" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <path d="M8 10.5a2.5 2.5 0 0 0 2.5-2.5V4A2.5 2.5 0 0 0 5.5 4v4A2.5 2.5 0 0 0 8 10.5Z" stroke="currentColor" strokeWidth="1.5" />
+                  <path d="M3.5 8a4.5 4.5 0 0 0 9 0M8 12.5V15M6 15h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
                 </svg>
               )}
             </button>
-
             <textarea
               ref={inputRef}
-              className="msg-input"
               value={input}
               onChange={handleInputChange}
-              onKeyDown={handleKey}
-              placeholder={lang === 'ar' ? 'اكتب رسالتك...' : 'Type your message...'}
+              onKeyDown={handleKeyDown}
+              placeholder="Ask about your schedule, quizzes, attendance, or a room..."
               rows={1}
               disabled={loading}
-              dir={isRtl(input) ? 'rtl' : 'ltr'}
             />
-
             <button
+              type="button"
               className="send-btn"
               onClick={() => sendMessage()}
               disabled={!input.trim() || loading}
+              aria-label="Send message"
             >
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                <path d="M14 2L2 7.5 7.5 9M14 2L9 14 7.5 9M14 2L7.5 9" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+              <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                <path d="M17.5 2.5 8.5 11.5M17.5 2.5l-5 15-4-6-6-4 15-5Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
               </svg>
             </button>
           </div>
-
-          {listening && (
-            <div className="listening-bar">
-              <span/><span/><span/>
-              <p>{lang === 'ar' ? 'جاري الاستماع...' : 'Listening...'}</p>
-            </div>
-          )}
-        </div>
-      </div>
+        </footer>
+      </section>
     </>
   );
 }
