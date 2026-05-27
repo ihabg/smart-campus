@@ -60,7 +60,8 @@
       "Bash(xargs ls -1)",
       "Bash(xargs ls)",
       "Bash(npx react-scripts *)",
-      "Bash(node -e \"require\\('./controllers/studyPlanController.js'\\); console.log\\('OK'\\);\")"
+      "Bash(node -e \"require\\('./controllers/studyPlanController.js'\\); console.log\\('OK'\\);\")",
+      "Bash(xargs grep -l \"CREATE TABLE rooms\")"
     ]
   }
 }

@@ -258,7 +258,11 @@ export const mapEditorAPI = {
 };
 // ─── roomTypeAPI ─────────────────────────────────────────────
 export const roomTypeAPI = {
-  getAll: () => api.get('/room-types'),
+  getAll:        ()        => api.get('/room-types'),
+  adminList:     ()        => api.get('/room-types/admin'),
+  adminCreate:   (data)    => api.post('/room-types', data),
+  adminUpdate:   (id, data) => api.patch(`/room-types/${id}`, data),
+  adminToggle:   (id)      => api.patch(`/room-types/${id}/toggle`),
 };
 
 // ─── enrollmentAPI ────────────────────────────────────────────
