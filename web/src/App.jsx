@@ -36,6 +36,7 @@ import SemesterManagementPage from './pages/admin/SemesterManagementPage';
 import AdminStudyPlansPage from './pages/admin/AdminStudyPlansPage';
 import AdminCoursesPage    from './pages/admin/AdminCoursesPage';
 import AdminDoctorsPage    from './pages/admin/AdminDoctorsPage';
+import AdminActivityLogPage from './pages/admin/AdminActivityLogPage';
 import ProfessorDashboard from './pages/ProfessorDashboard';
 import ProfessorAssessmentsPage from './pages/ProfessorAssessmentsPage';
 import './styles/variables.css';
@@ -136,8 +137,9 @@ export default function App() {
   <Route path="/admin/courses"       element={<AdminCoursesPage />} />
   <Route path="/admin/doctors"       element={<AdminDoctorsPage />} />
   <Route path="/admin/schedule"      element={<AdminSchedule />} />
-  <Route path="/admin/notifications" element={<AdminNotifications />} />
-  <Route path="/admin/announcements" element={<AdminAnnouncements />} />
+  <Route path="/admin/notifications"  element={<AdminNotifications />} />
+  <Route path="/admin/announcements"  element={<AdminAnnouncements />} />
+  <Route path="/admin/activity-log"   element={<AdminActivityLogPage />} />
 </Route>
 
           <Route path="*" element={

@@ -1,4 +1,5 @@
 const { query, withTransaction } = require('../config/db');
+const { logActivity } = require('../utils/activityLogger');
 
 // ─── Room types that are valid venues for event bookings ────────
 const EVENT_BOOKABLE_TYPES = [
@@ -259,7 +260,7 @@ async function createEvent(req, res, next) {
       return res.status(400).json({ success: false, message: 'Invalid event_date.' });
 
     // ── Verify room exists and is event-bookable ──────────────
-    const roomCheck = await query('SELECT id, type::text AS type FROM rooms WHERE id = $1', [room_id]);
+    const roomCheck = await query('SELECT id, type::text AS type, room_number FROM rooms WHERE id = $1', [room_id]);
     if (!roomCheck.rows.length)
       return res.status(404).json({ success: false, message: 'Room not found.' });
     if (!EVENT_BOOKABLE_TYPES.includes(roomCheck.rows[0].type))
@@ -538,6 +539,26 @@ async function createEvent(req, res, next) {
       };
     });
 
+    const ev = txResult.event;
+    await logActivity({
+      req,
+      action:      'event.create',
+      entityType:  'event',
+      entityId:    ev.id,
+      entityLabel: ev.title,
+      description: `Created event booking: ${ev.title} on ${ev.event_date}`,
+      metadata: {
+        title:               ev.title,
+        room_id:             ev.room_id,
+        room_number:         roomCheck.rows[0].room_number,
+        event_date:          ev.event_date,
+        start_time:          ev.start_time,
+        end_time:            ev.end_time,
+        relocations_created: txResult.relocations_created,
+        notifications_sent:  txResult.notifications_sent,
+      },
+    });
+
     res.status(201).json({ success: true, data: txResult });
   } catch (error) {
     next(error);
@@ -708,6 +729,21 @@ async function cancelEvent(req, res, next) {
         relocations_cancelled: relocations.length,
         notifications_sent:    notificationsSent,
       };
+    });
+
+    const cancelled = txResult.event;
+    await logActivity({
+      req,
+      action:      'event.cancel',
+      entityType:  'event',
+      entityId:    cancelled.id,
+      entityLabel: cancelled.title,
+      description: `Cancelled event booking: ${cancelled.title} on ${cancelled.event_date}`,
+      metadata: {
+        event_date:            cancelled.event_date,
+        relocations_cancelled: txResult.relocations_cancelled,
+        notifications_sent:    txResult.notifications_sent,
+      },
     });
 
     res.json({ success: true, data: txResult });

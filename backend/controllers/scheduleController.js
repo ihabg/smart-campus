@@ -1,4 +1,5 @@
 const { query, withTransaction } = require('../config/db');
+const { logActivity } = require('../utils/activityLogger');
 
 const DASHBOARD_SEMESTER = 'spring';
 const DASHBOARD_ACADEMIC_YEAR = '2025/2026';
@@ -2014,7 +2015,7 @@ async function adminEnrollStudent(req, res, next) {
 
     const [secRes, userRes, existingRes] = await Promise.all([
       query('SELECT id, max_capacity, enrolled, course_id, semester, academic_year FROM sections WHERE id = $1 AND is_active = TRUE', [section_id]),
-      query("SELECT id FROM users WHERE id = $1 AND role = 'student'", [student_id]),
+      query("SELECT id, first_name, last_name, student_id AS sid FROM users WHERE id = $1 AND role = 'student'", [student_id]),
       query('SELECT status FROM enrollments WHERE student_id = $1 AND section_id = $2', [student_id, section_id]),
     ]);
 
@@ -2090,6 +2091,25 @@ async function adminEnrollStudent(req, res, next) {
       [section_id]
     );
 
+    const stu = userRes.rows[0];
+    await logActivity({
+      req,
+      action:      'enrollment.add',
+      entityType:  'enrollment',
+      entityId:    section_id,
+      entityLabel: stu ? `${stu.first_name} ${stu.last_name}` : student_id,
+      description: `Enrolled student ${stu ? stu.first_name + ' ' + stu.last_name : student_id} in section ${section_id}`,
+      metadata: {
+        student_id,
+        student_sid:  stu?.sid  || null,
+        section_id,
+        course_id:    secRes.rows[0]?.course_id    || null,
+        semester:     secRes.rows[0]?.semester     || null,
+        academic_year: secRes.rows[0]?.academic_year || null,
+        forced:       !!force,
+      },
+    });
+
     res.status(201).json({
       success: true,
       message: force ? 'Student force enrolled successfully.' : 'Student enrolled successfully.',
@@ -2105,6 +2125,16 @@ async function adminEnrollStudent(req, res, next) {
 async function adminRemoveEnrollment(req, res, next) {
   try {
     const { sectionId, studentId } = req.params;
+
+    // Pre-fetch for activity log (non-critical)
+    let stuSnap = null;
+    try {
+      const r = await query(
+        'SELECT first_name, last_name, student_id AS sid FROM users WHERE id = $1',
+        [studentId]
+      );
+      stuSnap = r.rows[0] || null;
+    } catch (_) {}
 
     await withTransaction(async client => {
       const result = await client.query(
@@ -2131,6 +2161,20 @@ async function adminRemoveEnrollment(req, res, next) {
       'SELECT enrolled, max_capacity FROM sections WHERE id = $1',
       [sectionId]
     );
+
+    await logActivity({
+      req,
+      action:      'enrollment.remove',
+      entityType:  'enrollment',
+      entityId:    sectionId,
+      entityLabel: stuSnap ? `${stuSnap.first_name} ${stuSnap.last_name}` : studentId,
+      description: `Removed student ${stuSnap ? stuSnap.first_name + ' ' + stuSnap.last_name : studentId} from section ${sectionId}`,
+      metadata: {
+        student_id:  studentId,
+        student_sid: stuSnap?.sid || null,
+        section_id:  sectionId,
+      },
+    });
 
     res.json({
       success: true,
@@ -2617,6 +2661,29 @@ async function setRegistrationPeriod(req, res, next) {
     for (const evt of notificationEvents) {
       await createPeriodNotification(evt.title, evt.body, req.user.id);
     }
+
+    await logActivity({
+      req,
+      action:      'registration.period_update',
+      entityType:  'semester',
+      entityId:    `${semester}_${academic_year}`,
+      entityLabel: label,
+      description: `Updated registration period for ${label}`,
+      metadata: {
+        semester,
+        academic_year,
+        before: {
+          registration_start: old.registration_start || null,
+          registration_end:   old.registration_end   || null,
+          drop_deadline:      old.drop_deadline       || null,
+        },
+        after: {
+          registration_start: newStart,
+          registration_end:   newEnd,
+          drop_deadline:      newDrop,
+        },
+      },
+    });
 
     res.json({
       success: true,

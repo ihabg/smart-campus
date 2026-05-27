@@ -1,5 +1,6 @@
 // ─── courseController.js ─────────────────────────────────────
 const { query } = require('../config/db');
+const { logActivity } = require('../utils/activityLogger');
 
 function toPositiveInt(value, fallback) {
   const num = parseInt(value, 10);
@@ -376,7 +377,7 @@ async function addCoursePrerequisite(req, res, next) {
     }
 
     const [courseRes, prereqRes] = await Promise.all([
-      query('SELECT id FROM courses WHERE id = $1', [id]),
+      query('SELECT id, code FROM courses WHERE id = $1', [id]),
       query('SELECT id, code, name FROM courses WHERE id = $1', [prerequisite_id]),
     ]);
 
@@ -431,6 +432,24 @@ async function addCoursePrerequisite(req, res, next) {
       [id]
     );
 
+    const courseCode = courseRes.rows[0].code;
+    const prereqCode = prereqRes.rows[0].code;
+    await logActivity({
+      req,
+      action:      'prerequisite.add',
+      entityType:  'prerequisite',
+      entityId:    id,
+      entityLabel: `${courseCode} ← ${prereqCode}`,
+      description: `Added ${prereqCode} as prerequisite of ${courseCode}`,
+      metadata: {
+        course_id:       id,
+        course_code:     courseCode,
+        prerequisite_id,
+        prerequisite_code: prereqCode,
+        is_concurrent:   !!is_concurrent,
+      },
+    });
+
     res.status(201).json({
       success: true,
       message: `${prereqRes.rows[0].code} added as prerequisite.`,
@@ -472,6 +491,17 @@ async function removeCoursePrerequisite(req, res, next) {
   try {
     const { id, prerequisiteId } = req.params;
 
+    // Fetch course codes for the activity log (non-critical)
+    let courseCode = id, prereqCode = prerequisiteId;
+    try {
+      const [c1, c2] = await Promise.all([
+        query('SELECT code FROM courses WHERE id = $1', [id]),
+        query('SELECT code FROM courses WHERE id = $1', [prerequisiteId]),
+      ]);
+      courseCode = c1.rows[0]?.code || id;
+      prereqCode = c2.rows[0]?.code || prerequisiteId;
+    } catch (_) {}
+
     const result = await query(
       `DELETE FROM course_prerequisites
        WHERE course_id = $1 AND prerequisite_id = $2
@@ -482,6 +512,21 @@ async function removeCoursePrerequisite(req, res, next) {
     if (!result.rows.length) {
       return res.status(404).json({ success: false, message: 'Prerequisite relationship not found.' });
     }
+
+    await logActivity({
+      req,
+      action:      'prerequisite.remove',
+      entityType:  'prerequisite',
+      entityId:    id,
+      entityLabel: `${courseCode} ← ${prereqCode}`,
+      description: `Removed ${prereqCode} from prerequisites of ${courseCode}`,
+      metadata: {
+        course_id:         id,
+        course_code:       courseCode,
+        prerequisite_id:   prerequisiteId,
+        prerequisite_code: prereqCode,
+      },
+    });
 
     res.json({ success: true, message: 'Prerequisite removed.' });
   } catch (error) {

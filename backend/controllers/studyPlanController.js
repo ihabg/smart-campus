@@ -1,4 +1,5 @@
 const { query } = require('../config/db');
+const { logActivity } = require('../utils/activityLogger');
 
 const VALID_CATEGORIES = ['major_required', 'university_required', 'major_elective', 'free_elective'];
 
@@ -121,7 +122,31 @@ async function createPlan(req, res, next) {
       RETURNING *
     `, [department_id, Number(plan_year), label || null]);
 
-    res.status(201).json({ success: true, data: result.rows[0] });
+    const plan = result.rows[0];
+
+    // Fetch department name for the log (non-critical)
+    let deptName = department_id;
+    try {
+      const d = await query('SELECT name_en FROM departments WHERE id = $1', [department_id]);
+      deptName = d.rows[0]?.name_en || department_id;
+    } catch (_) {}
+
+    await logActivity({
+      req,
+      action:      'study_plan.create',
+      entityType:  'study_plan',
+      entityId:    plan.id,
+      entityLabel: plan.label || `${deptName} ${plan.plan_year}`,
+      description: `Created study plan ${plan.label || plan.plan_year} for ${deptName}`,
+      metadata: {
+        department_id,
+        department_name: deptName,
+        plan_year:       plan.plan_year,
+        label:           plan.label || null,
+      },
+    });
+
+    res.status(201).json({ success: true, data: plan });
   } catch (err) {
     if (err.code === '23505') {
       return res.status(409).json({ success: false, message: 'A study plan for this department and year already exists.' });
@@ -136,6 +161,10 @@ async function updatePlan(req, res, next) {
     const { id }    = req.params;
     const { label } = req.body;
 
+    // Pre-fetch for before state
+    const beforeRes = await query('SELECT label FROM study_plans WHERE id = $1', [id]);
+    const beforeLabel = beforeRes.rows[0]?.label ?? null;
+
     const result = await query(`
       UPDATE study_plans
       SET label = $2, updated_at = NOW()
@@ -147,7 +176,22 @@ async function updatePlan(req, res, next) {
       return res.status(404).json({ success: false, message: 'Study plan not found.' });
     }
 
-    res.json({ success: true, data: result.rows[0] });
+    const updated = result.rows[0];
+    await logActivity({
+      req,
+      action:      'study_plan.update',
+      entityType:  'study_plan',
+      entityId:    id,
+      entityLabel: updated.label || id,
+      description: `Updated study plan ${updated.label || id}`,
+      metadata: {
+        changes: { label: label ?? null },
+        before:  { label: beforeLabel },
+        after:   { label: updated.label ?? null },
+      },
+    });
+
+    res.json({ success: true, data: updated });
   } catch (err) {
     next(err);
   }
@@ -157,10 +201,36 @@ async function updatePlan(req, res, next) {
 async function deletePlan(req, res, next) {
   try {
     const { id } = req.params;
+
+    // Fetch plan info before deleting for the log
+    const snapRes = await query(`
+      SELECT sp.label, sp.plan_year, sp.department_id, d.name_en AS department_name
+      FROM study_plans sp
+      LEFT JOIN departments d ON d.id = sp.department_id
+      WHERE sp.id = $1
+    `, [id]);
+    const snap = snapRes.rows[0] || null;
+
     const result = await query(`DELETE FROM study_plans WHERE id = $1 RETURNING id`, [id]);
     if (!result.rows[0]) {
       return res.status(404).json({ success: false, message: 'Study plan not found.' });
     }
+
+    await logActivity({
+      req,
+      action:      'study_plan.delete',
+      entityType:  'study_plan',
+      entityId:    id,
+      entityLabel: snap?.label || id,
+      description: `Deleted study plan ${snap?.label || id}${snap?.department_name ? ' (' + snap.department_name + ')' : ''}`,
+      metadata: {
+        label:           snap?.label       || null,
+        plan_year:       snap?.plan_year   || null,
+        department_id:   snap?.department_id   || null,
+        department_name: snap?.department_name || null,
+      },
+    });
+
     res.json({ success: true });
   } catch (err) {
     next(err);
@@ -240,6 +310,33 @@ async function addCourse(req, res, next) {
       Number(sort_order) || 0,
     ]);
 
+    // Log context (non-critical)
+    let planLabel = id, courseCode = course_id;
+    try {
+      const [p, c] = await Promise.all([
+        query('SELECT label FROM study_plans WHERE id = $1', [id]),
+        query('SELECT code FROM courses WHERE id = $1', [course_id]),
+      ]);
+      planLabel  = p.rows[0]?.label || id;
+      courseCode = c.rows[0]?.code  || course_id;
+    } catch (_) {}
+
+    await logActivity({
+      req,
+      action:      'study_plan.add_course',
+      entityType:  'study_plan',
+      entityId:    id,
+      entityLabel: planLabel,
+      description: `Added course ${courseCode} to study plan ${planLabel}`,
+      metadata: {
+        course_id,
+        course_code:          courseCode,
+        category,
+        recommended_year:     recommended_year || null,
+        recommended_semester: recommended_semester || null,
+      },
+    });
+
     res.status(201).json({ success: true, data: result.rows[0] });
   } catch (err) {
     if (err.code === '23505') {
@@ -297,6 +394,18 @@ async function updateCourse(req, res, next) {
 async function removeCourse(req, res, next) {
   try {
     const { id, courseId } = req.params;
+
+    // Fetch plan/course labels for log (non-critical)
+    let planLabel = id, courseCode = courseId;
+    try {
+      const [p, c] = await Promise.all([
+        query('SELECT label FROM study_plans WHERE id = $1', [id]),
+        query('SELECT code FROM courses WHERE id = $1', [courseId]),
+      ]);
+      planLabel  = p.rows[0]?.label || id;
+      courseCode = c.rows[0]?.code  || courseId;
+    } catch (_) {}
+
     const result = await query(`
       DELETE FROM study_plan_courses
       WHERE plan_id = $1 AND course_id = $2
@@ -306,6 +415,16 @@ async function removeCourse(req, res, next) {
     if (!result.rows[0]) {
       return res.status(404).json({ success: false, message: 'Course not found in this plan.' });
     }
+
+    await logActivity({
+      req,
+      action:      'study_plan.remove_course',
+      entityType:  'study_plan',
+      entityId:    id,
+      entityLabel: planLabel,
+      description: `Removed course ${courseCode} from study plan ${planLabel}`,
+      metadata: { course_id: courseId, course_code: courseCode },
+    });
 
     res.json({ success: true });
   } catch (err) {
@@ -499,10 +618,11 @@ async function upsertCategoryRequirement(req, res, next) {
       return res.status(400).json({ success: false, message: 'required_hours must be a non-negative number.' });
     }
 
-    const planCheck = await query(`SELECT id FROM study_plans WHERE id = $1`, [id]);
+    const planCheck = await query(`SELECT id, label FROM study_plans WHERE id = $1`, [id]);
     if (!planCheck.rows[0]) {
       return res.status(404).json({ success: false, message: 'Study plan not found.' });
     }
+    const planLabel = planCheck.rows[0].label || id;
 
     const result = await query(`
       INSERT INTO study_plan_category_requirements (plan_id, category, required_hours)
@@ -512,6 +632,20 @@ async function upsertCategoryRequirement(req, res, next) {
             updated_at     = NOW()
       RETURNING category, required_hours, label_en, label_ar, sort_order, updated_at
     `, [id, category, hours]);
+
+    await logActivity({
+      req,
+      action:      'study_plan.upsert_requirement',
+      entityType:  'study_plan',
+      entityId:    id,
+      entityLabel: planLabel,
+      description: `Updated ${category} requirement for plan ${planLabel}: ${hours} hours`,
+      metadata: {
+        plan_id:        id,
+        category,
+        required_hours: hours,
+      },
+    });
 
     res.json({ success: true, data: result.rows[0] });
   } catch (err) {

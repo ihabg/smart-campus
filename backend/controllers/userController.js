@@ -1,6 +1,7 @@
 const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
 const { query, withTransaction } = require('../config/db');
+const { logActivity } = require('../utils/activityLogger');
 
 // ─── Infer academic year from student ID ──────────────────────
 // Mirrors the same logic in authController.js
@@ -158,6 +159,12 @@ async function adminUpdateUser(req, res, next) {
       return res.status(400).json({ success: false, message: 'No fields to update.' });
     }
 
+    // Pre-fetch before state for activity log
+    const beforeRes = await query(
+      'SELECT first_name, last_name, email, role, status, department FROM users WHERE id = $1',
+      [id]
+    );
+
     values.push(id);
     const result = await query(
       `UPDATE users SET ${fields.join(',')} WHERE id = $${idx}
@@ -168,6 +175,29 @@ async function adminUpdateUser(req, res, next) {
     if (!result.rows.length) {
       return res.status(404).json({ success: false, message: 'User not found.' });
     }
+
+    const before  = beforeRes.rows[0] || {};
+    const changes = {};
+    if (role)       changes.role       = role;
+    if (status)     changes.status     = status;
+    if (department) changes.department = department;
+
+    await logActivity({
+      req,
+      action:      'user.update',
+      entityType:  'user',
+      entityId:    id,
+      entityLabel: before.first_name ? `${before.first_name} ${before.last_name}` : id,
+      description: `Updated user ${before.email || id}: ${Object.keys(changes).join(', ')} changed`,
+      metadata: {
+        changes,
+        before: {
+          role:       before.role,
+          status:     before.status,
+          department: before.department,
+        },
+      },
+    });
 
     res.json({ success: true, data: { user: result.rows[0] } });
   } catch (error) {
@@ -183,10 +213,33 @@ async function deleteUser(req, res, next) {
     if (id === req.user.id) {
       return res.status(400).json({ success: false, message: 'Cannot delete your own account.' });
     }
+
+    // Fetch before deleting so we can log what was removed
+    const userSnap = await query(
+      'SELECT first_name, last_name, email, role, student_id FROM users WHERE id = $1',
+      [id]
+    );
+
     const result = await query('DELETE FROM users WHERE id = $1 RETURNING id', [id]);
     if (!result.rows.length) {
       return res.status(404).json({ success: false, message: 'User not found.' });
     }
+
+    const u = userSnap.rows[0] || {};
+    await logActivity({
+      req,
+      action:      'user.delete',
+      entityType:  'user',
+      entityId:    id,
+      entityLabel: u.first_name ? `${u.first_name} ${u.last_name}` : id,
+      description: `Deleted user account for ${u.email || id}`,
+      metadata: {
+        email:      u.email      || null,
+        role:       u.role       || null,
+        student_id: u.student_id || null,
+      },
+    });
+
     res.json({ success: true, message: 'User deleted.' });
   } catch (error) {
     next(error);
@@ -436,7 +489,23 @@ async function createStudent(req, res, next) {
       [userId]
     );
 
-    res.status(201).json({ success: true, data: { user: created.rows[0] } });
+    const newUser = created.rows[0];
+    await logActivity({
+      req,
+      action:      'user.create_student',
+      entityType:  'user',
+      entityId:    userId,
+      entityLabel: `${newUser.first_name} ${newUser.last_name}`,
+      description: `Created student account for ${newUser.email} (ID: ${newUser.student_id})`,
+      metadata: {
+        student_id:   cleanStudentId,
+        email:        cleanEmail,
+        department:   deptNameEn,
+        year_of_study: finalYear,
+      },
+    });
+
+    res.status(201).json({ success: true, data: { user: newUser } });
   } catch (error) {
     next(error);
   }

@@ -1,4 +1,5 @@
 const { query } = require('../config/db');
+const { logActivity } = require('../utils/activityLogger');
 
 const TARGET_ROLES = ['all', 'students', 'professors'];
 
@@ -343,6 +344,21 @@ async function createAnnouncement(req, res, next) {
       notifications_sent = await notifyForAnnouncement(announcement, req.user.id);
     }
 
+    await logActivity({
+      req,
+      action:      'announcement.create',
+      entityType:  'announcement',
+      entityId:    announcement.id,
+      entityLabel: announcement.title,
+      description: `Created announcement: ${announcement.title}`,
+      metadata: {
+        is_published,
+        target_role:       target_role,
+        target_department: target_department,
+        notifications_sent,
+      },
+    });
+
     res.status(201).json({
       success: true,
       data: { announcement, notifications_sent },
@@ -456,6 +472,23 @@ async function updateAnnouncement(req, res, next) {
       notifications_sent = await notifyForAnnouncement(updated, req.user.id);
     }
 
+    const changedFields = Object.keys(req.body).filter(k => k !== undefined);
+    await logActivity({
+      req,
+      action:      'announcement.update',
+      entityType:  'announcement',
+      entityId:    id,
+      entityLabel: updated.title,
+      description: `Updated announcement: ${updated.title}`,
+      metadata: {
+        is_published:      updated.is_published,
+        target_role:       updated.target_role,
+        target_department: updated.target_department,
+        notifications_sent,
+        fields_changed:    changedFields,
+      },
+    });
+
     res.json({ success: true, data: { announcement: updated, notifications_sent } });
   } catch (error) {
     next(error);
@@ -465,13 +498,24 @@ async function updateAnnouncement(req, res, next) {
 async function deleteAnnouncement(req, res, next) {
   try {
     const result = await query(
-      'DELETE FROM announcements WHERE id = $1 RETURNING id',
+      'DELETE FROM announcements WHERE id = $1 RETURNING id, title',
       [req.params.id]
     );
 
     if (!result.rows.length) {
       return res.status(404).json({ success: false, message: 'Not found.' });
     }
+
+    const deleted = result.rows[0];
+    await logActivity({
+      req,
+      action:      'announcement.delete',
+      entityType:  'announcement',
+      entityId:    deleted.id,
+      entityLabel: deleted.title,
+      description: `Deleted announcement: ${deleted.title}`,
+      metadata:    { title: deleted.title },
+    });
 
     res.json({ success: true, message: 'Deleted.' });
   } catch (error) {

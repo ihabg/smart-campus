@@ -404,6 +404,11 @@ export const studyPlanAPI = {
   removeBatchAssignment:(id, year) => api.delete(`/admin/study-plans/${id}/batch-assignments/${year}`),
 };
 
+// ─── activityLogAPI ───────────────────────────────────────────
+export const activityLogAPI = {
+  getAll: (params = {}) => api.get('/admin/activity-logs', { params }),
+};
+
 export default api;
 // ─── assessmentAPI ──────────────────────────────────────────
 function assessmentFormData(data = {}, file, questionImageFiles = []) {

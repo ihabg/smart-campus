@@ -17,6 +17,7 @@ const NAV = {
       { to: '/admin/doctors',                  icon: '👨‍🏫', label: 'Doctors' },
       { to: '/admin/notifications',            icon: '🔔', label: 'Notifications' },
       { to: '/admin/announcements',            icon: '📢', label: 'Announcements' },
+      { to: '/admin/activity-log',             icon: '📋', label: 'Activity Log' },
     ],
   },
   admin: {
@@ -31,6 +32,7 @@ const NAV = {
       { to: '/admin/doctors',                  icon: '👨‍🏫', label: 'Doctors' },
       { to: '/admin/notifications',            icon: '🔔', label: 'Notifications' },
       { to: '/admin/announcements',            icon: '📢', label: 'Announcements' },
+      { to: '/admin/activity-log',             icon: '📋', label: 'Activity Log' },
     ],
   },
   professor: {

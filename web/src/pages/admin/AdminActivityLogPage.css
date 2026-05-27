@@ -1,0 +1,345 @@
+/* ── Activity Log Page ────────────────────────────────────────── */
+.al-page {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* ── Stat cards ────────────────────────────────────────────── */
+.al-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+.al-stat-card {
+  background: var(--card-bg, #fff);
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 10px;
+  padding: 16px 18px;
+  position: relative;
+  overflow: hidden;
+}
+
+.al-stat-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0;
+  width: 4px; height: 100%;
+  background: var(--al-accent, var(--navy));
+  border-radius: 10px 0 0 10px;
+}
+
+.al-stat-value {
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--text, #0f172a);
+  line-height: 1.1;
+  margin-bottom: 4px;
+}
+
+.al-stat-label {
+  font-size: 12px;
+  color: var(--text-muted, #64748b);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+/* ── Filter card ────────────────────────────────────────────── */
+.al-filter-card {
+  padding: 14px 16px;
+}
+
+.al-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.al-filter-search {
+  flex: 1 1 200px;
+  min-width: 160px;
+}
+
+.al-filter-search .form-input {
+  width: 100%;
+}
+
+.al-filter-select {
+  flex: 0 1 160px;
+  min-width: 130px;
+}
+
+.al-filter-dates {
+  display: flex;
+  gap: 8px;
+  flex: 1 1 280px;
+}
+
+.al-filter-dates .form-input {
+  flex: 1 1 130px;
+  min-width: 0;
+}
+
+/* ── Action badge ────────────────────────────────────────────── */
+.al-action-badge {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+/* ── Table view (desktop/tablet) ─────────────────────────────── */
+.al-table-view {
+  display: block;
+}
+
+.al-card-view {
+  display: none;
+}
+
+/* ── Empty state ─────────────────────────────────────────────── */
+.al-empty {
+  padding: 48px 24px;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.al-empty span {
+  font-size: 40px;
+  display: block;
+  margin-bottom: 12px;
+}
+
+.al-empty p {
+  font-size: 14px;
+  margin: 4px 0;
+}
+
+/* ── Log cards (mobile) ──────────────────────────────────────── */
+.al-log-card {
+  background: var(--card-bg, #fff);
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-bottom: 10px;
+}
+
+.al-log-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  gap: 8px;
+}
+
+.al-log-card__time {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.al-log-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.al-log-card__actor {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.al-log-card__role {
+  font-weight: 400;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.al-log-card__entity {
+  font-size: 13px;
+  color: var(--text);
+}
+
+.al-log-card__desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.al-log-card__footer {
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* ── Pagination ──────────────────────────────────────────────── */
+.al-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 8px 0;
+  flex-wrap: wrap;
+}
+
+.al-pagination__info {
+  font-size: 13px;
+  color: var(--text);
+}
+
+/* ── Detail modal ────────────────────────────────────────────── */
+.al-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.al-detail-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.al-detail-row {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: 8px;
+  align-items: start;
+  font-size: 14px;
+}
+
+.al-detail-label {
+  font-weight: 600;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding-top: 2px;
+}
+
+.al-detail-meta {
+  background: var(--surface, #f8fafc);
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 8px;
+  padding: 14px;
+}
+
+.al-detail-meta__title {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+
+.al-meta-pre {
+  background: var(--navy-deep, #0f172a);
+  color: #e2e8f0;
+  border-radius: 6px;
+  padding: 12px 14px;
+  font-size: 12px;
+  line-height: 1.6;
+  overflow: auto;
+  max-height: 260px;
+  font-family: 'Consolas', 'Monaco', monospace;
+  margin: 0;
+}
+
+/* ── Before/after diff table ─────────────────────────────────── */
+.al-diff-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  margin-bottom: 10px;
+}
+
+.al-diff-table th,
+.al-diff-table td {
+  padding: 6px 10px;
+  border: 1px solid var(--border, #e2e8f0);
+  text-align: left;
+}
+
+.al-diff-table th {
+  background: var(--surface, #f8fafc);
+  font-weight: 600;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.al-diff-table__changed td {
+  background: #fef9c3;
+}
+
+/* ── Responsive: tablet ──────────────────────────────────────── */
+@media (max-width: 1024px) {
+  .al-stats {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .al-filter-dates {
+    flex: 1 1 100%;
+  }
+}
+
+/* ── Responsive: mobile ──────────────────────────────────────── */
+@media (max-width: 767px) {
+  .al-table-view {
+    display: none;
+  }
+
+  .al-card-view {
+    display: block;
+  }
+
+  .al-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .al-stat-card {
+    padding: 12px 14px;
+  }
+
+  .al-stat-value {
+    font-size: 22px;
+  }
+
+  .al-filter-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .al-filter-search,
+  .al-filter-select {
+    flex: none;
+    width: 100%;
+  }
+
+  .al-filter-dates {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .al-filter-dates .form-input {
+    flex: none;
+    width: 100%;
+  }
+
+  .al-detail-row {
+    grid-template-columns: 90px 1fr;
+  }
+
+  .al-pagination {
+    gap: 10px;
+  }
+}
