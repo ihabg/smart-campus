@@ -611,7 +611,7 @@ export function ProfilePage() {
   const quickActions = [
     { label: 'My Schedule',           icon: '📅', to: '/schedule'   },
     { label: 'Campus Map',            icon: '🗺️', to: '/map'        },
-    { label: 'Course Materials',      icon: '📂', to: '/schedule'   },
+    { label: 'Course Materials',      icon: '📂', to: '/materials'  },
     { label: 'Assignments & Quizzes', icon: '✏️', to: '/assessments'},
   ];
 

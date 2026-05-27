@@ -59,7 +59,7 @@ export default function DashboardPage() {
   ] : [
     { to: '/map',                                label: 'Campus Map',          emoji: '🗺️' },
     { to: '/schedule',                           label: 'My Schedule',         emoji: '📅' },
-    { to: '/map',                                label: 'Find a Room',         emoji: '🔍' },
+    { to: '/registration-summary',               label: 'Reg. Summary',        emoji: '🧾' },
     isStudent && { to: '/study-plan',            label: 'Study Plan',          emoji: '🎓' },
     isStudent && { to: '/course-registration',   label: 'Course Registration', emoji: '📋' },
     { to: '/notifications',                      label: 'Notifications',       emoji: '🔔' },

@@ -49,6 +49,7 @@ const QUICK_ACTION_GROUPS = [
     group: 'Campus',
     actions: [
       { to: '/admin/floors',     label: '🏢 Floors & Maps' },
+      { to: '/admin/rooms',      label: '🚪 Rooms' },
       { to: '/admin/map-editor', label: '✏️ Map Editor' },
     ],
   },

@@ -112,7 +112,6 @@ export default function App() {
             <Route path="/professor/students"           element={<ProfessorDashboard />} />
             <Route path="/professor/materials"          element={<ProfessorDashboard />} />
             <Route path="/professor/assessments"       element={<ProfessorAssessmentsPage />} />
-            <Route path="/professor/messages"           element={<ProfessorDashboard />} />
             <Route path="/professor/office-hours"       element={<ProfessorDashboard />} />
             <Route path="/professor/change-history"     element={<ProfessorDashboard />} />
             <Route path="/professor/analytics"          element={<ProfessorDashboard />} />

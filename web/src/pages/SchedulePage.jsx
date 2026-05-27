@@ -89,8 +89,7 @@ const openOfficeHours = async (instructor) => {
     setSelectedInstructor(instructor);
     setOfficeHours(response.data.data);
     setOfficeHoursModal(true);
-  } catch (error) {
-    console.error('Professor schedule error:', error);
+  } catch {
     setSelectedInstructor(instructor);
     setOfficeHours({
       instructor,

@@ -792,8 +792,7 @@ const loadMapRoomsFromDatabase = useCallback(async () => {
 
     setDbRoomsByFloor(nextRoomsByFloor);
     setDbRoomsLoaded(true);
-  } catch (error) {
-    console.error('Map rooms database load error:', error);
+  } catch {
     setDbRoomsLoaded(false);
   } finally {
     setDbRoomsLoading(false);
