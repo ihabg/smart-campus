@@ -1,0 +1,720 @@
+/* ═══════════════════════════════════════════════════
+   Admin Events Tab — AdminEventsTab.css
+   ═══════════════════════════════════════════════════ */
+
+/* ─── Root ───────────────────────────────────────── */
+.aet-root {
+  padding-top: 20px;
+}
+
+/* ─── Tab strip (shared, on AdminRoomsPage) ───────── */
+.ar-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 2px solid var(--border, #e5e7eb);
+  margin-bottom: 20px;
+}
+
+.ar-tab {
+  padding: 10px 20px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-muted, #6b7280);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s;
+  white-space: nowrap;
+}
+
+.ar-tab:hover {
+  color: var(--text, #111827);
+}
+
+.ar-tab--active {
+  color: var(--primary, #1e3a5f);
+  border-bottom-color: var(--primary, #1e3a5f);
+}
+
+/* ─── Top layout: form + result side by side ─────── */
+.aet-top {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+  margin-bottom: 24px;
+}
+
+/* ─── Form card ──────────────────────────────────── */
+.aet-form-card {
+  flex: 0 0 360px;
+  min-width: 0;
+  padding: 20px 20px 22px;
+}
+
+.aet-form-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text, #111827);
+  margin-bottom: 16px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border, #e5e7eb);
+}
+
+/* ─── Form fields ────────────────────────────────── */
+.aet-field {
+  margin-bottom: 13px;
+}
+
+.aet-label {
+  display: block;
+  font-size: 11.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted, #6b7280);
+  margin-bottom: 5px;
+}
+
+.aet-input {
+  width: 100%;
+  padding: 8px 11px;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: var(--radius, 8px);
+  font-size: 13.5px;
+  color: var(--text, #111827);
+  background: #fff;
+  transition: border-color 0.12s, box-shadow 0.12s;
+  box-sizing: border-box;
+  outline: none;
+}
+
+.aet-input:focus {
+  border-color: var(--primary, #1e3a5f);
+  box-shadow: 0 0 0 3px rgba(30, 58, 95, 0.10);
+}
+
+.aet-textarea {
+  resize: vertical;
+  min-height: 58px;
+  font-family: inherit;
+}
+
+.aet-select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%236b7280' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  padding-right: 30px;
+  cursor: pointer;
+}
+
+.aet-time-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.aet-check-btn {
+  width: 100%;
+  margin-top: 4px;
+  justify-content: center;
+}
+
+/* ─── Result panel ───────────────────────────────── */
+.aet-result-panel {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.aet-result-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 52px 24px;
+  background: var(--bg-subtle, #f9fafb);
+  border: 1px dashed var(--border, #e5e7eb);
+  border-radius: var(--radius, 8px);
+  text-align: center;
+  min-height: 220px;
+}
+
+.aet-result-empty__icon {
+  font-size: 38px;
+  margin-bottom: 12px;
+  opacity: 0.5;
+}
+
+.aet-result-empty__text {
+  font-size: 13.5px;
+  color: var(--text-muted, #6b7280);
+  max-width: 300px;
+  line-height: 1.6;
+}
+
+/* ─── Summary banner ─────────────────────────────── */
+.aet-summary {
+  display: flex;
+  gap: 14px;
+  padding: 14px 16px;
+  border-radius: var(--radius, 8px);
+  margin-bottom: 16px;
+  border: 1px solid transparent;
+}
+
+.aet-summary--ok {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+}
+
+.aet-summary--warn {
+  background: #fffbeb;
+  border-color: #fde68a;
+}
+
+.aet-summary__icon {
+  font-size: 24px;
+  flex-shrink: 0;
+  line-height: 1;
+  margin-top: 2px;
+}
+
+.aet-summary__title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text, #111827);
+  margin-bottom: 3px;
+}
+
+.aet-summary__sub {
+  font-size: 12.5px;
+  color: var(--text-muted, #6b7280);
+  margin-bottom: 4px;
+}
+
+.aet-summary__note {
+  font-size: 12.5px;
+  color: var(--text, #374151);
+  line-height: 1.5;
+}
+
+/* ─── Conflict cards ─────────────────────────────── */
+.aet-conflicts {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.aet-conflict-card {
+  background: #fff;
+  border: 1px solid var(--border, #e5e7eb);
+  border-left: 3px solid #f59e0b;
+  border-radius: var(--radius, 8px);
+  padding: 14px 16px;
+}
+
+.aet-conflict-card__header {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.aet-conflict-card__num {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 11.5px;
+  font-weight: 700;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.aet-conflict-card__info {
+  flex: 1;
+  min-width: 0;
+}
+
+.aet-conflict-card__course {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text, #111827);
+  margin-bottom: 3px;
+}
+
+.aet-conflict-card__course-name {
+  font-weight: 400;
+  color: var(--text-muted, #6b7280);
+}
+
+.aet-conflict-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 6px;
+  font-size: 12px;
+  color: var(--text-muted, #6b7280);
+  margin-bottom: 4px;
+}
+
+.aet-dot {
+  color: var(--border, #d1d5db);
+}
+
+.aet-conflict-card__time,
+.aet-conflict-card__room {
+  font-size: 12px;
+  color: var(--text-muted, #6b7280);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 3px;
+}
+
+.aet-conflict-card__time-icon,
+.aet-conflict-card__room-icon {
+  font-size: 11px;
+}
+
+.aet-conflict-card__replace {
+  padding-top: 10px;
+  border-top: 1px solid var(--border, #e5e7eb);
+}
+
+.aet-replace-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted, #6b7280);
+  margin-bottom: 6px;
+}
+
+.aet-replace-select {
+  font-size: 12.5px;
+}
+
+.aet-replace-select--selected {
+  border-color: #16a34a;
+  background-color: #f0fdf4;
+}
+
+/* ─── Booking confirmation summary ───────────────── */
+.aet-confirm-summary {
+  background: #f8faff;
+  border: 1px solid #c7d7f5;
+  border-radius: var(--radius, 8px);
+  padding: 14px 16px;
+  margin-bottom: 12px;
+}
+
+.aet-confirm-summary__title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text, #111827);
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #d1ddf5;
+}
+
+.aet-confirm-summary__grid {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.aet-confirm-summary__row {
+  display: flex;
+  gap: 8px;
+  font-size: 12.5px;
+}
+
+.aet-confirm-summary__key {
+  color: var(--text-muted, #6b7280);
+  flex: 0 0 80px;
+  font-weight: 600;
+}
+
+.aet-confirm-summary__val {
+  color: var(--text, #111827);
+  font-weight: 500;
+  flex: 1;
+}
+
+.aet-confirm-relocations {
+  border-top: 1px solid #d1ddf5;
+  padding-top: 10px;
+  margin-bottom: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.aet-confirm-reloc-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  flex-wrap: wrap;
+}
+
+.aet-confirm-reloc-course {
+  font-weight: 700;
+  color: var(--text, #111827);
+  flex: 0 0 auto;
+}
+
+.aet-confirm-reloc-from {
+  color: var(--text-muted, #6b7280);
+  font-family: monospace;
+  font-size: 12px;
+}
+
+.aet-confirm-reloc-arrow {
+  color: var(--primary, #1e3a5f);
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.aet-confirm-reloc-to {
+  color: #15803d;
+  font-weight: 600;
+}
+
+.aet-confirm-summary__notif {
+  font-size: 12px;
+  color: #374151;
+  line-height: 1.5;
+  padding-top: 4px;
+}
+
+/* ─── Confirm button row ─────────────────────────── */
+.aet-confirm-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.aet-confirm-btn {
+  width: 100%;
+  justify-content: center;
+  font-size: 14px;
+  padding: 10px 16px;
+}
+
+.aet-confirm-hint {
+  font-size: 12px;
+  color: var(--text-muted, #6b7280);
+  text-align: center;
+}
+
+/* ─── Alert ──────────────────────────────────────── */
+.aet-alert {
+  border-radius: var(--radius, 8px);
+  padding: 10px 14px;
+  font-size: 13px;
+  margin-bottom: 14px;
+  line-height: 1.5;
+}
+
+.aet-alert--error {
+  background: #fef2f2;
+  border: 1px solid #fca5a5;
+  color: #dc2626;
+}
+
+.aet-alert--warn {
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  color: #92400e;
+}
+
+.aet-alert--sm {
+  padding: 7px 12px;
+  font-size: 12px;
+  margin-bottom: 0;
+}
+
+/* ─── Status badges ──────────────────────────────── */
+.aet-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 9px;
+  border-radius: 20px;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.aet-badge--active {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.aet-badge--cancelled {
+  background: #f3f4f6;
+  color: #6b7280;
+}
+
+/* ─── Events list section ────────────────────────── */
+.aet-list-section {
+  background: #fff;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: var(--radius, 8px);
+  overflow: hidden;
+}
+
+.aet-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border, #e5e7eb);
+  background: var(--bg-subtle, #f9fafb);
+}
+
+.aet-list-title {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text, #111827);
+}
+
+.aet-list-sub {
+  font-size: 12px;
+  color: var(--text-muted, #6b7280);
+}
+
+.aet-list-loading {
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.aet-skeleton-row {
+  height: 20px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  background-size: 200% 100%;
+  animation: aet-shimmer 1.4s infinite;
+}
+
+@keyframes aet-shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.aet-list-empty {
+  padding: 48px 24px;
+  text-align: center;
+}
+
+.aet-list-empty__icon {
+  font-size: 38px;
+  margin-bottom: 10px;
+}
+
+.aet-list-empty__title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text, #111827);
+  margin-bottom: 5px;
+}
+
+.aet-list-empty__sub {
+  font-size: 13px;
+  color: var(--text-muted, #6b7280);
+  max-width: 320px;
+  margin: 0 auto;
+  line-height: 1.6;
+}
+
+/* ─── Events table (desktop) ─────────────────────── */
+.aet-table-wrap {
+  overflow-x: auto;
+}
+
+.aet-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+
+.aet-table thead tr {
+  background: var(--bg-subtle, #f9fafb);
+  border-bottom: 2px solid var(--border, #e5e7eb);
+}
+
+.aet-table th {
+  padding: 9px 14px;
+  text-align: left;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted, #6b7280);
+  white-space: nowrap;
+}
+
+.aet-table td {
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--border, #e5e7eb);
+  vertical-align: middle;
+}
+
+.aet-table tbody tr:hover {
+  background: var(--bg-subtle, #f9fafb);
+}
+
+.aet-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.aet-event-name {
+  font-weight: 600;
+  color: var(--text, #111827);
+  font-size: 13.5px;
+}
+
+.aet-event-desc {
+  font-size: 11.5px;
+  color: var(--text-muted, #6b7280);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 240px;
+}
+
+.aet-room-num {
+  font-family: monospace;
+  font-weight: 700;
+  color: var(--primary, #1e3a5f);
+}
+
+.aet-room-name {
+  color: var(--text-muted, #6b7280);
+  font-size: 12.5px;
+}
+
+.aet-time-cell {
+  white-space: nowrap;
+  color: var(--text-muted, #6b7280);
+  font-size: 12.5px;
+}
+
+.aet-created-by {
+  color: var(--text-muted, #6b7280);
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+
+/* ─── Events cards (mobile) — hidden on desktop ──── */
+.aet-event-cards {
+  display: none;
+}
+
+.aet-event-card {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border, #e5e7eb);
+}
+
+.aet-event-card:last-child {
+  border-bottom: none;
+}
+
+.aet-event-card__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 5px;
+}
+
+.aet-event-card__name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text, #111827);
+}
+
+.aet-event-card__desc {
+  font-size: 12px;
+  color: var(--text-muted, #6b7280);
+  margin-bottom: 8px;
+  line-height: 1.4;
+}
+
+.aet-event-card__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12.5px;
+  color: var(--text-muted, #6b7280);
+}
+
+/* ─── Responsive ─────────────────────────────────── */
+
+/* Tablet: stack form + result */
+@media (max-width: 1024px) {
+  .aet-top {
+    flex-direction: column;
+  }
+
+  .aet-form-card {
+    flex: none;
+    width: 100%;
+  }
+
+  .aet-result-panel {
+    width: 100%;
+  }
+}
+
+/* Mobile */
+@media (max-width: 640px) {
+  .aet-root {
+    padding-top: 12px;
+  }
+
+  .ar-tab {
+    padding: 9px 14px;
+    font-size: 13px;
+  }
+
+  .aet-form-card {
+    padding: 16px;
+  }
+
+  .aet-time-row {
+    grid-template-columns: 1fr;
+  }
+
+  .aet-conflict-card__meta {
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .aet-dot {
+    display: none;
+  }
+
+  /* Switch table → cards on mobile */
+  .aet-table-wrap {
+    display: none;
+  }
+
+  .aet-event-cards {
+    display: block;
+  }
+
+  .aet-replace-select {
+    font-size: 13px;
+  }
+}

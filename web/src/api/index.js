@@ -142,6 +142,17 @@ export const notificationAPI = {
   delete: (id) => api.delete(`/notifications/${id}`)
 };
 
+// ─── eventAPI ────────────────────────────────────────────────
+export const eventAPI = {
+  list: (params = {}) => api.get('/events', { params }),
+
+  create: (data) => api.post('/events', data),
+
+  getConflicts: (params = {}) => api.get('/events/conflicts', { params }),
+
+  getAvailableRooms: (params = {}) => api.get('/events/available-rooms', { params }),
+};
+
 // ─── userAPI ─────────────────────────────────────────────────
 export const userAPI = {
   getAll: (params = {}) => api.get('/users', { params }),

@@ -15,7 +15,9 @@ import {
   instructorAPI,
   semesterAPI,
   studyPlanAPI,
+  eventAPI,
 } from '../../api/index';
+import AdminEventsTab from './AdminEventsTab';
 import { useAsync, useAllSections, useRoomTypes } from '../../hooks/index';
 import { RoomFormModal } from './AdminRoomsPage';
 import {
@@ -1246,6 +1248,7 @@ function inferRegYearFromStudentId(sid) {
 
 // ─── Admin Floors ─────────────────────────────────────────────
 export function AdminFloors() {
+  const [activeTab, setActiveTab] = useState('floors');
   const [showCreate, setShowCreate] = useState(false);
   const [editFloor, setEditFloor] = useState(null);
   const [delFloor, setDelFloor] = useState(null);
@@ -1345,28 +1348,48 @@ export function AdminFloors() {
           </p>
         </div>
 
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-          <Link
-            to="/admin/office-review"
-            className="btn btn--secondary"
-            style={{ fontSize: 13 }}
-          >
-            🏷️ Office Review
-          </Link>
+        {activeTab === 'floors' && (
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            <Link
+              to="/admin/office-review"
+              className="btn btn--secondary"
+              style={{ fontSize: 13 }}
+            >
+              🏷️ Office Review
+            </Link>
 
-          <Button
-            variant="primary"
-            icon={<PlusIcon />}
-            onClick={() => setShowCreate(true)}
-            disabled={buildingsLoading || allBuildings.length === 0 || !selectedBuildingId}
-          >
-            Add Floor
-          </Button>
-        </div>
+            <Button
+              variant="primary"
+              icon={<PlusIcon />}
+              onClick={() => setShowCreate(true)}
+              disabled={buildingsLoading || allBuildings.length === 0 || !selectedBuildingId}
+            >
+              Add Floor
+            </Button>
+          </div>
+        )}
       </div>
 
+      {/* ── Tab strip ── */}
+      <div className="ar-tabs">
+        <button
+          className={`ar-tab${activeTab === 'floors' ? ' ar-tab--active' : ''}`}
+          onClick={() => setActiveTab('floors')}
+        >
+          🏢 Floors
+        </button>
+        <button
+          className={`ar-tab${activeTab === 'events' ? ' ar-tab--active' : ''}`}
+          onClick={() => setActiveTab('events')}
+        >
+          📅 Events
+        </button>
+      </div>
+
+      {activeTab === 'events' && <AdminEventsTab />}
+
       {/* ── College / Building selector ── */}
-      <div className="card" style={{ marginBottom: 16, padding: '12px 18px' }}>
+      {activeTab === 'floors' && <div className="card" style={{ marginBottom: 16, padding: '12px 18px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
             College / Building
@@ -1425,10 +1448,10 @@ export function AdminFloors() {
             Manage Buildings
           </button>
         </div>
-      </div>
+      </div>}
 
       {/* ── Floors list ── */}
-      {loading || buildingsLoading ? (
+      {activeTab === 'floors' && (loading || buildingsLoading ? (
         <Spinner center />
       ) : allBuildings.length === 0 ? (
         <div className="card">
@@ -1626,7 +1649,7 @@ export function AdminFloors() {
                 </div>
           ))}
         </div>
-      )}
+      ))}
 
       <FloorFormModal
         open={showCreate}
