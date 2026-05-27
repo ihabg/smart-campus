@@ -94,8 +94,8 @@ async function getConflicts(req, res, next) {
       SELECT
         sm.id                                                      AS section_meeting_id,
         s.id                                                       AS section_id,
-        s.course_code,
-        COALESCE(c.name, s.course_code)                           AS course_name,
+        c.code                                                     AS course_code,
+        c.name                                                     AS course_name,
         s.section_number,
         sm.day_of_week,
         sm.start_time::text                                        AS start_time,
@@ -107,19 +107,21 @@ async function getConflicts(req, res, next) {
         COUNT(e.student_id)::int                                   AS enrolled_count
       FROM section_meetings sm
       JOIN sections s         ON s.id  = sm.section_id
-      LEFT JOIN courses c     ON c.id  = s.course_id
+      JOIN courses c          ON c.id  = s.course_id
       LEFT JOIN rooms r       ON r.id  = sm.room_id
       LEFT JOIN instructors inst ON inst.id = s.instructor_id
       LEFT JOIN users u       ON u.id  = inst.user_id
       LEFT JOIN enrollments e ON e.section_id = s.id AND e.status = 'enrolled'
       WHERE sm.room_id    = $1
-        AND sm.is_active  = TRUE
         AND s.is_active   = TRUE
         AND sm.day_of_week = EXTRACT(DOW FROM $2::date)::int
         AND sm.start_time <  $3::time
         AND sm.end_time   >  $4::time
       GROUP BY
-        sm.id, s.id, c.name, r.id, r.room_number, r.name,
+        sm.id, sm.day_of_week, sm.start_time, sm.end_time,
+        s.id, s.section_number,
+        c.code, c.name,
+        r.id, r.room_number, r.name,
         u.first_name, u.last_name
       ORDER BY sm.start_time
       `,
@@ -183,7 +185,6 @@ async function getAvailableRooms(req, res, next) {
           FROM section_meetings sm
           JOIN sections s ON s.id = sm.section_id
           WHERE sm.room_id     = r.id
-            AND sm.is_active   = TRUE
             AND s.is_active    = TRUE
             AND sm.day_of_week = EXTRACT(DOW FROM $1::date)::int
             AND sm.start_time  < $2::time
@@ -275,17 +276,16 @@ async function createEvent(req, res, next) {
         sm.day_of_week,
         sm.start_time::text                                         AS start_time,
         sm.end_time::text                                           AS end_time,
-        s.course_code,
-        COALESCE(c.name, s.course_code)                            AS course_name,
+        c.code                                                      AS course_code,
+        c.name                                                      AS course_name,
         s.section_number,
         r.room_number                                               AS original_room_number,
         r.name                                                      AS original_room_name
       FROM section_meetings sm
       JOIN sections s       ON s.id  = sm.section_id
-      LEFT JOIN courses c   ON c.id  = s.course_id
+      JOIN courses c        ON c.id  = s.course_id
       LEFT JOIN rooms r     ON r.id  = sm.room_id
       WHERE sm.room_id    = $1
-        AND sm.is_active  = TRUE
         AND s.is_active   = TRUE
         AND sm.day_of_week = EXTRACT(DOW FROM $2::date)::int
         AND sm.start_time <  $3::time
@@ -342,7 +342,6 @@ async function createEvent(req, res, next) {
           `SELECT 1 FROM section_meetings sm
            JOIN sections s ON s.id = sm.section_id
            WHERE sm.room_id    = $1
-             AND sm.is_active  = TRUE
              AND s.is_active   = TRUE
              AND sm.day_of_week = EXTRACT(DOW FROM $2::date)::int
              AND sm.start_time <  $3::time
@@ -529,4 +528,161 @@ async function createEvent(req, res, next) {
   }
 }
 
-module.exports = { listEvents, getConflicts, getAvailableRooms, createEvent };
+// ─── Cancel event booking ──────────────────────────────────────
+async function cancelEvent(req, res, next) {
+  try {
+    const { id } = req.params;
+    const adminId = req.user.id;
+
+    // ── Fetch event ───────────────────────────────────────────
+    const eventRes = await query(
+      `SELECT eb.*,
+              r.room_number, r.name AS room_name
+       FROM event_bookings eb
+       JOIN rooms r ON r.id = eb.room_id
+       WHERE eb.id = $1`,
+      [id]
+    );
+    if (!eventRes.rows.length) {
+      return res.status(404).json({ success: false, message: 'Event not found.' });
+    }
+    const event = eventRes.rows[0];
+
+    if (event.status === 'cancelled') {
+      return res.json({
+        success: true,
+        message: 'Event is already cancelled.',
+        data: { event, relocations_cancelled: 0, notifications_sent: 0 },
+      });
+    }
+
+    // ── Fetch active relocations linked to this event ─────────
+    const relocRes = await query(
+      `SELECT
+         smc.id,
+         smc.section_id,
+         smc.section_meeting_id,
+         smc.old_room_id,
+         smc.old_start_time::text AS start_time,
+         smc.old_end_time::text   AS end_time,
+         c.code                   AS course_code,
+         c.name                   AS course_name,
+         s.section_number,
+         r.room_number AS old_room_number,
+         r.name        AS old_room_name
+       FROM section_meeting_changes smc
+       JOIN sections s       ON s.id  = smc.section_id
+       JOIN courses c        ON c.id  = s.course_id
+       LEFT JOIN rooms r     ON r.id  = smc.old_room_id
+       WHERE smc.event_booking_id = $1
+         AND smc.is_active = TRUE`,
+      [id]
+    );
+    const relocations = relocRes.rows;
+
+    const dateLabel = new Date(event.event_date + 'T00:00:00').toLocaleDateString('en-US', {
+      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+    });
+
+    // ── Transaction ───────────────────────────────────────────
+    const txResult = await withTransaction(async (client) => {
+      // 1. Mark event cancelled
+      const updatedEvent = await client.query(
+        `UPDATE event_bookings
+         SET status = 'cancelled', updated_at = NOW()
+         WHERE id = $1
+         RETURNING *`,
+        [id]
+      );
+
+      // 2. Deactivate all relocation rows for this event
+      await client.query(
+        `UPDATE section_meeting_changes
+         SET is_active = FALSE
+         WHERE event_booking_id = $1 AND is_active = TRUE`,
+        [id]
+      );
+
+      let notificationsSent = 0;
+
+      // 3. Notify students + professor for each deactivated relocation
+      for (const rel of relocations) {
+        const oldRoomLabel = rel.old_room_name
+          ? `${rel.old_room_number} — ${rel.old_room_name}`
+          : (rel.old_room_number || 'the original room');
+
+        const courseStr = (rel.course_name && rel.course_name !== rel.course_code)
+          ? `${rel.course_code} ${rel.course_name}`
+          : rel.course_code;
+        const timeStr = `${fmtTime(rel.start_time)} to ${fmtTime(rel.end_time)}`;
+
+        // Student notification
+        const studentBody =
+          `Your class ${courseStr} on ${dateLabel} from ${timeStr} ` +
+          `has returned to Room ${oldRoomLabel} because event "${event.title}" was cancelled.`;
+
+        const sNotifRes = await client.query(
+          `INSERT INTO notifications
+             (title, body, type, sender_id, target_role, related_room_id,
+              data, is_published, published_at)
+           VALUES ($1,$2,'room_change'::notification_type,$3,'student',$4,'{}'::jsonb,TRUE,NOW())
+           RETURNING id`,
+          ['Classroom change cancelled', studentBody, adminId, rel.old_room_id]
+        );
+        await client.query(
+          `INSERT INTO notification_receipts (notification_id, user_id)
+           SELECT $1, e.student_id
+           FROM enrollments e
+           WHERE e.section_id = $2 AND e.status = 'enrolled'
+           ON CONFLICT (notification_id, user_id) DO NOTHING`,
+          [sNotifRes.rows[0].id, rel.section_id]
+        );
+        notificationsSent++;
+
+        // Professor notification
+        const profRes = await client.query(
+          `SELECT i.user_id
+           FROM sections s
+           JOIN instructors i ON i.id = s.instructor_id
+           WHERE s.id = $1 AND i.user_id IS NOT NULL
+           LIMIT 1`,
+          [rel.section_id]
+        );
+
+        if (profRes.rows.length && profRes.rows[0].user_id) {
+          const profBody =
+            `Your lecture ${courseStr} on ${dateLabel} from ${timeStr} ` +
+            `has returned to Room ${oldRoomLabel} because event "${event.title}" was cancelled.`;
+
+          const pNotifRes = await client.query(
+            `INSERT INTO notifications
+               (title, body, type, sender_id, related_room_id,
+                data, is_published, published_at)
+             VALUES ($1,$2,'room_change'::notification_type,$3,$4,'{}'::jsonb,TRUE,NOW())
+             RETURNING id`,
+            ['Lecture room change cancelled', profBody, adminId, rel.old_room_id]
+          );
+          await client.query(
+            `INSERT INTO notification_receipts (notification_id, user_id)
+             VALUES ($1, $2)
+             ON CONFLICT (notification_id, user_id) DO NOTHING`,
+            [pNotifRes.rows[0].id, profRes.rows[0].user_id]
+          );
+          notificationsSent++;
+        }
+      }
+
+      return {
+        event:                updatedEvent.rows[0],
+        relocations_cancelled: relocations.length,
+        notifications_sent:    notificationsSent,
+      };
+    });
+
+    res.json({ success: true, data: txResult });
+  } catch (error) {
+    next(error);
+  }
+}
+
+module.exports = { listEvents, getConflicts, getAvailableRooms, createEvent, cancelEvent };

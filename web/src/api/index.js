@@ -148,6 +148,8 @@ export const eventAPI = {
 
   create: (data) => api.post('/events', data),
 
+  cancel: (id) => api.patch(`/events/${id}/cancel`),
+
   getConflicts: (params = {}) => api.get('/events/conflicts', { params }),
 
   getAvailableRooms: (params = {}) => api.get('/events/available-rooms', { params }),

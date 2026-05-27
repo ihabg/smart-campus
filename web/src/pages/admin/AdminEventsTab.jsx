@@ -72,6 +72,10 @@ export default function AdminEventsTab() {
   const [eventsLoading,setEventsLoading]= useState(false);
   const eventsLoadedRef = useRef(false);
 
+  const [cancelTarget,  setCancelTarget]  = useState(null); // event object
+  const [cancelLoading, setCancelLoading] = useState(false);
+  const [cancelError,   setCancelError]   = useState('');
+
   // ── Load rooms once ────────────────────────────────────────
   useEffect(() => {
     if (roomsLoadedRef.current) return;
@@ -213,6 +217,29 @@ export default function AdminEventsTab() {
       setConfirmError(getErrorMessage(error));
     } finally {
       setConfirming(false);
+    }
+  }
+
+  // ── Cancel booking ─────────────────────────────────────────
+  async function handleCancelConfirm() {
+    setCancelError('');
+    setCancelLoading(true);
+    try {
+      const res = await eventAPI.cancel(cancelTarget.id);
+      const { relocations_cancelled, notifications_sent } = res.data.data;
+      toast.success('Event booking cancelled.');
+      if (relocations_cancelled > 0) {
+        toast.success(
+          `${relocations_cancelled} lecture${relocations_cancelled !== 1 ? 's' : ''} returned to original room. ` +
+          `${notifications_sent} notification${notifications_sent !== 1 ? 's' : ''} sent.`
+        );
+      }
+      setCancelTarget(null);
+      loadEvents();
+    } catch (err) {
+      setCancelError(getErrorMessage(err));
+    } finally {
+      setCancelLoading(false);
     }
   }
 
@@ -549,6 +576,45 @@ export default function AdminEventsTab() {
         </div>
       </div>
 
+      {/* ── Cancel confirmation modal ── */}
+      {cancelTarget && (
+        <div className="aet-modal-overlay" onClick={() => !cancelLoading && setCancelTarget(null)}>
+          <div className="aet-modal" onClick={e => e.stopPropagation()}>
+            <div className="aet-modal__icon">⚠️</div>
+            <div className="aet-modal__title">Cancel Event Booking?</div>
+            <div className="aet-modal__event-name">{cancelTarget.title}</div>
+            <div className="aet-modal__event-date">
+              {formatDate(cancelTarget.event_date)} · {formatTime(cancelTarget.start_time)} – {formatTime(cancelTarget.end_time)}
+            </div>
+            <div className="aet-modal__body">
+              This will cancel the event, reverse temporary lecture room changes,
+              and notify affected students and professors.
+            </div>
+            {cancelError && (
+              <div className="aet-alert aet-alert--error">{cancelError}</div>
+            )}
+            <div className="aet-modal__actions">
+              <button
+                type="button"
+                className="btn btn--secondary aet-modal__btn-keep"
+                onClick={() => setCancelTarget(null)}
+                disabled={cancelLoading}
+              >
+                Keep Event
+              </button>
+              <button
+                type="button"
+                className="btn aet-modal__btn-cancel"
+                onClick={handleCancelConfirm}
+                disabled={cancelLoading}
+              >
+                {cancelLoading ? 'Cancelling…' : 'Cancel Event'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Events list ── */}
       <div className="aet-list-section">
         <div className="aet-list-header">
@@ -589,6 +655,7 @@ export default function AdminEventsTab() {
                     <th>Time</th>
                     <th>Status</th>
                     <th>Created By</th>
+                    <th></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -612,6 +679,17 @@ export default function AdminEventsTab() {
                       </td>
                       <td><StatusBadge status={ev.status} /></td>
                       <td className="aet-created-by">{ev.created_by_name}</td>
+                      <td className="aet-actions-cell">
+                        {ev.status === 'active' && (
+                          <button
+                            type="button"
+                            className="aet-btn-cancel"
+                            onClick={() => { setCancelTarget(ev); setCancelError(''); }}
+                          >
+                            Cancel
+                          </button>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -635,6 +713,17 @@ export default function AdminEventsTab() {
                     <span>🕐 {formatTime(ev.start_time)} – {formatTime(ev.end_time)}</span>
                     <span>👤 {ev.created_by_name}</span>
                   </div>
+                  {ev.status === 'active' && (
+                    <div className="aet-event-card__cancel">
+                      <button
+                        type="button"
+                        className="aet-btn-cancel aet-btn-cancel--full"
+                        onClick={() => { setCancelTarget(ev); setCancelError(''); }}
+                      >
+                        Cancel Event
+                      </button>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
