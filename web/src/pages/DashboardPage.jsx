@@ -49,14 +49,20 @@ export default function DashboardPage() {
     ] : []),
   ];
 
-  // Quick Access — role-safe; professors keep their 3 links
-  const QUICK_LINKS = [
-    !isProfessor && { to: '/map',                 label: 'Campus Map',          emoji: '🗺️' },
-    { to: '/schedule',                             label: 'My Schedule',         emoji: '📅' },
-    { to: '/map',                                  label: 'Find a Room',         emoji: '🔍' },
-    isStudent    && { to: '/study-plan',            label: 'Study Plan',          emoji: '🎓' },
-    isStudent    && { to: '/course-registration',   label: 'Course Registration', emoji: '📋' },
-    { to: '/notifications',                         label: 'Notifications',       emoji: '🔔' },
+  const QUICK_LINKS = isProfessor ? [
+    { to: '/professor/schedule',   label: 'My Schedule',       emoji: '📅' },
+    { to: '/professor/students',   label: 'Students & Grades', emoji: '👥' },
+    { to: '/professor/attendance', label: 'Attendance',        emoji: '✅' },
+    { to: '/professor/analytics',  label: 'Analytics',         emoji: '📊' },
+    { to: '/professor/materials',  label: 'Course Materials',  emoji: '📚' },
+    { to: '/announcements',        label: 'Announcements',     emoji: '📢' },
+  ] : [
+    { to: '/map',                                label: 'Campus Map',          emoji: '🗺️' },
+    { to: '/schedule',                           label: 'My Schedule',         emoji: '📅' },
+    { to: '/map',                                label: 'Find a Room',         emoji: '🔍' },
+    isStudent && { to: '/study-plan',            label: 'Study Plan',          emoji: '🎓' },
+    isStudent && { to: '/course-registration',   label: 'Course Registration', emoji: '📋' },
+    { to: '/notifications',                      label: 'Notifications',       emoji: '🔔' },
   ].filter(Boolean);
 
   return (

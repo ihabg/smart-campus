@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, Link } from 'react-router-dom';
 import axiosInstance from '../api/axiosInstance';
+import { notificationAPI } from '../api/index';
 import { useAuth } from '../context/AuthContext';
+import { timeAgo } from '../utils/helpers';
 import useProfessorTerm from '../hooks/useProfessorTerm';
 import './ProfessorDashboard.css';
 
@@ -31,6 +33,21 @@ function formatTime(t) {
 function formatTime24(t) {
   if (!t) return '';
   return String(t).slice(0, 5);
+}
+
+function getCountdownProf(startTime) {
+  if (!startTime) return '';
+  const now = new Date();
+  const [h, m] = String(startTime).split(':').map(Number);
+  const start = new Date(now);
+  start.setHours(h, m, 0, 0);
+  const diffMs = start - now;
+  if (diffMs <= 0) return 'Starting';
+  const diffMin = Math.round(diffMs / 60000);
+  if (diffMin < 60) return `In ${diffMin}m`;
+  const hrs = Math.floor(diffMin / 60);
+  const mins = diffMin % 60;
+  return mins > 0 ? `In ${hrs}h ${mins}m` : `In ${hrs}h`;
 }
 
 function getAcademicYearOptions() {
@@ -277,6 +294,11 @@ export default function ProfessorDashboard() {
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
   const [analyticsSectionId, setAnalyticsSectionId] = useState('all');
 
+  const [activeChanges, setActiveChanges] = useState([]);
+  const [profNotifications, setProfNotifications] = useState([]);
+  const [profUnreadCount, setProfUnreadCount] = useState(0);
+  const [notifLoading, setNotifLoading] = useState(false);
+
   const analyticsSections = useMemo(() => analytics.sections || [], [analytics.sections]);
 
   const filteredAnalyticsSections = useMemo(() => {
@@ -490,6 +512,31 @@ export default function ProfessorDashboard() {
   useEffect(() => {
     if (mode === 'messages') loadMessages();
   }, [mode, loadMessages]);
+
+  useEffect(() => {
+    if (mode !== 'overview') return;
+    axiosInstance.get('/professor/meeting-changes')
+      .then(res => {
+        const payload = res.data?.data?.changes ?? res.data?.data ?? res.data?.changes ?? res.data ?? [];
+        const changes = Array.isArray(payload) ? payload : [];
+        setActiveChanges(changes.filter(c => c?.is_active !== false));
+      })
+      .catch(() => setActiveChanges([]));
+  }, [mode]);
+
+  useEffect(() => {
+    if (mode !== 'overview') return;
+    setNotifLoading(true);
+    notificationAPI.getMy({ limit: 5 })
+      .then(res => {
+        const items = res.data?.data ?? res.data ?? [];
+        const list = Array.isArray(items) ? items : [];
+        setProfNotifications(list);
+        setProfUnreadCount(list.filter(n => !n.is_read).length);
+      })
+      .catch(() => setProfNotifications([]))
+      .finally(() => setNotifLoading(false));
+  }, [mode]);
 
   const loadSection = useCallback(async (section, targetMode = 'students', options = {}) => {
     if (!section) return;
@@ -979,6 +1026,15 @@ export default function ProfessorDashboard() {
   const now24 = new Date().toTimeString().slice(0, 5);
   const nextClass = todayItems.find((s) => String(s.end_time || '').slice(0, 5) > now24) || todayItems[0] || null;
 
+  const currentLecture = todayItems.find(s =>
+    String(s.start_time || '').slice(0, 5) <= now24 && String(s.end_time || '').slice(0, 5) > now24
+  ) || null;
+  const firstUpcoming = todayItems.find(s => String(s.start_time || '').slice(0, 5) > now24) || null;
+  const featuredLecture = currentLecture || firstUpcoming || todayItems[0] || null;
+  const sectionHasChange = (sectionId) =>
+    Array.isArray(activeChanges) &&
+    activeChanges.some(c => String(c?.section_id) === String(sectionId));
+
   if (termLoading) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 300 }}>
@@ -1219,47 +1275,221 @@ export default function ProfessorDashboard() {
             </div>
           </section>
 
-          <section className="prof-focus-row">
-            <div className="card prof-focus-card">
+          {/* ── Today's Schedule + Featured Lecture ── */}
+          <section className="prof-overview-grid">
+            {/* Today's Teaching Schedule */}
+            <div className="card">
               <div className="prof-card-hdr">
-                <h3>⚡ Today Focus</h3>
-                <button className="btn btn--sm btn--secondary" onClick={() => navigate('/professor/schedule')}>
-                  Open schedule →
+                <h3>📅 Today's Schedule</h3>
+                <button className="btn btn--sm btn--ghost prof-card-link" onClick={() => navigate('/professor/schedule')}>
+                  Full schedule →
                 </button>
               </div>
-
-              {nextClass ? (
-                <div className="prof-next-class">
-                  <div className="prof-next-class__time">
-                    <span>{formatTime(nextClass.start_time)}</span>
-                    <small>{formatTime(nextClass.end_time)}</small>
-                  </div>
-                  <div className="prof-next-class__body">
-                    <strong>{nextClass.code} — {nextClass.course_name}</strong>
-                    <p>
-                      {roomDisplayEnglish(nextClass.room_number)} · §{nextClass.section_number} · {nextClass.enrolled || 0} students
-                    </p>
-                  </div>
-                </div>
-              ) : (
+              {todayItems.length === 0 ? (
                 <div className="empty-state empty-state--compact">
                   <div className="empty-state__icon">☀️</div>
-                  <p className="empty-state__title">No teaching items for today</p>
+                  <p className="empty-state__title">No classes today</p>
+                </div>
+              ) : (
+                <div className="prof-today-list">
+                  {todayItems.map(s => {
+                    const start5 = String(s.start_time || '').slice(0, 5);
+                    const end5   = String(s.end_time   || '').slice(0, 5);
+                    const isNow  = start5 <= now24 && end5 > now24;
+                    const isPast = end5 <= now24;
+                    const isNext = !isNow && !isPast && s === firstUpcoming;
+                    const changed = sectionHasChange(s.id);
+                    return (
+                      <div key={s.id}
+                        className={`prof-today-item${isNow ? ' prof-today-item--now' : isPast ? ' prof-today-item--past' : ''}`}
+                        onClick={() => {
+                          const sec = (data?.sections || []).find(x => String(x.id) === String(s.id));
+                          if (sec) loadSection(sec, 'students');
+                        }}
+                        style={{ cursor: 'pointer' }}>
+                        <div className="prof-today-time">
+                          <span>{formatTime(s.start_time)}</span>
+                          <small>{formatTime(s.end_time)}</small>
+                        </div>
+                        <div className="prof-today-info">
+                          <div className="prof-today-code">{s.code}</div>
+                          <div className="prof-today-name">{s.course_name}</div>
+                          <div className="prof-today-meta">
+                            {isOnlineRoom(s.room_number) ? 'Online' : `Room ${s.room_number}`} · §{s.section_number} · {s.enrolled || 0} students
+                          </div>
+                        </div>
+                        <div className="prof-today-badges">
+                          {isNow  && <span className="prof-ov-badge prof-ov-badge--now">NOW</span>}
+                          {isNext && <span className="prof-ov-badge prof-ov-badge--next">NEXT</span>}
+                          {isPast && <span className="prof-ov-badge prof-ov-badge--done">DONE</span>}
+                          {changed && <span className="prof-ov-badge prof-ov-badge--changed">CHANGED</span>}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
 
-            <div className="card prof-focus-card">
+            {/* Current / Next Lecture */}
+            <div className="card">
               <div className="prof-card-hdr">
-                <h3>🚀 Quick Start</h3>
+                <h3>{currentLecture ? '🟢 Now Teaching' : '⏭ Next Lecture'}</h3>
               </div>
-              <div className="prof-quick-list">
-                <button onClick={() => navigate('/professor/schedule')}>Review weekly table view</button>
-                <button onClick={() => navigate('/professor/materials')}>Add course material</button>
-                <button onClick={() => navigate('/professor/analytics')}>Review analytics</button>
-              </div>
+              {featuredLecture ? (
+                <div className="prof-featured-lecture">
+                  <div className="prof-featured-badges">
+                    {currentLecture
+                      ? <span className="prof-ov-badge prof-ov-badge--now">IN PROGRESS</span>
+                      : <span className="prof-ov-badge prof-ov-badge--next">{getCountdownProf(featuredLecture.start_time)}</span>
+                    }
+                    {sectionHasChange(featuredLecture.id) && (
+                      <span className="prof-ov-badge prof-ov-badge--changed">ROOM CHANGED</span>
+                    )}
+                  </div>
+                  <div className="prof-featured-course">
+                    <div className="prof-featured-code">{featuredLecture.code}</div>
+                    <div className="prof-featured-name">{featuredLecture.course_name}</div>
+                    <div className="prof-featured-meta">
+                      §{featuredLecture.section_number} · {featuredLecture.enrolled || 0} students
+                    </div>
+                    <div className="prof-featured-time">
+                      {formatTime(featuredLecture.start_time)} – {formatTime(featuredLecture.end_time)}
+                    </div>
+                    <div className="prof-featured-meta">
+                      {isOnlineRoom(featuredLecture.room_number) ? '🌐 Online' : `📍 Room ${featuredLecture.room_number}`}
+                    </div>
+                  </div>
+                  <div className="prof-featured-actions">
+                    <button className="btn btn--sm btn--primary"
+                      onClick={() => {
+                        const sec = (data?.sections || []).find(x => String(x.id) === String(featuredLecture.id));
+                        if (sec) loadSection(sec, 'attendance');
+                      }}>
+                      ✅ Take Attendance
+                    </button>
+                    <button className="btn btn--sm btn--secondary"
+                      onClick={() => {
+                        const sec = (data?.sections || []).find(x => String(x.id) === String(featuredLecture.id));
+                        if (sec) loadSection(sec, 'students');
+                      }}>
+                      👥 View Students
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="empty-state empty-state--compact">
+                  <div className="empty-state__icon">🎉</div>
+                  <p className="empty-state__title">No more classes today</p>
+                </div>
+              )}
             </div>
           </section>
+
+          {/* ── Sections Overview + Notifications ── */}
+          <section className="prof-overview-grid">
+            {/* Sections Overview */}
+            <div className="card">
+              <div className="prof-card-hdr">
+                <h3>📚 My Sections</h3>
+                <button className="btn btn--sm btn--ghost prof-card-link" onClick={() => navigate('/professor/students')}>
+                  View grades →
+                </button>
+              </div>
+              {(data?.sections || []).length === 0 ? (
+                <div className="empty-state empty-state--compact">
+                  <div className="empty-state__icon">📖</div>
+                  <p className="empty-state__title">No sections this term</p>
+                </div>
+              ) : (
+                <div className="prof-sections-ov-list">
+                  {(data?.sections || []).map(sec => (
+                    <div key={sec.id} className="prof-sections-ov-row"
+                      onClick={() => loadSection(sec, 'students')}
+                      style={{ cursor: 'pointer' }}>
+                      <div className="prof-sections-ov-code">
+                        <span>{sec.code}</span>
+                        {sectionHasChange(sec.id) && (
+                          <span className="prof-ov-badge prof-ov-badge--changed" style={{ fontSize: 9 }}>CHANGED</span>
+                        )}
+                      </div>
+                      <div className="prof-sections-ov-info">
+                        <div className="prof-sections-ov-name">{sec.course_name}</div>
+                        <div className="prof-sections-ov-meta">
+                          §{sec.section_number} · {sec.day_of_week?.join(', ')} · {formatTime(sec.start_time)}–{formatTime(sec.end_time)}
+                        </div>
+                      </div>
+                      <div className="prof-sections-ov-count">{sec.enrolled || 0}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Notifications */}
+            <div className="card">
+              <div className="prof-card-hdr">
+                <h3>
+                  🔔 Notifications
+                  {profUnreadCount > 0 && (
+                    <span className="prof-unread-badge">{profUnreadCount}</span>
+                  )}
+                </h3>
+                <Link to="/notifications" className="prof-card-link">See all →</Link>
+              </div>
+              {notifLoading ? (
+                <div style={{ padding: '12px 0', color: 'var(--text-muted)', fontSize: 13 }}>Loading…</div>
+              ) : profNotifications.length === 0 ? (
+                <div className="empty-state empty-state--compact">
+                  <div className="empty-state__icon">✅</div>
+                  <p className="empty-state__title">All caught up</p>
+                </div>
+              ) : (
+                <div className="prof-notif-list">
+                  {profNotifications.map(n => (
+                    <div key={n.id} className={`prof-notif-item${!n.is_read ? ' prof-notif-item--unread' : ''}`}>
+                      <div className="prof-notif-title">{n.title}</div>
+                      {n.body && <div className="prof-notif-body">{n.body}</div>}
+                      <div className="prof-notif-time">{timeAgo(n.published_at || n.created_at)}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </section>
+
+          {/* ── Quick Actions ── */}
+          <div className="card">
+            <div className="prof-card-hdr">
+              <h3>🚀 Quick Actions</h3>
+            </div>
+            <div className="prof-quick-actions-grid">
+              <button className="prof-quick-action-btn" onClick={() => navigate('/professor/schedule')}>
+                <span className="prof-quick-action-icon">📅</span>
+                <span>Weekly Schedule</span>
+              </button>
+              <button className="prof-quick-action-btn" onClick={() => navigate('/professor/attendance')}>
+                <span className="prof-quick-action-icon">✅</span>
+                <span>Take Attendance</span>
+              </button>
+              <button className="prof-quick-action-btn" onClick={() => navigate('/professor/students')}>
+                <span className="prof-quick-action-icon">📊</span>
+                <span>Students & Grades</span>
+              </button>
+              <button className="prof-quick-action-btn" onClick={() => navigate('/professor/materials')}>
+                <span className="prof-quick-action-icon">📚</span>
+                <span>Course Materials</span>
+              </button>
+              <button className="prof-quick-action-btn" onClick={() => navigate('/professor/assessments')}>
+                <span className="prof-quick-action-icon">📝</span>
+                <span>Assessments</span>
+              </button>
+              <button className="prof-quick-action-btn" onClick={() => navigate('/professor/analytics')}>
+                <span className="prof-quick-action-icon">📈</span>
+                <span>Analytics</span>
+              </button>
+            </div>
+          </div>
 
           {(data?.at_risk || []).length > 0 && (
             <div className="card prof-risk-card">
