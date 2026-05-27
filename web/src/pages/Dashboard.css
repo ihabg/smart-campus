@@ -247,3 +247,189 @@
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+
+/* ══════════════════════════════════════════════════
+   STUDENT TRI-GRID (GPA · Registration · Next Class)
+   ══════════════════════════════════════════════════ */
+
+.dashboard__tri-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-lg);
+}
+@media(max-width:900px) { .dashboard__tri-grid { grid-template-columns: repeat(2, 1fr); } }
+@media(max-width:600px) { .dashboard__tri-grid { grid-template-columns: 1fr; } }
+
+/* ── GPA card ─────────────────────────────────────── */
+.dash-gpa-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.dash-gpa-main {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.dash-gpa-value {
+  font-size: 40px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--navy);
+  font-family: var(--font-display);
+}
+
+.dash-gpa-out-of {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.dash-gpa-credits {
+  display: flex;
+  align-items: center;
+  gap: var(--space-lg);
+  padding-top: var(--space-sm);
+  border-top: 1px solid var(--border);
+}
+
+.dash-gpa-credit-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.dash-gpa-credit-value {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1;
+}
+
+.dash-gpa-credit-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.dash-gpa-credit-divider {
+  width: 1px;
+  height: 34px;
+  background: var(--border);
+  flex-shrink: 0;
+}
+
+.dash-gpa-empty {
+  font-size: 13px;
+  color: var(--text-muted);
+  font-style: italic;
+  margin: var(--space-xs) 0 0;
+}
+
+/* ── Registration status card ─────────────────────── */
+.dash-reg-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.dash-reg-semester {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0;
+}
+
+.dash-reg-status {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: var(--r-full);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  width: fit-content;
+}
+
+.dash-reg-status--open   { background: var(--green-bg);  color: var(--green);       }
+.dash-reg-status--closed { background: var(--red-bg);    color: var(--red);         }
+.dash-reg-status--soon   { background: #fef9c3;          color: #a16207;            }
+
+.dash-reg-dates {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: var(--space-xs);
+}
+
+.dash-reg-date-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  gap: 8px;
+}
+
+.dash-reg-date-label { color: var(--text-muted); font-weight: 500; }
+.dash-reg-date-value { color: var(--text);       font-weight: 500; }
+
+/* ── Next class card ──────────────────────────────── */
+.dash-next-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.dash-next-countdown {
+  display: inline-block;
+  background: var(--blue-bg);
+  color: var(--navy);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: var(--r-full);
+  letter-spacing: 0.03em;
+  width: fit-content;
+}
+
+.dash-next-course {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.dash-next-code {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.2;
+}
+
+.dash-next-name {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.dash-next-time {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--navy);
+  font-family: var(--font-mono);
+}
+
+.dash-next-room {
+  font-size: 12px;
+  color: var(--navy);
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.dash-next-room:hover { text-decoration: underline; }
+
+.dash-next-instructor {
+  font-size: 12px;
+  color: var(--text-muted);
+}
