@@ -218,6 +218,7 @@ export function SearchableSelect({
   const triggerRef   = useRef(null);
   const inputRef     = useRef(null);
   const listRef      = useRef(null);
+  const listboxId = useRef(`searchable-select-listbox-${Math.random().toString(36).slice(2)}`).current;
 
   // Close on outside click or external scroll (but NOT when scrolling inside the list).
   useEffect(() => {
@@ -332,7 +333,9 @@ export function SearchableSelect({
         onKeyDown={handleTriggerKey}
         tabIndex={disabled ? -1 : 0}
         role="combobox"
-        aria-expanded={open}
+aria-haspopup="listbox"
+aria-expanded={open ? 'true' : 'false'}
+aria-controls={listboxId}
       >
         <span style={{
           flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
@@ -372,11 +375,18 @@ export function SearchableSelect({
           </div>
 
           {/* Options list */}
-          <div ref={listRef} style={{ maxHeight: 220, overflowY: 'auto' }}>
+          <div
+  ref={listRef}
+  id={listboxId}
+  role="listbox"
+  style={{ maxHeight: 220, overflowY: 'auto' }}
+>
             {/* Clear / placeholder row for optional fields */}
             {!required && (
               <div
-                onClick={() => selectOption('')}
+  role="option"
+  aria-selected={!value ? 'true' : 'false'}
+  onClick={() => selectOption('')}
                 onMouseEnter={() => setHighlighted(-1)}
                 style={{
                   padding: '7px 12px', fontSize: 13, cursor: 'pointer', fontStyle: 'italic',
@@ -399,7 +409,9 @@ export function SearchableSelect({
               return (
                 <div
                   key={opt.value}
-                  onClick={() => selectOption(opt.value)}
+  role="option"
+  aria-selected={isSel ? 'true' : 'false'}
+  onClick={() => selectOption(opt.value)}
                   onMouseEnter={() => setHighlighted(i)}
                   style={{
                     padding: '7px 12px', fontSize: 13, cursor: 'pointer',
