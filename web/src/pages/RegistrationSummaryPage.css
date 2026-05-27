@@ -1,0 +1,590 @@
+/* ── Registration Summary Page ────────────────────────────────
+   Printable student registration receipt.
+   ─────────────────────────────────────────────────────────── */
+
+/* ── Page shell ─────────────────────────────────────────────── */
+
+.rsr-page {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 0 0 56px;
+}
+
+/* ── Print-only header (hidden on screen) ───────────────────── */
+
+.rsr-print-header {
+  display: none;
+}
+
+/* ── Screen action bar ──────────────────────────────────────── */
+
+.rsr-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 0 0;
+  flex-wrap: wrap;
+}
+
+.rsr-back {
+  font-size: 13.5px;
+  color: var(--navy, #1a2744);
+  text-decoration: none;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 0;
+}
+
+.rsr-back:hover { text-decoration: underline; }
+
+/* ── Buttons ────────────────────────────────────────────────── */
+
+.rsr-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 9px 20px;
+  border-radius: 8px;
+  border: none;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  transition: opacity 0.15s, background 0.15s;
+  white-space: nowrap;
+}
+
+.rsr-btn--print {
+  background: var(--navy, #1a2744);
+  color: #fff;
+}
+.rsr-btn--print:hover { opacity: 0.85; }
+
+.rsr-btn--primary {
+  background: var(--navy, #1a2744);
+  color: #fff;
+  margin-top: 14px;
+}
+.rsr-btn--primary:hover { opacity: 0.85; }
+
+/* ── Page header ────────────────────────────────────────────── */
+
+.rsr-page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 0 14px;
+  flex-wrap: wrap;
+}
+
+.rsr-page-header__left { min-width: 0; }
+
+.rsr-page-title {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--navy, #1a2744);
+  margin: 0 0 3px;
+  font-family: var(--font-display, inherit);
+}
+
+.rsr-page-sub {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.rsr-page-header__right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.rsr-term-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.rsr-term-select {
+  padding: 7px 12px;
+  border: 1px solid var(--border, #d1d5db);
+  border-radius: 8px;
+  font-size: 14px;
+  background: var(--surface, #fff);
+  color: var(--text);
+  cursor: pointer;
+  min-width: 200px;
+}
+.rsr-term-select:focus {
+  outline: none;
+  border-color: var(--navy, #1a2744);
+}
+
+/* ── Student info card ──────────────────────────────────────── */
+
+.rsr-info-card {
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 14px;
+  padding: 20px 24px;
+  margin-bottom: 16px;
+}
+
+.rsr-info-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px 24px;
+}
+
+.rsr-info-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.rsr-info-label {
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.rsr-info-value {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.rsr-info-value--sm { font-size: 12.5px; }
+
+/* ── Stats strip ────────────────────────────────────────────── */
+
+.rsr-stats {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 24px;
+}
+
+.rsr-stat-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 16px 24px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  min-width: 140px;
+}
+
+.rsr-stat-card--blue  { background: #eff6ff; border-color: #bfdbfe; }
+.rsr-stat-card--green { background: #f0fdf4; border-color: #bbf7d0; }
+
+.rsr-stat-val {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--navy, #1a2744);
+  line-height: 1;
+}
+
+.rsr-stat-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+/* ── Section subheadings ────────────────────────────────────── */
+
+.rsr-section-header {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+  padding-bottom: 7px;
+  border-bottom: 2px solid var(--border, #e5e7eb);
+}
+
+/* ── Registered courses table ───────────────────────────────── */
+
+.rsr-table-wrap {
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 12px;
+  overflow: hidden;
+  margin-bottom: 28px;
+}
+
+.rsr-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.rsr-table thead th {
+  padding: 9px 12px;
+  text-align: left;
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  background: var(--bg, #f8f9fb);
+  border-bottom: 1px solid var(--border, #e5e7eb);
+  white-space: nowrap;
+}
+
+.rsr-table tbody tr {
+  border-bottom: 1px solid var(--border, #e5e7eb);
+  transition: background 0.1s;
+}
+.rsr-table tbody tr:last-child { border-bottom: none; }
+.rsr-table tbody tr:hover { background: rgba(0,0,0,0.015); }
+
+.rsr-table td {
+  padding: 10px 12px;
+  vertical-align: middle;
+  color: var(--text);
+}
+
+.rsr-td--code {
+  font-family: monospace;
+  font-weight: 700;
+  color: var(--navy, #1a2744);
+  white-space: nowrap;
+}
+
+.rsr-td-name { font-weight: 500; }
+
+.rsr-td-name-ar {
+  font-size: 12px;
+  color: var(--text-muted);
+  direction: rtl;
+  margin-top: 2px;
+}
+
+.rsr-td-days {
+  display: block;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.rsr-td-time {
+  display: block;
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.rsr-status-badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  background: #dbeafe;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+  white-space: nowrap;
+}
+
+.rsr-table tfoot .rsr-table__totals {
+  background: var(--bg, #f8f9fb);
+  border-top: 2px solid var(--border, #e5e7eb);
+}
+
+.rsr-table tfoot td {
+  padding: 9px 12px;
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--navy, #1a2744);
+}
+
+/* ── Weekly schedule ────────────────────────────────────────── */
+
+.rsr-schedule {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 32px;
+}
+
+.rsr-day-group {
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.rsr-day-label {
+  padding: 7px 14px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--navy, #1a2744);
+  background: var(--bg, #f8f9fb);
+  border-bottom: 1px solid var(--border, #e5e7eb);
+}
+
+.rsr-meeting {
+  display: grid;
+  grid-template-columns: 110px 72px 1fr 90px;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  font-size: 13px;
+  border-bottom: 1px solid var(--border, #e5e7eb);
+}
+.rsr-meeting:last-child { border-bottom: none; }
+
+.rsr-meeting__time {
+  font-weight: 600;
+  font-size: 12.5px;
+  color: var(--navy, #1a2744);
+  white-space: nowrap;
+}
+
+.rsr-meeting__code {
+  font-family: monospace;
+  font-weight: 700;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.rsr-meeting__name {
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rsr-meeting__room {
+  font-size: 12px;
+  color: var(--text-muted);
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* ── Loading & empty state ──────────────────────────────────── */
+
+.rsr-loading {
+  display: flex;
+  justify-content: center;
+  padding: 64px 0;
+}
+
+.rsr-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 64px 24px;
+  text-align: center;
+}
+
+.rsr-empty__icon { font-size: 42px; line-height: 1; margin-bottom: 4px; }
+
+.rsr-empty__title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0;
+}
+
+.rsr-empty__sub {
+  font-size: 14px;
+  color: var(--text-muted);
+  max-width: 360px;
+  line-height: 1.6;
+  margin: 0;
+}
+
+/* ── Tablet (≤ 768px) ───────────────────────────────────────── */
+
+@media (max-width: 768px) {
+  .rsr-info-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* ── Mobile (≤ 640px) ───────────────────────────────────────── */
+
+@media (max-width: 640px) {
+  .rsr-actions {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .rsr-btn--print {
+    width: 100%;
+    padding: 11px 20px;
+  }
+
+  .rsr-page-header {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .rsr-page-header__right {
+    width: 100%;
+  }
+
+  .rsr-term-select {
+    flex: 1;
+    min-width: 0;
+    width: 100%;
+  }
+
+  .rsr-stats { flex-direction: row; }
+
+  .rsr-stat-card {
+    flex: 1;
+    min-width: 0;
+    padding: 13px 16px;
+  }
+
+  .rsr-stat-val { font-size: 22px; }
+
+  /* Table → card layout on mobile */
+  .rsr-table-wrap {
+    border: none;
+    border-radius: 0;
+    overflow-x: visible;
+  }
+
+  .rsr-table,
+  .rsr-table tbody,
+  .rsr-table tbody tr,
+  .rsr-table tbody td {
+    display: block;
+    width: 100%;
+  }
+
+  .rsr-table thead { display: none; }
+
+  .rsr-table tfoot { display: none; }
+
+  .rsr-table tbody tr {
+    background: var(--surface, #fff);
+    border: 1px solid var(--border, #e5e7eb);
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin-bottom: 10px;
+    box-sizing: border-box;
+  }
+
+  .rsr-table tbody td {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 3px 0;
+    border: none;
+  }
+
+  .rsr-table tbody td::before {
+    content: attr(data-label);
+    font-weight: 600;
+    font-size: 10.5px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    min-width: 76px;
+    flex-shrink: 0;
+    padding-top: 2px;
+  }
+
+  /* Weekly schedule on mobile */
+  .rsr-meeting {
+    grid-template-columns: 1fr auto;
+    grid-template-rows: auto auto;
+    row-gap: 2px;
+  }
+
+  .rsr-meeting__time { grid-column: 1 / -1; font-weight: 700; }
+  .rsr-meeting__code { font-size: 12px; }
+  .rsr-meeting__name { grid-column: 1; }
+  .rsr-meeting__room { grid-column: 2; text-align: right; }
+}
+
+/* ── Small mobile (≤ 400px) ─────────────────────────────────── */
+
+@media (max-width: 400px) {
+  .rsr-info-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── Print styles ───────────────────────────────────────────── */
+
+@media print {
+  /* Hide app shell elements */
+  .sidebar,
+  .sidebar-overlay,
+  .navbar,
+  .app-body > .sidebar,
+  .chatbot-popup,
+  #chatbot-toggler,
+  .chatbot-badge { display: none !important; }
+
+  /* Hide screen-only page elements */
+  .rsr-no-print { display: none !important; }
+
+  /* Show print-only header */
+  .rsr-print-header {
+    display: block;
+    text-align: center;
+    padding: 0 0 18px;
+    margin-bottom: 18px;
+    border-bottom: 2px solid #1a2744;
+  }
+
+  .rsr-print-header__title {
+    font-size: 18px;
+    font-weight: 700;
+    color: #1a2744;
+  }
+
+  .rsr-print-header__inst {
+    font-size: 12px;
+    color: #555;
+    margin-top: 3px;
+  }
+
+  /* Reset background & layout */
+  body, html { background: #fff !important; }
+
+  .rsr-page {
+    max-width: 100%;
+    padding: 16px 24px;
+  }
+
+  /* Stat card backgrounds must survive print */
+  .rsr-stat-card--blue  { background: #eff6ff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .rsr-stat-card--green { background: #f0fdf4 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+  /* Table prints cleanly */
+  .rsr-table-wrap {
+    border: 1px solid #ccc;
+    border-radius: 0;
+    overflow: visible;
+  }
+
+  .rsr-table thead { background: #f0f0f0 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .rsr-table thead th { font-size: 10px; }
+  .rsr-table tbody td, .rsr-table tfoot td { font-size: 11px; padding: 7px 10px; }
+  .rsr-table tfoot { display: table-footer-group; }
+
+  /* Prevent orphaned rows */
+  .rsr-info-card,
+  .rsr-day-group,
+  .rsr-table tbody tr { page-break-inside: avoid; break-inside: avoid; }
+}

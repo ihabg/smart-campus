@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import { scheduleAPI, studentAPI } from '../api/index';
 import { Spinner } from '../components/ui/index';
 import { getErrorMessage } from '../utils/helpers';
@@ -787,6 +788,14 @@ export default function CourseRegistrationPage() {
           )}
         </div>
         <div className="cr-page-header__right">
+          {selectedTerm && (
+            <Link
+              to={`/registration-summary?semester=${selectedTerm.semester}&academic_year=${selectedTerm.academic_year}`}
+              className="cr-btn cr-btn--ghost cr-btn--sm"
+            >
+              Registration Summary
+            </Link>
+          )}
           <label className="cr-term-label" htmlFor="cr-term-sel">Term</label>
           <select
             id="cr-term-sel"

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { roomAPI, floorAPI } from '../../api/index';
 import OfficeAssignmentsPanel from '../../components/ui/OfficeAssignmentsPanel';
+import AdminEventsTab from './AdminEventsTab';
 import { useAsync, useRoomTypes } from '../../hooks/index';
 import {
   Table,
@@ -24,6 +25,7 @@ import toast from 'react-hot-toast';
 
 export default function AdminRoomsPage() {
   const { roomTypes } = useRoomTypes();
+  const [activeTab, setActiveTab] = useState('rooms');
   const [floorId, setFloorId] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
   const [showCreate, setShowCreate] = useState(false);
@@ -221,26 +223,46 @@ export default function AdminRoomsPage() {
           </p>
         </div>
 
-        <div style={{ display: 'flex', gap: 8 }}>
-          <Link
-            to={floorId ? `/admin/map-editor?floor=${floorId}` : '/admin/map-editor'}
-            className="btn btn--secondary"
-          >
-            Open Map Editor
-          </Link>
+        {activeTab === 'rooms' && (
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Link
+              to={floorId ? `/admin/map-editor?floor=${floorId}` : '/admin/map-editor'}
+              className="btn btn--secondary"
+            >
+              Open Map Editor
+            </Link>
 
-          <Button
-            variant="primary"
-            icon={<PlusIcon />}
-            onClick={() => setShowCreate(true)}
-            disabled={!floorId}
-          >
-            Add Room
-          </Button>
-        </div>
+            <Button
+              variant="primary"
+              icon={<PlusIcon />}
+              onClick={() => setShowCreate(true)}
+              disabled={!floorId}
+            >
+              Add Room
+            </Button>
+          </div>
+        )}
       </div>
 
-      <div
+      {/* ── Tab strip ── */}
+      <div className="ar-tabs">
+        <button
+          className={`ar-tab${activeTab === 'rooms' ? ' ar-tab--active' : ''}`}
+          onClick={() => setActiveTab('rooms')}
+        >
+          🏢 Rooms
+        </button>
+        <button
+          className={`ar-tab${activeTab === 'events' ? ' ar-tab--active' : ''}`}
+          onClick={() => setActiveTab('events')}
+        >
+          📅 Events
+        </button>
+      </div>
+
+      {activeTab === 'events' && <AdminEventsTab />}
+
+      {activeTab === 'rooms' && <div
         className="card card--sm"
         style={{
           marginBottom: 'var(--space-lg)',
@@ -289,9 +311,9 @@ export default function AdminRoomsPage() {
             {rooms.length} room{rooms.length !== 1 ? 's' : ''}
           </span>
         )}
-      </div>
+      </div>}
 
-      {!floorId ? (
+      {activeTab === 'rooms' && (!floorId ? (
         <div className="card">
           <div className="empty-state">
             <div className="empty-state__icon">🏢</div>
@@ -310,7 +332,7 @@ export default function AdminRoomsPage() {
             emptyMessage="No rooms found for this floor"
           />
         </div>
-      )}
+      ))}
 
       <RoomFormModal
         open={showCreate}

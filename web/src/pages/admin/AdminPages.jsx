@@ -1,5 +1,9 @@
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { Link } from 'react-router-dom';
+import { useAuth } from '../../context/AuthContext';
+import { publicUrl } from '../../utils/publicUrl';
+import './AdminUsersPage.css';
+import './AdminDashboardPage.css';
 import {
   userAPI,
   roomAPI,
@@ -8,8 +12,12 @@ import {
   notificationAPI,
   floorAPI,
   courseAPI,
-  instructorAPI
+  instructorAPI,
+  semesterAPI,
+  studyPlanAPI,
+  eventAPI,
 } from '../../api/index';
+import AdminEventsTab from './AdminEventsTab';
 import { useAsync, useAllSections, useRoomTypes } from '../../hooks/index';
 import { RoomFormModal } from './AdminRoomsPage';
 import {
@@ -20,129 +28,374 @@ import {
 import {
   formatDate, formatTime, daysArrayToString, statusBadgeClass,
   statusLabel, roomTypeLabel, roomTypeBadgeClass, getErrorMessage, semesterLabel,
+  timeAgo, formatDateTime,
 } from '../../utils/helpers';
 import toast from 'react-hot-toast';
 import { RoomAvailabilityMap } from '../../components/map/RoomAvailabilityMap';
 
 
 // ─── Admin Dashboard ──────────────────────────────────────────
+const QUICK_ACTION_GROUPS = [
+  {
+    group: 'Academic',
+    actions: [
+      { to: '/admin/semester',    label: '📅 Semester' },
+      { to: '/admin/study-plans', label: '🎓 Study Plans' },
+      { to: '/admin/courses',     label: '📖 Courses' },
+      { to: '/admin/doctors',     label: '👨‍🏫 Doctors' },
+    ],
+  },
+  {
+    group: 'Campus',
+    actions: [
+      { to: '/admin/floors',     label: '🏢 Floors & Maps' },
+      { to: '/admin/map-editor', label: '✏️ Map Editor' },
+    ],
+  },
+  {
+    group: 'Communication',
+    actions: [
+      { to: '/admin/notifications', label: '🔔 Notifications' },
+      { to: '/admin/announcements', label: '📢 Announcements' },
+    ],
+  },
+  {
+    group: 'Users',
+    actions: [
+      { to: '/admin/users', label: '👥 Manage Users' },
+    ],
+  },
+];
+
 export function AdminDashboard() {
-  const { data, loading } = useAsync(() => userAPI.getStats(), []);
+  const [showAllRooms, setShowAllRooms] = useState(false);
 
-  if (loading) return <Spinner center />;
+  // Primary data — if this fails the error banner shows
+  const { data: statsData, loading: statsLoading, error: statsError } = useAsync(
+    () => userAPI.getStats(), []
+  );
+  // Secondary — semesters (reg period card + academic overview counts)
+  const { data: semData } = useAsync(() => semesterAPI.list(), []);
+  // Secondary — counts for academic overview
+  const { data: courseData } = useAsync(() => courseAPI.getAll({ limit: 1 }), []);
+  const { data: instrData  } = useAsync(() => instructorAPI.getAll({ limit: 1 }), []);
+  const { data: planData   } = useAsync(() => studyPlanAPI.list(), []);
+  // Secondary — recent announcements
+  const { data: annData } = useAsync(() => announcementAPI.getAll({ limit: 4 }), []);
 
-  const stats = data || {};
+  // ── Derived values ─────────────────────────────────────────
+  const stats = statsData || {};
 
-  const roomTypes = Array.isArray(stats.rooms?.by_type)
-    ? stats.rooms.by_type
-    : [];
+  const rawRoomTypes = Array.isArray(stats.rooms?.by_type) ? stats.rooms.by_type : [];
+  const roomTypes    = [...rawRoomTypes]
+    .filter(r => Number(r.count) > 0)
+    .sort((a, b) => Number(b.count) - Number(a.count));
+  const maxRoomCount = Number(roomTypes[0]?.count) || 1;
+  const ROOM_SHOW    = 8;
 
-  const activeSections =
-    stats.sections?.spring_active ??
-    stats.sections?.active ??
-    0;
+  const semesters     = semData?.semesters || [];
+  const publishedSems = semesters.filter(s => s.status === 'published');
+  const latestPub     = publishedSems[0] || null;
+  const regState      = dashCalcRegState(latestPub);
+
+  const courseCount = courseData?.pagination?.total ?? null;
+  const instrCount  = instrData?.pagination?.total  ?? null;
+  const planCount   = Array.isArray(planData) ? planData.length : null;
+
+  const announcements = annData?.announcements || [];
+
+  // ── Stat cards data ─────────────────────────────────────────
+  const STAT_CARDS = [
+    {
+      icon: '👥', label: 'Total Users',
+      value: stats.users?.total || 0, color: 'navy',
+      sub: `${stats.users?.active || 0} active · ${stats.users?.suspended || 0} suspended`,
+    },
+    {
+      icon: '🎓', label: 'Students',
+      value: stats.users?.students || 0, color: 'blue',
+      sub: 'Registered students',
+    },
+    {
+      icon: '👨‍🏫', label: 'Professors',
+      value: stats.users?.professors || 0, color: 'green',
+      sub: 'Faculty members',
+    },
+    {
+      icon: '🏢', label: 'Total Rooms',
+      value: stats.rooms?.total || 0, color: 'gold',
+      sub: `Across ${stats.buildings?.total || 0} buildings`,
+    },
+    {
+      icon: '📅', label: 'Active Sections',
+      value: stats.sections?.active || 0, color: 'green',
+      sub: 'All active sections',
+    },
+    {
+      icon: '🔔', label: 'Notifications',
+      value: stats.notifications?.published || 0, color: 'amber',
+      sub: `${stats.notifications?.total || 0} total`,
+    },
+  ];
+
+  // ── Date label for header ───────────────────────────────────
+  const todayLabel = new Date().toLocaleDateString('en-US', {
+    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+  });
 
   return (
     <div>
-      <div className="page-header">
-        <h1 className="page-title">Admin Dashboard</h1>
-        <p className="page-sub">System overview for An-Najah Smart Campus</p>
+      {/* Header */}
+      <div className="adm-header">
+        <div className="page-header" style={{ marginBottom: 0 }}>
+          <h1 className="page-title">Admin Dashboard</h1>
+          <p className="page-sub">System overview — An-Najah Smart Campus</p>
+        </div>
+        <div className="adm-header-date">📆 {todayLabel}</div>
       </div>
 
-      <div className="grid-4" style={{ marginBottom: 'var(--space-xl)' }}>
-        <StatCard
-          label="Total Students"
-          value={stats.users?.students || 0}
-          sub={`${stats.users?.active || 0} active users`}
-          color="blue"
-        />
+      {/* Error banner */}
+      {statsError && (
+        <div className="adm-error">
+          ⚠ Failed to load dashboard statistics. Please refresh the page.
+        </div>
+      )}
 
-        <StatCard
-          label="Total Rooms"
-          value={stats.rooms?.total || 0}
-          sub="All active mapped locations"
-          color="green"
-        />
+      {/* ── Stats row ─────────────────────────────────────────── */}
+      {statsLoading ? (
+        <div className="adm-stats-grid" style={{ marginBottom: 24 }}>
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="card adm-skel-card">
+              <span className="adm-skel" style={{ height: 24, width: '35%', marginBottom: 10 }} />
+              <span className="adm-skel" style={{ height: 34, width: '55%', marginBottom: 8 }} />
+              <span className="adm-skel" style={{ height: 11, width: '80%' }} />
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="adm-stats-grid">
+          {STAT_CARDS.map(card => (
+            <div key={card.label} className={`stat-card stat-card--${card.color}`}>
+              <div className="stat-card__icon">{card.icon}</div>
+              <div className="stat-card__label">{card.label}</div>
+              <div className="stat-card__value">{card.value}</div>
+              <div className="stat-card__sub">{card.sub}</div>
+            </div>
+          ))}
+        </div>
+      )}
 
-        <StatCard
-          label="Spring Sections"
-          value={activeSections}
-          sub="Spring 2025/2026"
-          color="gold"
-        />
+      {/* ── Main body (two columns) ───────────────────────────── */}
+      <div className="adm-body">
 
-        <StatCard
-          label="Buildings"
-          value={stats.buildings?.total || 0}
-          sub="Active buildings"
-          color="blue"
-        />
-      </div>
+        {/* ── Left column ─────────────────────────────────────── */}
+        <div className="adm-col">
 
-      <div className="grid-2">
-        <div className="card">
-          <SectionHeader title="Room Types From Database" />
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {/* Campus Room Overview */}
+          <div className="card">
+            <div className="adm-card-header">
+              <span className="adm-card-title">🏢 Campus Room Overview</span>
+              <Link to="/admin/rooms" className="adm-card-link">View rooms →</Link>
+            </div>
             {roomTypes.length === 0 ? (
-              <div
-                style={{
-                  fontSize: 13,
-                  color: 'var(--text-muted)',
-                  padding: '10px 0'
-                }}
-              >
-                No room type statistics found. Restart the backend and make sure
-                <code style={{ marginLeft: 4 }}>rooms.by_type</code> is returned
-                from <code>/api/users/stats</code>.
+              <div style={{ fontSize: 13, color: 'var(--text-muted)', padding: '10px 0' }}>
+                No room data available. Ensure the backend is running.
               </div>
             ) : (
-              roomTypes.map((item) => (
-                <div
-                  key={item.type}
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    padding: '7px 0',
-                    borderBottom: '1px solid var(--border)'
-                  }}
-                >
-                  <span style={{ fontSize: 13 }}>
-                    {roomTypeLabel(item.type)}
-                  </span>
+              <div className="adm-room-list">
+                {roomTypes.slice(0, showAllRooms ? undefined : ROOM_SHOW).map(rt => (
+                  <div key={rt.type} className="adm-room-row">
+                    <span className="adm-room-label">{roomTypeLabel(rt.type)}</span>
+                    <div className="adm-room-bar-track">
+                      <div
+                        className="adm-room-bar-fill"
+                        style={{
+                          width: `${(Number(rt.count) / maxRoomCount * 100).toFixed(1)}%`,
+                          background: dashRoomBarColor(rt.type),
+                        }}
+                      />
+                    </div>
+                    <span className="adm-room-count">{rt.count}</span>
+                  </div>
+                ))}
+                {roomTypes.length > ROOM_SHOW && (
+                  <button
+                    className="adm-room-show-all"
+                    onClick={() => setShowAllRooms(p => !p)}
+                  >
+                    {showAllRooms
+                      ? 'Show less'
+                      : `Show all ${roomTypes.length} room types`}
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
 
-                  <Badge variant={getRoomTypeBadgeVariant(item.type)}>
-                    {Number(item.count) || 0}
-                  </Badge>
-                </div>
-              ))
+          {/* Recent Announcements */}
+          <div className="card">
+            <div className="adm-card-header">
+              <span className="adm-card-title">📢 Recent Announcements</span>
+              <Link to="/admin/announcements" className="adm-card-link">View all →</Link>
+            </div>
+            {announcements.length === 0 ? (
+              <div className="adm-ann-empty">
+                <div style={{ fontSize: 28, marginBottom: 8 }}>📭</div>
+                No announcements yet.{' '}
+                <Link to="/admin/announcements" style={{ color: 'var(--navy)', textDecoration: 'underline' }}>
+                  Create one
+                </Link>
+              </div>
+            ) : (
+              <div className="adm-ann-list">
+                {announcements.map(a => (
+                  <Link key={a.id} to={`/announcements/${a.id}`} className="adm-ann-item">
+                    <div className={`adm-ann-dot${a.is_pinned ? ' adm-ann-dot--pinned' : ''}`} />
+                    <div className="adm-ann-body">
+                      <div className="adm-ann-title">{a.title}</div>
+                      {a.content && (
+                        <div className="adm-ann-preview">{a.content}</div>
+                      )}
+                      <div className="adm-ann-footer">
+                        <span className="adm-ann-time">{timeAgo(a.published_at)}</span>
+                        {a.is_pinned && (
+                          <Badge variant="amber">Pinned</Badge>
+                        )}
+                      </div>
+                    </div>
+                  </Link>
+                ))}
+              </div>
             )}
           </div>
         </div>
 
-        <div className="card">
-          <SectionHeader title="Quick Actions" />
+        {/* ── Right column ────────────────────────────────────── */}
+        <div className="adm-col">
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {[
-              { to: '/admin/floors', label: 'Manage Floors & Rooms' },
-              { to: '/admin/map-editor', label: '✏️ Open Map Editor' },
-              { to: '/admin/schedule', label: 'Manage Schedule' },
-              { to: '/admin/announcements', label: '📢 Manage Announcements' },
-              { to: '/admin/notifications', label: '🔔 Send Notification' },
-              { to: '/admin/users', label: 'Manage Users' }
-            ].map((action) => (
-              <Link
-                key={action.to}
-                to={action.to}
-                className="btn btn--secondary"
-                style={{ justifyContent: 'flex-start' }}
-              >
-                {action.label} →
+          {/* Registration Period Status */}
+          <div className="card">
+            <div className="adm-card-header">
+              <span className="adm-card-title">📋 Registration Period</span>
+              <Link to="/admin/semester" className="adm-card-link">Manage →</Link>
+            </div>
+            {!latestPub ? (
+              <div className="adm-reg-empty">
+                <div className="adm-reg-empty__icon">📅</div>
+                <div className="adm-reg-empty__text">No published semester found.</div>
+                <Link to="/admin/semester" className="btn btn--secondary btn--sm">
+                  Go to Semester Management
+                </Link>
+              </div>
+            ) : (
+              <>
+                <div className="adm-reg-sem-label">
+                  {latestPub.label || `${latestPub.semester} ${latestPub.academic_year}`}
+                </div>
+                <div className={`adm-reg-status-banner adm-reg-status-banner--${regState}`}>
+                  <span className="adm-reg-status-icon">
+                    {regState === 'open'         ? '🟢'
+                    : regState === 'not_open_yet' ? '🟡'
+                    : regState === 'closed'       ? '🔴'
+                    : '⚪'}
+                  </span>
+                  <span className="adm-reg-status-text">
+                    {regState === 'open'          ? 'Registration Open'
+                    : regState === 'not_open_yet' ? 'Registration Not Yet Open'
+                    : regState === 'closed'        ? 'Registration Closed'
+                    : 'No Registration Window Set'}
+                  </span>
+                </div>
+                {(latestPub.registration_start || latestPub.registration_end || latestPub.drop_deadline) && (
+                  <div className="adm-reg-dates">
+                    {latestPub.registration_start && (
+                      <div className="adm-reg-date-row">
+                        <span className="adm-reg-date-key">Opens:</span>
+                        <span className="adm-reg-date-val">
+                          {formatDate(latestPub.registration_start, 'dd MMM yyyy, HH:mm')}
+                        </span>
+                      </div>
+                    )}
+                    {latestPub.registration_end && (
+                      <div className="adm-reg-date-row">
+                        <span className="adm-reg-date-key">Closes:</span>
+                        <span className="adm-reg-date-val">
+                          {formatDate(latestPub.registration_end, 'dd MMM yyyy, HH:mm')}
+                        </span>
+                      </div>
+                    )}
+                    {latestPub.drop_deadline && (
+                      <div className="adm-reg-date-row">
+                        <span className="adm-reg-date-key">Drop deadline:</span>
+                        <span className={`adm-reg-date-val${
+                          new Date(latestPub.drop_deadline) < new Date()
+                            ? ' adm-reg-date-val--warn' : ''
+                        }`}>
+                          {formatDate(latestPub.drop_deadline, 'dd MMM yyyy, HH:mm')}
+                          {new Date(latestPub.drop_deadline) < new Date() ? ' (Passed)' : ''}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
+          {/* Academic Overview */}
+          <div className="card">
+            <div className="adm-card-title" style={{ marginBottom: 14 }}>
+              📊 Academic Overview
+            </div>
+            <div className="adm-academic-grid">
+              <Link to="/admin/semester" className="adm-academic-item">
+                <div className="adm-academic-value">{publishedSems.length}</div>
+                <div className="adm-academic-label">Published Semesters</div>
               </Link>
+              <Link to="/admin/courses" className="adm-academic-item">
+                <div className="adm-academic-value">
+                  {courseCount !== null ? courseCount : <span className="adm-skel" style={{ height: 26, width: 50, display: 'inline-block' }} />}
+                </div>
+                <div className="adm-academic-label">Total Courses</div>
+              </Link>
+              <Link to="/admin/doctors" className="adm-academic-item">
+                <div className="adm-academic-value">
+                  {instrCount !== null ? instrCount : <span className="adm-skel" style={{ height: 26, width: 50, display: 'inline-block' }} />}
+                </div>
+                <div className="adm-academic-label">Instructors</div>
+              </Link>
+              <Link to="/admin/study-plans" className="adm-academic-item">
+                <div className="adm-academic-value">
+                  {planCount !== null ? planCount : <span className="adm-skel" style={{ height: 26, width: 50, display: 'inline-block' }} />}
+                </div>
+                <div className="adm-academic-label">Study Plans</div>
+              </Link>
+            </div>
+          </div>
+
+          {/* Quick Actions */}
+          <div className="card">
+            <div className="adm-card-title" style={{ marginBottom: 14 }}>
+              ⚡ Quick Actions
+            </div>
+            {QUICK_ACTION_GROUPS.map(({ group, actions }) => (
+              <div key={group} className="adm-quick-group">
+                <div className="adm-quick-group-title">{group}</div>
+                <div className="adm-quick-actions">
+                  {actions.map(action => (
+                    <Link
+                      key={action.to}
+                      to={action.to}
+                      className="btn btn--secondary adm-quick-btn"
+                    >
+                      {action.label}
+                    </Link>
+                  ))}
+                </div>
+              </div>
             ))}
           </div>
+
         </div>
       </div>
     </div>
@@ -187,122 +440,815 @@ function getRoomTypeBadgeVariant(type) {
   return map[type] || 'gray';
 }
 
+// ─── Dashboard helpers ────────────────────────────────────────
+function dashCalcRegState(sem) {
+  if (!sem) return 'none';
+  const { registration_start: rs, registration_end: re } = sem;
+  if (!rs && !re) return 'no_window';
+  const now = Date.now();
+  if (rs && now < new Date(rs).getTime()) return 'not_open_yet';
+  if (re && now > new Date(re).getTime()) return 'closed';
+  return 'open';
+}
+
+function dashRoomBarColor(type) {
+  if (['classroom', 'lecture_hall', 'amphitheater',
+       'engineering_drawing_room', 'engineering_drawing_studio'].includes(type))
+    return '#03184a';
+  if (type === 'lab')
+    return '#0d7a4a';
+  if (['office', 'meeting_room', 'professor_lounge'].includes(type))
+    return '#966200';
+  if (['library', 'cafeteria', 'bookstore'].includes(type))
+    return '#0d9488';
+  return '#6474a0';
+}
 
 // ─── Admin Users ──────────────────────────────────────────────
+const BLANK_ADD_FORM = {
+  first_name: '', last_name: '', email: '',
+  student_id: '', department_id: '',
+  year_of_study: '', registration_year: '',
+  password: '', confirm_password: '',
+};
+
 export function AdminUsers() {
-  const [page,   setPage]   = useState(1);
-  const [search, setSearch] = useState('');
-  const [role,   setRole]   = useState('');
-  const [editUser,  setEditUser]  = useState(null);
-  const [delUser,   setDelUser]   = useState(null);
+  const { isSuperAdmin, user: currentUser } = useAuth();
+
+  // Filter / pagination state
+  const [page,         setPage]         = useState(1);
+  const [limit,        setLimit]        = useState(20);
+  const [search,       setSearch]       = useState('');
+  const [roleFilter,   setRoleFilter]   = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [deptFilter,   setDeptFilter]   = useState('');
+
+  // Edit modal state
+  const [editUser,    setEditUser]    = useState(null);
+  const [editForm,    setEditForm]    = useState({});
+  const [editLoading, setEditLoading] = useState(false);
+
+  // Delete state
+  const [delUser,    setDelUser]    = useState(null);
   const [delLoading, setDelLoading] = useState(false);
 
-  const { data, loading, refetch } = useAsync(
-    () => userAPI.getAll({ page, limit: 20, search, role }),
-    [page, search, role]
+  // Suspend / activate state
+  const [statusTarget,  setStatusTarget]  = useState(null);
+  const [statusLoading, setStatusLoading] = useState(false);
+
+  // Add student modal state
+  const [addModal,      setAddModal]      = useState(false);
+  const [addForm,       setAddForm]       = useState(BLANK_ADD_FORM);
+  const [addLoading,    setAddLoading]    = useState(false);
+  const [addError,      setAddError]      = useState('');
+  const [depts,         setDepts]         = useState([]);
+  const [deptsLoading,  setDeptsLoading]  = useState(false);
+  const deptsLoadedRef = useRef(false);
+
+  // Data
+  const { data: statsData } = useAsync(() => userAPI.getStats(), []);
+  const { data, loading, error, refetch } = useAsync(
+    () => userAPI.getAll({
+      page, limit, search,
+      role: roleFilter, status: statusFilter, department: deptFilter,
+    }),
+    [page, limit, search, roleFilter, statusFilter, deptFilter]
   );
 
   const users      = data?.users || [];
   const pagination = data?.pagination;
+  const stats      = statsData?.users || {};
 
-  const handleDelete = async () => {
+  const hasFilters = !!(search || roleFilter || statusFilter || deptFilter);
+
+  function resetFilters() {
+    setSearch('');
+    setRoleFilter('');
+    setStatusFilter('');
+    setDeptFilter('');
+    setPage(1);
+  }
+
+  function applyStatFilter(type, val) {
+    setSearch('');
+    setDeptFilter('');
+    if (type === 'role')   { setRoleFilter(val);   setStatusFilter(''); }
+    if (type === 'status') { setStatusFilter(val); setRoleFilter('');   }
+    setPage(1);
+  }
+
+  function openEdit(u) {
+    setEditUser(u);
+    setEditForm({ role: u.role, status: u.status, department: u.department || '' });
+  }
+
+  async function handleSaveEdit() {
+    setEditLoading(true);
+    try {
+      await userAPI.adminUpdate(editUser.id, editForm);
+      toast.success('User updated');
+      setEditUser(null);
+      refetch();
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setEditLoading(false);
+    }
+  }
+
+  function openStatusToggle(u) {
+    const newStatus = u.status === 'active' ? 'suspended' : 'active';
+    setStatusTarget({ user: u, newStatus });
+  }
+
+  async function confirmStatusToggle() {
+    setStatusLoading(true);
+    try {
+      await userAPI.adminUpdate(statusTarget.user.id, { status: statusTarget.newStatus });
+      toast.success(statusTarget.newStatus === 'active' ? 'User activated' : 'User suspended');
+      setStatusTarget(null);
+      refetch();
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setStatusLoading(false);
+    }
+  }
+
+  async function handleDelete() {
     setDelLoading(true);
     try {
       await userAPI.delete(delUser.id);
       toast.success('User deleted');
       setDelUser(null);
       refetch();
-    } catch (err) { toast.error(getErrorMessage(err)); }
-    finally { setDelLoading(false); }
-  };
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setDelLoading(false);
+    }
+  }
 
-  const handleUpdateRole = async (userId, role, status) => {
+  async function openAddModal() {
+    setAddForm(BLANK_ADD_FORM);
+    setAddError('');
+    setAddModal(true);
+    if (!deptsLoadedRef.current) {
+      setDeptsLoading(true);
+      try {
+        const res  = await studyPlanAPI.getDepartments();
+        const list = res?.data?.data || [];
+        setDepts(list);
+        deptsLoadedRef.current = true;
+      } catch {
+        // non-fatal — dropdown stays empty, user sees message
+      } finally {
+        setDeptsLoading(false);
+      }
+    }
+  }
+
+  async function handleAddSubmit() {
+    setAddError('');
+    const { first_name, last_name, email, student_id, department_id, password, confirm_password } = addForm;
+
+    if (!first_name.trim())                           { setAddError('First name is required.');                    return; }
+    if (!last_name.trim())                            { setAddError('Last name is required.');                     return; }
+    if (!email.trim())                                { setAddError('Email is required.');                         return; }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))   { setAddError('Please enter a valid email address.');        return; }
+    if (!student_id.trim())                           { setAddError('Student ID is required.');                    return; }
+    if (!/^\d{6,12}$/.test(student_id.trim()))        { setAddError('Student ID must be 6–12 digits.');            return; }
+    if (!department_id)                               { setAddError('Please select a department.');                return; }
+    if (!password)                                    { setAddError('Password is required.');                      return; }
+    if (password.length < 6)                          { setAddError('Password must be at least 6 characters.');   return; }
+    if (password !== confirm_password)                { setAddError('Passwords do not match.');                    return; }
+
+    setAddLoading(true);
     try {
-      await userAPI.adminUpdate(userId, { role, status });
-      toast.success('User updated');
-      refetch();
-      setEditUser(null);
-    } catch (err) { toast.error(getErrorMessage(err)); }
-  };
+      const payload = {
+        first_name: first_name.trim(),
+        last_name:  last_name.trim(),
+        email:      email.trim().toLowerCase(),
+        password,
+        student_id: student_id.trim(),
+        department_id,
+      };
+      if (addForm.year_of_study)    payload.year_of_study    = parseInt(addForm.year_of_study);
+      if (addForm.registration_year) payload.registration_year = parseInt(addForm.registration_year);
 
-  const columns = [
-    { key: 'name', label: 'Name', render: (_, r) => (
-      <div>
-        <div style={{ fontWeight: 600 }}>{r.first_name} {r.last_name}</div>
-        <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{r.email}</div>
-      </div>
-    )},
-    { key: 'student_id', label: 'ID', render: v => <span style={{ fontFamily: 'monospace' }}>{v || '—'}</span> },
-    { key: 'role',   label: 'Role',   render: v => <Badge variant={v === 'student' ? 'blue' : 'amber'}>{v.replace('_',' ')}</Badge> },
-    { key: 'status', label: 'Status', render: v => <Badge variant={statusBadgeClass(v).replace('badge--','')}>{statusLabel(v)}</Badge> },
-    { key: 'department', label: 'Dept', render: v => v || '—' },
-    { key: 'last_login', label: 'Last Login', render: v => formatDate(v) },
-    { key: 'actions', label: '', render: (_, r) => (
-      <div style={{ display: 'flex', gap: 4 }}>
-        <button className="btn btn--ghost btn--sm btn--icon" onClick={() => setEditUser(r)} title="Edit"><EditIcon /></button>
-        <button className="btn btn--ghost btn--sm btn--icon" onClick={() => setDelUser(r)} title="Delete" style={{ color: 'var(--red)' }}><TrashIcon /></button>
-      </div>
-    )},
+      await userAPI.create(payload);
+      toast.success('Student account created successfully.');
+      setAddModal(false);
+      refetch();
+    } catch (err) {
+      setAddError(getErrorMessage(err));
+    } finally {
+      setAddLoading(false);
+    }
+  }
+
+  const ROLE_OPTIONS = [
+    { value: '',               label: 'All Roles' },
+    { value: 'student',        label: 'Student' },
+    { value: 'professor',      label: 'Professor' },
+    { value: 'department_head',label: 'Dept Head' },
+    { value: 'dean',           label: 'Dean' },
+    { value: 'admin',          label: 'Admin' },
+    { value: 'super_admin',    label: 'Super Admin' },
   ];
+
+  const STATUS_OPTIONS = [
+    { value: '',          label: 'All Statuses' },
+    { value: 'active',    label: 'Active' },
+    { value: 'inactive',  label: 'Inactive' },
+    { value: 'suspended', label: 'Suspended' },
+  ];
+
+  const STAT_CARDS = [
+    { label: 'Total Users', value: stats.total      || 0, color: 'navy',  filter: null },
+    { label: 'Active',      value: stats.active     || 0, color: 'green', filter: { type: 'status', val: 'active' } },
+    { label: 'Students',    value: stats.students   || 0, color: 'blue',  filter: { type: 'role',   val: 'student' } },
+    { label: 'Professors',  value: stats.professors || 0, color: 'teal',  filter: { type: 'role',   val: 'professor' } },
+    { label: 'Admins',      value: (stats.admins || 0) + (stats.super_admins || 0), color: 'amber', filter: { type: 'role', val: 'admin' } },
+    { label: 'Suspended',   value: stats.suspended  || 0, color: 'red',   filter: { type: 'status', val: 'suspended' } },
+  ];
+
+  function isCardSelected(card) {
+    if (!card.filter) return !hasFilters;
+    if (card.filter.type === 'role')   return roleFilter   === card.filter.val && !search && !statusFilter && !deptFilter;
+    if (card.filter.type === 'status') return statusFilter === card.filter.val && !search && !roleFilter   && !deptFilter;
+    return false;
+  }
 
   return (
     <div>
+      {/* Header */}
       <div className="page-header">
-        <h1 className="page-title">Users</h1>
-        <p className="page-sub">{pagination?.total || 0} total users</p>
+        <div>
+          <h1 className="page-title">Users</h1>
+          <p className="page-sub">{pagination?.total ?? stats.total ?? 0} total users</p>
+        </div>
       </div>
 
-      <div className="card card--no-pad">
-        <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <div style={{ flex: 1, minWidth: 200 }}>
-            <SearchInput value={search} onChange={v => { setSearch(v); setPage(1); }} onClear={() => { setSearch(''); setPage(1); }} placeholder="Search users…" />
+      {/* Stats cards */}
+      <div className="au-stats">
+        {STAT_CARDS.map(card => (
+          <div
+            key={card.label}
+            className={`au-stat-card au-stat-card--${card.color}${isCardSelected(card) ? ' au-stat-card--selected' : ''}`}
+            onClick={() => card.filter ? applyStatFilter(card.filter.type, card.filter.val) : resetFilters()}
+            title={card.filter ? `Filter by ${card.label}` : 'Show all users'}
+          >
+            <div className="au-stat-card__value">{card.value}</div>
+            <div className="au-stat-card__label">{card.label}</div>
           </div>
-          <select className="form-input" style={{ width: 'auto' }} value={role} onChange={e => { setRole(e.target.value); setPage(1); }}>
-            <option value="">All roles</option>
-            <option value="student">Students</option>
-            <option value="admin">Admins</option>
-          </select>
-        </div>
-        <Table columns={columns} data={users} loading={loading} emptyMessage="No users found" />
-        <div style={{ padding: '0 16px' }}>
-          <Pagination pagination={pagination} onPageChange={setPage} />
-        </div>
+        ))}
       </div>
 
-      {/* Edit modal */}
-      <Modal open={!!editUser} onClose={() => setEditUser(null)} title={`Edit: ${editUser?.first_name} ${editUser?.last_name}`}
-        footer={<Button variant="secondary" onClick={() => setEditUser(null)}>Close</Button>}
-      >
-        {editUser && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <Select label="Role" value={editUser.role}
-              onChange={e => setEditUser(u => ({ ...u, role: e.target.value }))}
-              options={[{value:'student',label:'Student'},{value:'admin',label:'Admin'},{value:'super_admin',label:'Super Admin'}]}
-            />
-            <Select label="Status" value={editUser.status}
-              onChange={e => setEditUser(u => ({ ...u, status: e.target.value }))}
-              options={[{value:'active',label:'Active'},{value:'inactive',label:'Inactive'},{value:'suspended',label:'Suspended'}]}
-            />
-            <Button variant="primary" onClick={() => handleUpdateRole(editUser.id, editUser.role, editUser.status)}>
+      {/* Controls */}
+      <div className="card au-controls">
+        <div className="au-controls__search">
+          <SearchInput
+            value={search}
+            onChange={v => { setSearch(v); setPage(1); }}
+            onClear={() => { setSearch(''); setPage(1); }}
+            placeholder="Search by name, email, or ID…"
+          />
+        </div>
+        <select
+          className="form-input au-controls__select"
+          value={roleFilter}
+          onChange={e => { setRoleFilter(e.target.value); setPage(1); }}
+          aria-label="Filter by role"
+        >
+          {ROLE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+        <select
+          className="form-input au-controls__select"
+          value={statusFilter}
+          onChange={e => { setStatusFilter(e.target.value); setPage(1); }}
+          aria-label="Filter by status"
+        >
+          {STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+        <input
+          className="form-input au-controls__dept"
+          placeholder="Department…"
+          value={deptFilter}
+          onChange={e => { setDeptFilter(e.target.value); setPage(1); }}
+          aria-label="Filter by department"
+        />
+        <select
+          className="form-input au-controls__limit"
+          value={limit}
+          onChange={e => { setLimit(Number(e.target.value)); setPage(1); }}
+          aria-label="Rows per page"
+        >
+          <option value={10}>10 / page</option>
+          <option value={20}>20 / page</option>
+          <option value={50}>50 / page</option>
+        </select>
+        {hasFilters && (
+          <button className="btn btn--ghost btn--sm" onClick={resetFilters}>
+            ✕ Clear filters
+          </button>
+        )}
+        <button className="btn btn--primary btn--sm au-add-btn" onClick={openAddModal}>
+          + Add Student
+        </button>
+      </div>
+
+      {/* Error banner */}
+      {error && (
+        <div className="au-error">
+          ⚠ Failed to load users. Please refresh and try again.
+        </div>
+      )}
+
+      {/* ── Desktop / tablet table ─────────────────────────────── */}
+      <div className="card card--no-pad au-table-card">
+        {loading ? (
+          <table className="au-table">
+            <thead>
+              <tr>
+                <th>User</th>
+                <th>ID</th>
+                <th>Role</th>
+                <th>Status</th>
+                <th className="au-col-dept">Department</th>
+                <th className="au-col-login">Last Login</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {Array.from({ length: 6 }).map((_, i) => (
+                <tr key={i} className="au-skeleton-row">
+                  <td>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div className="au-skeleton-circle" />
+                      <div style={{ flex: 1 }}>
+                        <div className="au-skeleton-line" style={{ width: '55%', marginBottom: 6 }} />
+                        <div className="au-skeleton-line" style={{ width: '75%' }} />
+                      </div>
+                    </div>
+                  </td>
+                  <td><div className="au-skeleton-line" style={{ width: 60 }} /></td>
+                  <td><div className="au-skeleton-line" style={{ width: 64 }} /></td>
+                  <td><div className="au-skeleton-line" style={{ width: 56 }} /></td>
+                  <td className="au-col-dept"><div className="au-skeleton-line" style={{ width: '70%' }} /></td>
+                  <td className="au-col-login"><div className="au-skeleton-line" style={{ width: 80 }} /></td>
+                  <td><div className="au-skeleton-line" style={{ width: 120 }} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : users.length === 0 ? (
+          <div className="au-empty">
+            <div className="au-empty__icon">👥</div>
+            <div className="au-empty__title">No users found</div>
+            <div className="au-empty__sub">
+              {hasFilters ? 'No users match the current filters.' : 'No users in the system yet.'}
+            </div>
+            {hasFilters && (
+              <button className="btn btn--secondary btn--sm" onClick={resetFilters}>
+                Reset Filters
+              </button>
+            )}
+          </div>
+        ) : (
+          <>
+            <table className="au-table">
+              <thead>
+                <tr>
+                  <th>User</th>
+                  <th>ID</th>
+                  <th>Role</th>
+                  <th>Status</th>
+                  <th className="au-col-dept">Department</th>
+                  <th className="au-col-login">Last Login</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {users.map(u => (
+                  <tr key={u.id}>
+                    <td>
+                      <div className="au-user-cell">
+                        <UserAvatar user={u} />
+                        <div>
+                          <div className="au-user-name">{u.first_name} {u.last_name}</div>
+                          <div className="au-user-email">{u.email}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td style={{ fontFamily: 'monospace', fontSize: 12.5, color: 'var(--text-muted)' }}>
+                      {u.student_id || '—'}
+                    </td>
+                    <td><UserRoleBadge role={u.role} /></td>
+                    <td><UserStatusBadge status={u.status} /></td>
+                    <td className="au-col-dept" style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+                      {u.department || '—'}
+                    </td>
+                    <td className="au-col-login" style={{ fontSize: 12.5, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                      {formatDate(u.last_login)}
+                    </td>
+                    <td>
+                      <div className="au-actions">
+                        <button className="au-btn-edit" onClick={() => openEdit(u)} title="Edit user">
+                          ✎ Edit
+                        </button>
+                        {u.id !== currentUser?.id && (
+                          u.status === 'active' ? (
+                            <button className="au-btn-suspend" onClick={() => openStatusToggle(u)} title="Suspend user">
+                              ⏸ Suspend
+                            </button>
+                          ) : (
+                            <button className="au-btn-activate" onClick={() => openStatusToggle(u)} title="Activate user">
+                              ▶ Activate
+                            </button>
+                          )
+                        )}
+                        {isSuperAdmin && u.id !== currentUser?.id && (
+                          <button className="au-btn-delete" onClick={() => setDelUser(u)} title="Delete user">
+                            🗑 Delete
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div className="au-pagination">
+              <Pagination pagination={pagination} onPageChange={setPage} />
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* ── Mobile cards ───────────────────────────────────────── */}
+      {!loading && users.length > 0 && (
+        <div className="au-cards">
+          {users.map(u => (
+            <div key={u.id} className="au-card">
+              <div className="au-card__top">
+                <UserAvatar user={u} size={40} />
+                <div className="au-card__info">
+                  <div className="au-user-name">{u.first_name} {u.last_name}</div>
+                  <div className="au-user-email">{u.email}</div>
+                </div>
+              </div>
+              <div className="au-card__badges">
+                <UserRoleBadge role={u.role} />
+                <UserStatusBadge status={u.status} />
+              </div>
+              {(u.student_id || u.department || u.last_login) && (
+                <div className="au-card__meta">
+                  {u.student_id  && <span className="au-card__meta-item"><span className="au-card__meta-key">ID:</span> {u.student_id}</span>}
+                  {u.department  && <span className="au-card__meta-item"><span className="au-card__meta-key">Dept:</span> {u.department}</span>}
+                  {u.last_login  && <span className="au-card__meta-item"><span className="au-card__meta-key">Login:</span> {formatDate(u.last_login)}</span>}
+                </div>
+              )}
+              <div className="au-card__actions">
+                <button className="au-btn-edit" onClick={() => openEdit(u)}>✎ Edit</button>
+                {u.id !== currentUser?.id && (
+                  u.status === 'active' ? (
+                    <button className="au-btn-suspend" onClick={() => openStatusToggle(u)}>⏸ Suspend</button>
+                  ) : (
+                    <button className="au-btn-activate" onClick={() => openStatusToggle(u)}>▶ Activate</button>
+                  )
+                )}
+                {isSuperAdmin && u.id !== currentUser?.id && (
+                  <button className="au-btn-delete" onClick={() => setDelUser(u)}>🗑 Delete</button>
+                )}
+              </div>
+            </div>
+          ))}
+          <div style={{ background: '#fff', borderRadius: 8, border: '1px solid var(--border)', padding: '0 16px', marginTop: 8 }}>
+            <Pagination pagination={pagination} onPageChange={setPage} />
+          </div>
+        </div>
+      )}
+
+      {/* ── Edit modal ──────────────────────────────────────────── */}
+      <Modal
+        open={!!editUser}
+        onClose={() => setEditUser(null)}
+        title={`Edit User`}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setEditUser(null)} disabled={editLoading}>
+              Cancel
+            </Button>
+            <Button variant="primary" onClick={handleSaveEdit} loading={editLoading}>
               Save Changes
             </Button>
+          </>
+        }
+      >
+        {editUser && (
+          <div>
+            {/* Basic Info */}
+            <div className="au-modal-section">
+              <div className="au-modal-section-title">Basic Info</div>
+              <div className="au-modal-user-preview">
+                <UserAvatar user={editUser} size={40} />
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: 14 }}>{editUser.first_name} {editUser.last_name}</div>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{editUser.email}</div>
+                  {editUser.student_id && (
+                    <div style={{ fontSize: 11.5, color: 'var(--text-muted)', fontFamily: 'monospace', marginTop: 2 }}>
+                      ID: {editUser.student_id}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Role & Department */}
+            <div className="au-modal-section">
+              <div className="au-modal-section-title">Role & Department</div>
+              <Select
+                label="Role"
+                value={editForm.role}
+                onChange={e => setEditForm(f => ({ ...f, role: e.target.value }))}
+                options={[
+                  { value: 'student',         label: 'Student' },
+                  { value: 'professor',        label: 'Professor' },
+                  { value: 'department_head',  label: 'Department Head' },
+                  { value: 'dean',             label: 'Dean' },
+                  { value: 'admin',            label: 'Admin' },
+                  { value: 'super_admin',      label: 'Super Admin' },
+                ]}
+              />
+              <Input
+                label="Department"
+                value={editForm.department}
+                onChange={e => setEditForm(f => ({ ...f, department: e.target.value }))}
+                placeholder="e.g. Computer Engineering"
+              />
+            </div>
+
+            {/* Account Status */}
+            <div className="au-modal-section">
+              <div className="au-modal-section-title">Account Status</div>
+              <Select
+                label="Status"
+                value={editForm.status}
+                onChange={e => setEditForm(f => ({ ...f, status: e.target.value }))}
+                options={[
+                  { value: 'active',    label: 'Active' },
+                  { value: 'inactive',  label: 'Inactive' },
+                  { value: 'suspended', label: 'Suspended' },
+                ]}
+              />
+            </div>
           </div>
         )}
       </Modal>
 
-      {/* Delete confirm */}
+      {/* ── Status toggle confirm ────────────────────────────────── */}
       <ConfirmDialog
-        open={!!delUser} onClose={() => setDelUser(null)}
-        onConfirm={handleDelete} loading={delLoading} danger
-        title="Delete User"
-        message={`Are you sure you want to delete ${delUser?.first_name} ${delUser?.last_name}? This action cannot be undone.`}
+        open={!!statusTarget}
+        onClose={() => setStatusTarget(null)}
+        onConfirm={confirmStatusToggle}
+        loading={statusLoading}
+        danger={statusTarget?.newStatus === 'suspended'}
+        title={statusTarget?.newStatus === 'active' ? 'Activate User' : 'Suspend User'}
+        message={
+          statusTarget?.newStatus === 'active'
+            ? `Activate ${statusTarget?.user.first_name} ${statusTarget?.user.last_name}? They will regain full access to the system.`
+            : `Suspend ${statusTarget?.user.first_name} ${statusTarget?.user.last_name}? They will lose access until reactivated.`
+        }
       />
+
+      {/* ── Delete confirm ────────────────────────────────────────── */}
+      <ConfirmDialog
+        open={!!delUser}
+        onClose={() => setDelUser(null)}
+        onConfirm={handleDelete}
+        loading={delLoading}
+        danger
+        title="Delete User"
+        message={`Permanently delete ${delUser?.first_name} ${delUser?.last_name}? This action cannot be undone. If this user has enrollments, grades, or teaching data, those records may also be affected.`}
+      />
+
+      {/* ── Add Student modal ───────────────────────────────────── */}
+      <Modal
+        open={addModal}
+        onClose={() => setAddModal(false)}
+        title="Add New Student"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setAddModal(false)} disabled={addLoading}>
+              Cancel
+            </Button>
+            <Button variant="primary" onClick={handleAddSubmit} loading={addLoading}>
+              Create Student
+            </Button>
+          </>
+        }
+      >
+        {addError && (
+          <div className="au-add-error">⚠ {addError}</div>
+        )}
+
+        {/* Basic Info */}
+        <div className="au-modal-section">
+          <div className="au-modal-section-title">Basic Info</div>
+          <div className="au-add-grid">
+            <Input
+              label="First Name *"
+              value={addForm.first_name}
+              onChange={e => setAddForm(f => ({ ...f, first_name: e.target.value }))}
+              placeholder="e.g. Ahmad"
+            />
+            <Input
+              label="Last Name *"
+              value={addForm.last_name}
+              onChange={e => setAddForm(f => ({ ...f, last_name: e.target.value }))}
+              placeholder="e.g. Al-Haddad"
+            />
+            <div className="au-add-grid__full">
+              <Input
+                label="Email *"
+                type="email"
+                value={addForm.email}
+                onChange={e => setAddForm(f => ({ ...f, email: e.target.value }))}
+                placeholder="e.g. s12501001@stu.najah.edu"
+                autoComplete="off"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Student Info */}
+        <div className="au-modal-section">
+          <div className="au-modal-section-title">Student Info</div>
+          <div className="au-add-grid">
+            <div>
+              <label className="form-label">Student ID *</label>
+              <input
+                className="form-input"
+                type="text"
+                inputMode="numeric"
+                value={addForm.student_id}
+                onChange={e => {
+                  const sid = e.target.value.replace(/\D/g, '').slice(0, 12);
+                  const updates = { student_id: sid };
+                  if (sid.length >= 8) {
+                    const yr = inferYearFromStudentId(sid);
+                    const ry = inferRegYearFromStudentId(sid);
+                    if (yr) updates.year_of_study    = String(yr);
+                    if (ry) updates.registration_year = String(ry);
+                  }
+                  setAddForm(f => ({ ...f, ...updates }));
+                }}
+                placeholder="e.g. 12501001"
+                maxLength={12}
+              />
+            </div>
+            <div>
+              <label className="form-label">Department *</label>
+              <select
+                className="form-input"
+                value={addForm.department_id}
+                onChange={e => setAddForm(f => ({ ...f, department_id: e.target.value }))}
+                disabled={deptsLoading}
+              >
+                <option value="">
+                  {deptsLoading ? 'Loading departments…' : 'Select department…'}
+                </option>
+                {depts.map(d => (
+                  <option key={d.id} value={d.id}>{d.name_en}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="form-label">Year of Study</label>
+              <select
+                className="form-input"
+                value={addForm.year_of_study}
+                onChange={e => setAddForm(f => ({ ...f, year_of_study: e.target.value }))}
+              >
+                <option value="">Auto (from Student ID)</option>
+                {[1, 2, 3, 4, 5, 6].map(yr => (
+                  <option key={yr} value={String(yr)}>Year {yr}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="form-label">Registration Year</label>
+              <input
+                className="form-input"
+                type="number"
+                value={addForm.registration_year}
+                onChange={e => setAddForm(f => ({ ...f, registration_year: e.target.value }))}
+                placeholder="e.g. 2025 (auto)"
+                min={2000}
+                max={2100}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Account */}
+        <div className="au-modal-section">
+          <div className="au-modal-section-title">Account</div>
+          <div className="au-add-grid">
+            <div>
+              <label className="form-label">Password *</label>
+              <input
+                className="form-input"
+                type="password"
+                value={addForm.password}
+                onChange={e => setAddForm(f => ({ ...f, password: e.target.value }))}
+                placeholder="Min. 6 characters"
+                autoComplete="new-password"
+              />
+            </div>
+            <div>
+              <label className="form-label">Confirm Password *</label>
+              <input
+                className="form-input"
+                type="password"
+                value={addForm.confirm_password}
+                onChange={e => setAddForm(f => ({ ...f, confirm_password: e.target.value }))}
+                placeholder="Re-enter password"
+                autoComplete="new-password"
+              />
+            </div>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }
 
+// ─── AdminUsers helpers ───────────────────────────────────────
+function UserAvatar({ user, size = 34 }) {
+  const initials = `${user.first_name?.[0] || ''}${user.last_name?.[0] || ''}`;
+  const cls = `au-avatar au-avatar--${user.role}`;
+  const style = { width: size, height: size, fontSize: Math.round(size * 0.35) };
+  if (user.avatar_url) {
+    return (
+      <div className={cls} style={style}>
+        <img src={publicUrl(user.avatar_url)} alt={initials} />
+      </div>
+    );
+  }
+  return <div className={cls} style={style}>{initials}</div>;
+}
+
+function UserRoleBadge({ role }) {
+  const variantMap = {
+    student:         'blue',
+    professor:       'green',
+    department_head: 'green',
+    dean:            'green',
+    admin:           'amber',
+    super_admin:     'red',
+  };
+  const labelMap = {
+    student:         'Student',
+    professor:       'Professor',
+    department_head: 'Dept Head',
+    dean:            'Dean',
+    admin:           'Admin',
+    super_admin:     'Super Admin',
+  };
+  return (
+    <Badge variant={variantMap[role] || 'gray'}>
+      {labelMap[role] || role}
+    </Badge>
+  );
+}
+
+function UserStatusBadge({ status }) {
+  const variant = statusBadgeClass(status).replace('badge--', '');
+  return <Badge variant={variant}>{statusLabel(status)}</Badge>;
+}
+
+function inferYearFromStudentId(sid) {
+  const str = String(sid).replace(/\D/g, '');
+  if (str.length < 3) return null;
+  const batch          = parseInt(str.slice(0, 3));
+  const enrollmentYear = 2000 + (batch % 100);
+  const yearsStudied   = new Date().getFullYear() - enrollmentYear + 1;
+  if (yearsStudied < 1) return 1;
+  if (yearsStudied > 6) return 6;
+  return yearsStudied;
+}
+
+function inferRegYearFromStudentId(sid) {
+  const str = String(sid).replace(/\D/g, '');
+  if (str.length < 3) return null;
+  return 2000 + (parseInt(str.slice(0, 3)) % 100);
+}
+
 // ─── Admin Floors ─────────────────────────────────────────────
 export function AdminFloors() {
+  const [activeTab, setActiveTab] = useState('floors');
   const [showCreate, setShowCreate] = useState(false);
   const [editFloor, setEditFloor] = useState(null);
   const [delFloor, setDelFloor] = useState(null);
@@ -402,28 +1348,48 @@ export function AdminFloors() {
           </p>
         </div>
 
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-          <Link
-            to="/admin/office-review"
-            className="btn btn--secondary"
-            style={{ fontSize: 13 }}
-          >
-            🏷️ Office Review
-          </Link>
+        {activeTab === 'floors' && (
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            <Link
+              to="/admin/office-review"
+              className="btn btn--secondary"
+              style={{ fontSize: 13 }}
+            >
+              🏷️ Office Review
+            </Link>
 
-          <Button
-            variant="primary"
-            icon={<PlusIcon />}
-            onClick={() => setShowCreate(true)}
-            disabled={buildingsLoading || allBuildings.length === 0 || !selectedBuildingId}
-          >
-            Add Floor
-          </Button>
-        </div>
+            <Button
+              variant="primary"
+              icon={<PlusIcon />}
+              onClick={() => setShowCreate(true)}
+              disabled={buildingsLoading || allBuildings.length === 0 || !selectedBuildingId}
+            >
+              Add Floor
+            </Button>
+          </div>
+        )}
       </div>
 
+      {/* ── Tab strip ── */}
+      <div className="ar-tabs">
+        <button
+          className={`ar-tab${activeTab === 'floors' ? ' ar-tab--active' : ''}`}
+          onClick={() => setActiveTab('floors')}
+        >
+          🏢 Floors
+        </button>
+        <button
+          className={`ar-tab${activeTab === 'events' ? ' ar-tab--active' : ''}`}
+          onClick={() => setActiveTab('events')}
+        >
+          📅 Events
+        </button>
+      </div>
+
+      {activeTab === 'events' && <AdminEventsTab />}
+
       {/* ── College / Building selector ── */}
-      <div className="card" style={{ marginBottom: 16, padding: '12px 18px' }}>
+      {activeTab === 'floors' && <div className="card" style={{ marginBottom: 16, padding: '12px 18px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
             College / Building
@@ -482,10 +1448,10 @@ export function AdminFloors() {
             Manage Buildings
           </button>
         </div>
-      </div>
+      </div>}
 
       {/* ── Floors list ── */}
-      {loading || buildingsLoading ? (
+      {activeTab === 'floors' && (loading || buildingsLoading ? (
         <Spinner center />
       ) : allBuildings.length === 0 ? (
         <div className="card">
@@ -683,7 +1649,7 @@ export function AdminFloors() {
                 </div>
           ))}
         </div>
-      )}
+      ))}
 
       <FloorFormModal
         open={showCreate}

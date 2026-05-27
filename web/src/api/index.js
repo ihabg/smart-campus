@@ -142,6 +142,19 @@ export const notificationAPI = {
   delete: (id) => api.delete(`/notifications/${id}`)
 };
 
+// ─── eventAPI ────────────────────────────────────────────────
+export const eventAPI = {
+  list: (params = {}) => api.get('/events', { params }),
+
+  create: (data) => api.post('/events', data),
+
+  cancel: (id) => api.patch(`/events/${id}/cancel`),
+
+  getConflicts: (params = {}) => api.get('/events/conflicts', { params }),
+
+  getAvailableRooms: (params = {}) => api.get('/events/available-rooms', { params }),
+};
+
 // ─── userAPI ─────────────────────────────────────────────────
 export const userAPI = {
   getAll: (params = {}) => api.get('/users', { params }),
@@ -160,6 +173,8 @@ export const userAPI = {
       }
     });
   },
+
+  create: (data) => api.post('/users', data),
 
   adminUpdate: (id, data) => api.patch(`/users/${id}`, data),
 

@@ -75,6 +75,7 @@ const NAV = {
       { to: '/assessments',                   icon: '📝', label: 'Assignments & Quizzes' },
       { to: '/study-plan',                     icon: '🎓', label: 'Study Plan' },
       { to: '/course-registration',            icon: '📋', label: 'Course Registration' },
+      { to: '/registration-summary',          icon: '🧾', label: 'Registration Summary' },
       { to: '/announcements',                  icon: '📢', label: 'Announcements' },
       { to: '/profile',                        icon: '👤', label: 'My Profile' },
     ],
