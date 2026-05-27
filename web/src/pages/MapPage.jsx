@@ -564,24 +564,27 @@ function LiveStatusPanel({ status, loading }) {
   if (!status) return null;
 
   const isOccupied = status.status === 'occupied';
-  const { current, next } = status;
+  const isEvent    = status.status === 'event';
+  const { current, next, event } = status;
 
   return (
     <>
-      <div className={`room-popup-status${isOccupied ? ' status-occupied' : ''}`}>
+      <div className={`room-popup-status${isOccupied ? ' status-occupied' : isEvent ? ' status-event' : ''}`}>
         <div className="room-status-left">
-          <span className={`room-status-dot${isOccupied ? ' dot-occupied' : ''}`} />
+          <span className={`room-status-dot${isOccupied ? ' dot-occupied' : isEvent ? ' dot-event' : ''}`} />
           <div>
-            <strong>{isOccupied ? 'In Session' : 'Available'}</strong>
+            <strong>{isOccupied ? 'In Session' : isEvent ? 'Reserved for Event' : 'Available'}</strong>
             <small>
               {isOccupied
                 ? `${current.course_code} · ends ${fmtTime(current.end_time)}`
+                : isEvent
+                ? `${event.title} · ends ${fmtTime(event.end_time)}`
                 : 'No active class'}
             </small>
           </div>
         </div>
-        <span className={`room-status-badge${isOccupied ? '' : ' badge-open'}`}>
-          {isOccupied ? 'LIVE' : 'OPEN'}
+        <span className={`room-status-badge${isOccupied ? '' : isEvent ? ' badge-event' : ' badge-open'}`}>
+          {isOccupied ? 'LIVE' : isEvent ? 'EVENT' : 'OPEN'}
         </span>
       </div>
 
@@ -598,6 +601,19 @@ function LiveStatusPanel({ status, loading }) {
         </div>
       )}
 
+      {isEvent && event && (
+        <div className="room-popup-live-event">
+          <div className="live-event-label">Event</div>
+          <div className="live-event-title">{event.title}</div>
+          {event.description && (
+            <div className="live-event-desc">{event.description}</div>
+          )}
+          <div className="live-event-time">
+            {fmtTime(event.start_time)} – {fmtTime(event.end_time)}
+          </div>
+        </div>
+      )}
+
       {next ? (
         <div className="room-popup-live-class next-class">
           <div className="live-class-label">Next Class</div>
@@ -609,7 +625,7 @@ function LiveStatusPanel({ status, loading }) {
             {fmtTime(next.start_time)} – {fmtTime(next.end_time)}
           </div>
         </div>
-      ) : !isOccupied && (
+      ) : !isOccupied && !isEvent && (
         <div className="room-popup-empty">
           <span className="room-popup-empty-icon">✨</span>
           <h4>No classes scheduled now</h4>

@@ -153,6 +153,8 @@ export const eventAPI = {
   getConflicts: (params = {}) => api.get('/events/conflicts', { params }),
 
   getAvailableRooms: (params = {}) => api.get('/events/available-rooms', { params }),
+
+  getRoomStates: (params = {}) => api.get('/events/room-states', { params }),
 };
 
 // ─── userAPI ─────────────────────────────────────────────────

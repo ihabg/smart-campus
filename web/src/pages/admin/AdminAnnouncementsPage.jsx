@@ -92,13 +92,30 @@ export default function AdminAnnouncementsPage() {
   );
 }
 
-function AnnouncementFormModal({ open, onClose, existing, onSaved, title }) {
-  const [form, setForm] = useState(existing || { title:'', content:'', is_pinned:false, is_published:false, expires_at:'' });
-  const [file,    setFile]    = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [errors,  setErrors]  = useState({});
+const BLANK_ANN = {
+  title: '', content: '', is_pinned: false, is_published: false,
+  expires_at: '', target_role: 'all', target_department: 'all',
+};
 
-  React.useEffect(() => { if (existing) setForm(existing); }, [existing]);
+function AnnouncementFormModal({ open, onClose, existing, onSaved, title }) {
+  const [form,        setForm]        = useState(existing ? { ...BLANK_ANN, ...existing, target_role: existing.target_role || 'all', target_department: existing.target_department || 'all' } : BLANK_ANN);
+  const [file,        setFile]        = useState(null);
+  const [loading,     setLoading]     = useState(false);
+  const [errors,      setErrors]      = useState({});
+  const [departments, setDepartments] = useState([]);
+
+  React.useEffect(() => {
+    if (existing) {
+      setForm({ ...BLANK_ANN, ...existing, target_role: existing.target_role || 'all', target_department: existing.target_department || 'all' });
+    }
+  }, [existing]);
+
+  React.useEffect(() => {
+    if (!open) return;
+    announcementAPI.getDepartments()
+      .then(res => setDepartments(res?.data?.data?.departments || []))
+      .catch(() => {});
+  }, [open]);
 
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }));
 
@@ -115,18 +132,24 @@ function AnnouncementFormModal({ open, onClose, existing, onSaved, title }) {
     setLoading(true);
     try {
       const payload = {
-        title:        form.title,
-        content:      form.content,
-        is_pinned:    form.is_pinned    ? 'true' : 'false',
-        is_published: form.is_published ? 'true' : 'false',
+        title:             form.title,
+        content:           form.content,
+        is_pinned:         form.is_pinned    ? 'true' : 'false',
+        is_published:      form.is_published ? 'true' : 'false',
+        target_role:       form.target_role       || 'all',
+        target_department: form.target_department || 'all',
         ...(form.expires_at && { expires_at: form.expires_at }),
       };
       if (existing?.id) {
-        await announcementAPI.update(existing.id, payload, file);
-        toast.success('Announcement updated');
+        const res = await announcementAPI.update(existing.id, payload, file);
+        const count = res?.data?.data?.notifications_sent || 0;
+        toast.success('Announcement updated.');
+        if (count > 0) toast.success(`${count} user${count !== 1 ? 's' : ''} notified.`);
       } else {
-        await announcementAPI.create(payload, file);
-        toast.success('Announcement created');
+        const res = await announcementAPI.create(payload, file);
+        const count = res?.data?.data?.notifications_sent || 0;
+        toast.success('Announcement created.');
+        if (count > 0) toast.success(`${count} user${count !== 1 ? 's' : ''} notified.`);
       }
       onSaved();
     } catch (err) { toast.error(getErrorMessage(err)); }
@@ -152,7 +175,24 @@ function AnnouncementFormModal({ open, onClose, existing, onSaved, title }) {
           {existing?.image_url && !file && <p style={{ fontSize:12, color:'var(--text-muted)', marginTop:4 }}>Current: <a href={existing.image_url} target="_blank" rel="noreferrer">View image</a></p>}
         </div>
         <Input label="Expiry date (optional)" type="datetime-local" value={form.expires_at || ''} onChange={set('expires_at')} />
-        <div style={{ display:'flex', gap:20 }}>
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
+          <div className="form-group" style={{ margin:0 }}>
+            <label className="form-label">Audience</label>
+            <select className="form-input" value={form.target_role || 'all'} onChange={set('target_role')}>
+              <option value="all">Everyone</option>
+              <option value="students">Students Only</option>
+              <option value="professors">Professors Only</option>
+            </select>
+          </div>
+          <div className="form-group" style={{ margin:0 }}>
+            <label className="form-label">Department</label>
+            <select className="form-input" value={form.target_department || 'all'} onChange={set('target_department')}>
+              <option value="all">All Departments</option>
+              {departments.map(d => <option key={d} value={d}>{d}</option>)}
+            </select>
+          </div>
+        </div>
+        <div style={{ display:'flex', gap:20, flexWrap:'wrap' }}>
           <label style={{ display:'flex', alignItems:'center', gap:6, fontSize:13, cursor:'pointer' }}>
             <input type="checkbox" checked={!!form.is_pinned} onChange={e => setForm(f => ({ ...f, is_pinned: e.target.checked }))} />
             📌 Pin to top

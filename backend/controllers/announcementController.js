@@ -2,6 +2,77 @@ const { query } = require('../config/db');
 
 const TARGET_ROLES = ['all', 'students', 'professors'];
 
+// ─── Notification helper ───────────────────────────────────────
+// Creates a notification + receipts for an announcement.
+// Skips silently if a notification for this announcement already exists
+// (prevents duplicate notifications on re-saves).
+async function notifyForAnnouncement(announcement, senderId) {
+  try {
+    // Idempotency check: skip if already notified
+    const dup = await query(
+      `SELECT id FROM notifications WHERE data->>'announcement_id' = $1 LIMIT 1`,
+      [String(announcement.id)]
+    );
+    if (dup.rows.length) return 0;
+
+    // Build targeted user query (never notify admins)
+    let userSql = `
+      SELECT id FROM users
+      WHERE status = 'active'
+        AND role NOT IN ('admin', 'super_admin')
+    `;
+    const userParams = [];
+    let uidx = 1;
+
+    const targetRole = announcement.target_role || 'all';
+    if (targetRole === 'students') {
+      userSql += ` AND role = 'student'`;
+    } else if (targetRole === 'professors') {
+      userSql += ` AND role IN ('professor', 'instructor', 'faculty', 'doctor')`;
+    }
+
+    const targetDept = announcement.target_department || 'all';
+    if (targetDept && targetDept !== 'all') {
+      userParams.push(targetDept);
+      userSql += ` AND LOWER(COALESCE(department, '')) = LOWER($${uidx++})`;
+    }
+
+    const usersResult = await query(userSql, userParams);
+    if (!usersResult.rows.length) return 0;
+    const users = usersResult.rows;
+
+    // Insert the notification row
+    const notifResult = await query(
+      `INSERT INTO notifications
+         (title, body, type, sender_id, data, is_published, published_at)
+       VALUES ($1, $2, 'announcement'::notification_type, $3, $4::jsonb, TRUE, NOW())
+       RETURNING id`,
+      [
+        'New Announcement',
+        announcement.title,
+        senderId,
+        JSON.stringify({ announcement_id: String(announcement.id) }),
+      ]
+    );
+    const notifId = notifResult.rows[0].id;
+
+    // Bulk-insert receipts
+    const placeholders = users.map((_, i) => `($${i * 2 + 1}, $${i * 2 + 2})`).join(',');
+    const receiptParams = users.flatMap(u => [notifId, u.id]);
+    await query(
+      `INSERT INTO notification_receipts (notification_id, user_id)
+       VALUES ${placeholders}
+       ON CONFLICT DO NOTHING`,
+      receiptParams
+    );
+
+    return users.length;
+  } catch (err) {
+    console.error('[announce] notification error:', err.message);
+    return 0;
+  }
+}
+
 function toBool(value, fallback = false) {
   if (value === undefined || value === null || value === '') return fallback;
   if (typeof value === 'boolean') return value;
@@ -266,9 +337,15 @@ async function createAnnouncement(req, res, next) {
       ]
     );
 
+    const announcement = result.rows[0];
+    let notifications_sent = 0;
+    if (is_published) {
+      notifications_sent = await notifyForAnnouncement(announcement, req.user.id);
+    }
+
     res.status(201).json({
       success: true,
-      data: { announcement: result.rows[0] },
+      data: { announcement, notifications_sent },
     });
   } catch (error) {
     next(error);
@@ -281,6 +358,15 @@ async function updateAnnouncement(req, res, next) {
     const fields = [];
     const values = [];
     let idx = 1;
+
+    // Needed to detect draft → published transition for notification
+    const currentRow = await query(
+      'SELECT is_published FROM announcements WHERE id = $1', [id]
+    );
+    if (!currentRow.rows.length) {
+      return res.status(404).json({ success: false, message: 'Not found.' });
+    }
+    const wasPublished = currentRow.rows[0].is_published;
 
     const publishAt =
       req.body.publish_at !== undefined
@@ -364,7 +450,13 @@ async function updateAnnouncement(req, res, next) {
       return res.status(404).json({ success: false, message: 'Not found.' });
     }
 
-    res.json({ success: true, data: { announcement: result.rows[0] } });
+    const updated = result.rows[0];
+    let notifications_sent = 0;
+    if (!wasPublished && updated.is_published) {
+      notifications_sent = await notifyForAnnouncement(updated, req.user.id);
+    }
+
+    res.json({ success: true, data: { announcement: updated, notifications_sent } });
   } catch (error) {
     next(error);
   }

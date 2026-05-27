@@ -453,14 +453,168 @@
   font-weight: 600;
 }
 
-.aet-badge--active {
+.aet-badge--upcoming {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.aet-badge--ongoing {
   background: #dcfce7;
   color: #15803d;
+}
+
+.aet-badge--finished {
+  background: #f1f5f9;
+  color: #64748b;
 }
 
 .aet-badge--cancelled {
   background: #f3f4f6;
   color: #6b7280;
+}
+
+/* ─── Searchable room picker ──────────────────────── */
+.aet-room-picker {
+  position: relative;
+}
+
+.aet-room-picker__input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border, #d1d5db);
+  border-radius: var(--radius, 8px);
+  background: #fff;
+  padding: 0 10px;
+  min-height: 38px;
+  cursor: text;
+}
+
+.aet-room-picker__input-wrap:focus-within {
+  border-color: var(--primary, #1e3a5f);
+  box-shadow: 0 0 0 2px rgba(30,58,95,.12);
+}
+
+.aet-room-picker__input {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 14px;
+  color: var(--text, #111827);
+  padding: 8px 0;
+  min-width: 0;
+}
+
+.aet-room-picker__input::placeholder {
+  color: #9ca3af;
+}
+
+.aet-room-picker__icon {
+  font-size: 14px;
+  color: #9ca3af;
+  pointer-events: none;
+  flex-shrink: 0;
+}
+
+.aet-room-picker__selected {
+  flex: 1;
+  font-size: 13.5px;
+  color: var(--text, #111827);
+  padding: 8px 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.aet-room-picker__clear {
+  background: none;
+  border: none;
+  color: #9ca3af;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+  flex-shrink: 0;
+  transition: color 0.12s;
+}
+
+.aet-room-picker__clear:hover {
+  color: #ef4444;
+}
+
+.aet-room-picker__dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: #fff;
+  border: 1px solid var(--border, #d1d5db);
+  border-radius: var(--radius, 8px);
+  box-shadow: 0 8px 24px rgba(0,0,0,.12);
+  max-height: 240px;
+  overflow-y: auto;
+  z-index: 200;
+}
+
+.aet-room-picker__option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  padding: 9px 12px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid #f3f4f6;
+  cursor: pointer;
+  text-align: left;
+  gap: 2px;
+  transition: background 0.1s;
+}
+
+.aet-room-picker__option:last-child {
+  border-bottom: none;
+}
+
+.aet-room-picker__option:hover,
+.aet-room-picker__option--selected {
+  background: #f0f4ff;
+}
+
+.aet-room-picker__opt-num {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--primary, #1e3a5f);
+}
+
+.aet-room-picker__opt-name {
+  font-size: 13px;
+  color: var(--text, #374151);
+}
+
+.aet-room-picker__opt-meta {
+  font-size: 11.5px;
+  color: #6b7280;
+  text-transform: capitalize;
+}
+
+.aet-room-picker__empty {
+  padding: 16px 12px;
+  font-size: 13px;
+  color: #6b7280;
+  text-align: center;
+}
+
+.aet-room-picker__hint {
+  font-size: 11.5px;
+  color: #6b7280;
+  margin-top: 5px;
+}
+
+@media (max-width: 600px) {
+  .aet-room-picker__dropdown {
+    max-height: 180px;
+  }
 }
 
 /* ─── Events list section ────────────────────────── */
@@ -786,6 +940,277 @@
   gap: 4px;
   font-size: 12.5px;
   color: var(--text-muted, #6b7280);
+}
+
+/* ─── Room picker footer (hint + map button) ─────── */
+.aet-room-picker-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 5px;
+  flex-wrap: wrap;
+}
+
+.aet-room-picker-footer .aet-room-picker__hint {
+  margin-top: 0;
+  flex: 1;
+}
+
+.aet-map-picker-btn {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--primary, #1e3a5f);
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: var(--radius, 8px);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.aet-map-picker-btn:hover {
+  background: #dbeafe;
+  border-color: #93c5fd;
+}
+
+/* ─── Map picker modal overlay ───────────────────── */
+.aet-map-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1100;
+  padding: 16px;
+}
+
+.aet-map-modal {
+  background: #fff;
+  border-radius: var(--radius, 10px);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.22);
+  width: min(1080px, 96vw);
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ─── Modal header ───────────────────────────────── */
+.aet-map-modal__header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border, #e5e7eb);
+  background: var(--bg-subtle, #f9fafb);
+  flex-shrink: 0;
+}
+
+.aet-map-modal__header-text {
+  flex: 1;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.aet-map-modal__title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text, #111827);
+}
+
+.aet-map-modal__sub {
+  font-size: 12px;
+  color: var(--text-muted, #6b7280);
+}
+
+.aet-map-modal__close {
+  background: none;
+  border: none;
+  font-size: 22px;
+  line-height: 1;
+  color: #9ca3af;
+  cursor: pointer;
+  padding: 0 4px;
+  flex-shrink: 0;
+  transition: color 0.12s;
+}
+
+.aet-map-modal__close:hover {
+  color: #374151;
+}
+
+/* ─── Floor tabs ─────────────────────────────────── */
+.aet-map-floor-tabs {
+  display: flex;
+  gap: 0;
+  padding: 0 18px;
+  border-bottom: 1px solid var(--border, #e5e7eb);
+  overflow-x: auto;
+  flex-shrink: 0;
+  background: #fff;
+}
+
+.aet-map-floor-tab {
+  padding: 8px 14px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-muted, #6b7280);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.12s, border-color 0.12s;
+}
+
+.aet-map-floor-tab:hover {
+  color: var(--text, #111827);
+}
+
+.aet-map-floor-tab--active {
+  color: var(--primary, #1e3a5f);
+  border-bottom-color: var(--primary, #1e3a5f);
+}
+
+/* ─── Map body: map area + side panel ────────────── */
+.aet-map-body {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.aet-map-area {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+.aet-map-panel {
+  flex: 0 0 200px;
+  border-left: 1px solid var(--border, #e5e7eb);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow-y: auto;
+  background: var(--bg-subtle, #f9fafb);
+}
+
+.aet-map-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-muted, #6b7280);
+  font-size: 13.5px;
+}
+
+/* ─── Legend ─────────────────────────────────────── */
+.aet-map-legend__title {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted, #6b7280);
+  margin-bottom: 8px;
+}
+
+.aet-map-legend__item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--text, #374151);
+  margin-bottom: 5px;
+}
+
+.aet-map-legend__dot {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.aet-map-legend__dot--available   { background: rgba(34,197,94,0.55);  outline: 1.5px solid #16a34a; }
+.aet-map-legend__dot--lecture      { background: rgba(239,68,68,0.55);  outline: 1.5px solid #dc2626; }
+.aet-map-legend__dot--event        { background: rgba(168,85,247,0.55); outline: 1.5px solid #9333ea; }
+.aet-map-legend__dot--notbookable  { background: rgba(209,213,219,0.25); outline: 1.5px solid #9ca3af; }
+
+/* ─── Map click message ──────────────────────────── */
+.aet-map-msg {
+  flex: 1;
+}
+
+.aet-map-msg__text {
+  font-size: 12.5px;
+  line-height: 1.5;
+  border-radius: var(--radius, 8px);
+  padding: 10px 12px;
+}
+
+.aet-map-msg__text--hint {
+  background: #f0f4ff;
+  color: #374151;
+  border: 1px solid #c7d7f5;
+}
+
+.aet-map-msg__text--warn {
+  background: #fffbeb;
+  color: #92400e;
+  border: 1px solid #fde68a;
+}
+
+/* ─── Responsive ─────────────────────────────────── */
+
+/* Map picker responsive */
+@media (max-width: 640px) {
+  .aet-map-modal {
+    max-height: 92vh;
+  }
+
+  .aet-map-body {
+    flex-direction: column;
+  }
+
+  .aet-map-area {
+    min-height: 260px;
+    flex: none;
+    height: 260px;
+  }
+
+  .aet-map-panel {
+    flex: none;
+    border-left: none;
+    border-top: 1px solid var(--border, #e5e7eb);
+    padding: 12px 16px;
+    flex-direction: row;
+    gap: 12px;
+    overflow-x: auto;
+  }
+
+  .aet-map-legend {
+    flex-shrink: 0;
+  }
+
+  .aet-room-picker-footer {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .aet-map-picker-btn {
+    align-self: flex-start;
+  }
 }
 
 /* ─── Responsive ─────────────────────────────────── */

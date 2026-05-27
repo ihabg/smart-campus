@@ -19,14 +19,25 @@ pool.on('error', (err) => {
   console.error('Unexpected PostgreSQL pool error:', err.message);
 });
 
+// Set session timezone to Palestine local time on every new connection
+// so CURRENT_DATE, CURRENT_TIME, and NOW() reflect the app's locale
+// rather than the PostgreSQL server's system clock (which may be UTC).
+pool.on('connect', (client) => {
+  client.query("SET TIME ZONE 'Asia/Hebron'");
+});
+
 /**
  * Test the database connection on startup.
  */
 async function testConnection() {
   const client = await pool.connect();
   try {
-    const result = await client.query('SELECT NOW() AS now, current_database() AS db');
-    console.log(`✅ PostgreSQL connected: ${result.rows[0].db} @ ${result.rows[0].now}`);
+    const result = await client.query(
+      `SELECT NOW() AS now, current_database() AS db, current_setting('TIMEZONE') AS tz`
+    );
+    console.log(
+      `✅ PostgreSQL connected: ${result.rows[0].db} @ ${result.rows[0].now} (tz: ${result.rows[0].tz})`
+    );
   } finally {
     client.release();
   }

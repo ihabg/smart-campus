@@ -11,5 +11,6 @@ router.post ('/',                ctrl.createEvent);
 router.patch('/:id/cancel',     ctrl.cancelEvent);
 router.get  ('/conflicts',      ctrl.getConflicts);
 router.get  ('/available-rooms',ctrl.getAvailableRooms);
+router.get  ('/room-states',    ctrl.getRoomStates);
 
 module.exports = router;

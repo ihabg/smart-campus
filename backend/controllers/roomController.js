@@ -613,12 +613,35 @@ async function getRoomLiveStatus(req, res, next) {
     const current = row.current   || null;
     const next    = row.next      || null;
 
+    // Check for an active event booking happening right now
+    const eventRes = await query(
+      `SELECT id, title, description,
+              start_time::text, end_time::text
+       FROM event_bookings
+       WHERE room_id    = $1
+         AND status     = 'active'
+         AND event_date = CURRENT_DATE
+         AND start_time <= CURRENT_TIME::time
+         AND end_time    > CURRENT_TIME::time
+       LIMIT 1`,
+      [roomId]
+    );
+    const activeEvent = eventRes.rows[0] || null;
+
+    // Priority: lecture wins if both somehow coexist (event booking prevents
+    // this in practice, but we handle it defensively)
+    let status;
+    if (current)     status = 'occupied';
+    else if (activeEvent) status = 'event';
+    else             status = 'available';
+
     res.json({
       success: true,
       data: {
-        status: current ? 'occupied' : 'available',
+        status,
         current,
         next,
+        event: activeEvent,
       },
     });
   } catch (error) {

@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import toast from 'react-hot-toast';
-import { eventAPI, roomAPI } from '../../api/index';
+import { eventAPI, roomAPI, floorAPI } from '../../api/index';
 import { getErrorMessage } from '../../utils/helpers';
+import { RoomAvailabilityMap } from '../../components/map/RoomAvailabilityMap';
 import './AdminEventsTab.css';
 
 // ─── Helpers ───────────────────────────────────────────────────
@@ -17,7 +18,13 @@ function formatTime(t) {
 
 function formatDate(d) {
   if (!d) return '';
-  return new Date(d + 'T00:00:00').toLocaleDateString('en-US', {
+  // pg returns DATE columns as Date objects; handle both Date objects and
+  // YYYY-MM-DD strings by extracting just the date part before parsing.
+  const str = typeof d === 'string' ? d : (d instanceof Date ? d.toISOString() : String(d));
+  const datePart = str.substring(0, 10); // "YYYY-MM-DD"
+  const [year, month, day] = datePart.split('-').map(Number);
+  if (!year || !month || !day) return datePart;
+  return new Date(year, month - 1, day).toLocaleDateString('en-US', {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
   });
 }
@@ -30,6 +37,67 @@ function roomLabel(r) {
   return `${parts.join(' — ')}${cap}${loc ? ' · ' + loc : ''}`;
 }
 
+function normalizeFloorKeyFromDb(floor) {
+  const label = String(floor?.floor_label || '').trim().toUpperCase();
+  if (label === 'B2') return 'B2';
+  if (label === 'B1') return 'B1';
+  if (label === 'G')  return 'G';
+  const n = Number(floor?.floor_number);
+  if (n === -2) return 'B2';
+  if (n === -1) return 'B1';
+  if (n === 0)  return 'G';
+  return String(n || label);
+}
+
+// Room types that can be booked for events (mirrors backend EVENT_BOOKABLE_TYPES)
+const EVENT_BOOKABLE_TYPES = new Set([
+  'lecture_hall', 'classroom', 'lab', 'amphitheater', 'auditorium',
+  'meeting_room', 'engineering_drawing_room', 'engineering_drawing_studio',
+]);
+
+// ── Compute display status from event fields ───────────────────
+function getDisplayStatus(ev) {
+  if (ev.status === 'cancelled') return 'cancelled';
+
+  const str = typeof ev.event_date === 'string'
+    ? ev.event_date
+    : (ev.event_date instanceof Date ? ev.event_date.toISOString() : String(ev.event_date));
+  const [yr, mo, dy] = str.substring(0, 10).split('-').map(Number);
+
+  const now     = new Date();
+  const today   = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const eventDay = new Date(yr, mo - 1, dy);
+
+  if (eventDay < today) return 'finished';
+  if (eventDay > today) return 'upcoming';
+
+  // Same day — compare minutes
+  const [sh, sm] = String(ev.start_time || '').split(':').map(Number);
+  const [eh, em] = String(ev.end_time   || '').split(':').map(Number);
+  const nowMins   = now.getHours() * 60 + now.getMinutes();
+  const startMins = (sh || 0) * 60 + (sm || 0);
+  const endMins   = (eh || 0) * 60 + (em || 0);
+
+  if (nowMins < startMins) return 'upcoming';
+  if (nowMins >= endMins)  return 'finished';
+  return 'ongoing';
+}
+
+const DISPLAY_LABELS = {
+  upcoming:  'Upcoming',
+  ongoing:   'Ongoing',
+  finished:  'Finished',
+  cancelled: 'Cancelled',
+};
+
+function StatusBadge({ displayStatus }) {
+  return (
+    <span className={`aet-badge aet-badge--${displayStatus}`}>
+      {DISPLAY_LABELS[displayStatus] || displayStatus}
+    </span>
+  );
+}
+
 const BLANK_FORM = {
   title: '',
   description: '',
@@ -38,14 +106,6 @@ const BLANK_FORM = {
   start_time: '',
   end_time: '',
 };
-
-function StatusBadge({ status }) {
-  return (
-    <span className={`aet-badge aet-badge--${status}`}>
-      {status === 'active' ? 'Active' : 'Cancelled'}
-    </span>
-  );
-}
 
 // ─── Component ─────────────────────────────────────────────────
 
@@ -56,6 +116,11 @@ export default function AdminEventsTab() {
   const [rooms,        setRooms]        = useState([]);
   const [roomsLoading, setRoomsLoading] = useState(false);
   const roomsLoadedRef = useRef(false);
+
+  // Searchable room picker state
+  const [roomSearch,      setRoomSearch]      = useState('');
+  const [roomPickerOpen,  setRoomPickerOpen]  = useState(false);
+  const roomPickerRef = useRef(null);
 
   const [checking,    setChecking]    = useState(false);
   const [checkError,  setCheckError]  = useState('');
@@ -75,6 +140,16 @@ export default function AdminEventsTab() {
   const [cancelTarget,  setCancelTarget]  = useState(null); // event object
   const [cancelLoading, setCancelLoading] = useState(false);
   const [cancelError,   setCancelError]   = useState('');
+
+  // Map picker state
+  const [mapOpen,         setMapOpen]         = useState(false);
+  const [mapFloors,       setMapFloors]       = useState([]);
+  const mapFloorsRef = useRef(false);
+  const [mapFloorId,      setMapFloorId]      = useState('');
+  const [mapRooms,        setMapRooms]        = useState([]);
+  const [mapRoomsLoading, setMapRoomsLoading] = useState(false);
+  const [mapClickMsg,     setMapClickMsg]     = useState('');
+  const [mapWarning,      setMapWarning]      = useState('');
 
   // ── Load rooms once ────────────────────────────────────────
   useEffect(() => {
@@ -102,6 +177,56 @@ export default function AdminEventsTab() {
     loadEvents();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Close room picker on outside click ────────────────────
+  useEffect(() => {
+    function onClickOutside(e) {
+      if (roomPickerRef.current && !roomPickerRef.current.contains(e.target)) {
+        setRoomPickerOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', onClickOutside);
+    return () => document.removeEventListener('mousedown', onClickOutside);
+  }, []);
+
+  // ── Filtered + bookable rooms for the event picker ────────
+  const bookableRooms = rooms.filter(r => EVENT_BOOKABLE_TYPES.has(r.type));
+  const filteredRooms = roomSearch.trim()
+    ? bookableRooms.filter(r => {
+        const q = roomSearch.toLowerCase();
+        return (
+          (r.room_number || '').toLowerCase().includes(q) ||
+          (r.name        || '').toLowerCase().includes(q) ||
+          (r.type        || '').toLowerCase().includes(q)
+        );
+      })
+    : bookableRooms;
+
+  const selectedEventRoom = rooms.find(r => r.id === form.room_id) || null;
+
+  // ── Room picker selection ──────────────────────────────────
+  const handleRoomSelect = useCallback((room) => {
+    setForm(f => ({ ...f, room_id: room.id }));
+    setRoomSearch('');
+    setRoomPickerOpen(false);
+    setCheckResult(null);
+    setCheckError('');
+    setConfirmError('');
+    setReplacements({});
+    setMapWarning('');
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Clear room selection ───────────────────────────────────
+  const handleRoomClear = useCallback(() => {
+    setForm(f => ({ ...f, room_id: '' }));
+    setRoomSearch('');
+    setRoomPickerOpen(false);
+    setCheckResult(null);
+    setCheckError('');
+    setConfirmError('');
+    setReplacements({});
+    setMapWarning('');
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Form field change ──────────────────────────────────────
   function handleChange(e) {
     const { name, value } = e.target;
@@ -110,6 +235,73 @@ export default function AdminEventsTab() {
     setCheckError('');
     setConfirmError('');
     setReplacements({});
+    if (['event_date', 'start_time', 'end_time'].includes(name)) {
+      setMapWarning('');
+    }
+  }
+
+  // ── Map picker: fetch rooms for a floor ────────────────────
+  async function fetchMapRooms(floorId) {
+    setMapRoomsLoading(true);
+    setMapClickMsg('');
+    try {
+      const res = await eventAPI.getRoomStates({
+        floor_id:   floorId,
+        date:       form.event_date,
+        start_time: form.start_time,
+        end_time:   form.end_time,
+      });
+      setMapRooms(res?.data?.data?.rooms || []);
+    } catch {
+      setMapRooms([]);
+    } finally {
+      setMapRoomsLoading(false);
+    }
+  }
+
+  // ── Map picker: open modal ─────────────────────────────────
+  async function openMapPicker() {
+    if (!form.event_date || !form.start_time || !form.end_time) {
+      setMapWarning('Please fill in the date and time fields before using the map picker.');
+      return;
+    }
+    setMapWarning('');
+    setMapOpen(true);
+    setMapClickMsg('');
+
+    if (!mapFloorsRef.current) {
+      try {
+        const res = await floorAPI.getAll();
+        const floors = res?.data?.data?.floors || [];
+        setMapFloors(floors);
+        mapFloorsRef.current = true;
+        const firstId = floors[0]?.id || '';
+        setMapFloorId(firstId);
+        if (firstId) fetchMapRooms(firstId);
+      } catch {
+        setMapFloors([]);
+      }
+    } else {
+      const floorId = mapFloorId || mapFloors[0]?.id || '';
+      if (floorId) fetchMapRooms(floorId);
+    }
+  }
+
+  // ── Map picker: room clicked ───────────────────────────────
+  function handleMapRoomClick(block, avail) {
+    if (!avail) return;
+    if (avail.status === 'not_bookable') {
+      setMapClickMsg('This room type cannot be booked for events.');
+      return;
+    }
+    if (avail.status === 'event_conflict') {
+      setMapClickMsg('This room already has an event booking at this time.');
+      return;
+    }
+    const room = rooms.find(r => r.id === avail.room_id) || { id: avail.room_id };
+    handleRoomSelect(room);
+    setMapOpen(false);
+    setMapClickMsg('');
   }
 
   // ── Validate before check ──────────────────────────────────
@@ -243,8 +435,20 @@ export default function AdminEventsTab() {
     }
   }
 
+  // ── Map picker derived values ──────────────────────────────
+  const mapFloorKey = useMemo(() => {
+    const floor = mapFloors.find(f => f.id === mapFloorId);
+    return floor ? normalizeFloorKeyFromDb(floor) : null;
+  }, [mapFloors, mapFloorId]);
+
+  const mapAvailability = useMemo(() => {
+    const byNum = {};
+    mapRooms.forEach(r => { byNum[r.room_number] = { status: r.status, room_id: r.id }; });
+    return byNum;
+  }, [mapRooms]);
+
   // ── Derived state ──────────────────────────────────────────
-  const selectedRoom = rooms.find(r => r.id === form.room_id);
+  const selectedRoom = selectedEventRoom;
 
   const allReplacementsSelected =
     !checkResult?.has_conflicts ||
@@ -296,25 +500,82 @@ export default function AdminEventsTab() {
             </div>
 
             <div className="aet-field">
-              <label className="aet-label" htmlFor="aet-room">Room *</label>
-              <select
-                id="aet-room"
-                className="aet-input aet-select"
-                name="room_id"
-                value={form.room_id}
-                onChange={handleChange}
-                disabled={roomsLoading}
-              >
-                <option value="">
-                  {roomsLoading ? 'Loading rooms…' : '— Select a room —'}
-                </option>
-                {rooms.map(r => (
-                  <option key={r.id} value={r.id}>
-                    {r.room_number}{r.name ? ` — ${r.name}` : ''}
-                    {r.capacity ? ` (${r.capacity} seats)` : ''}
-                  </option>
-                ))}
-              </select>
+              <label className="aet-label">Room *</label>
+              <div className="aet-room-picker" ref={roomPickerRef}>
+                <div className="aet-room-picker__input-wrap">
+                  {selectedEventRoom && !roomPickerOpen ? (
+                    <>
+                      <span className="aet-room-picker__selected">
+                        <strong>{selectedEventRoom.room_number}</strong>
+                        {selectedEventRoom.name && ` — ${selectedEventRoom.name}`}
+                        {selectedEventRoom.capacity ? ` (${selectedEventRoom.capacity} seats)` : ''}
+                      </span>
+                      <button
+                        type="button"
+                        className="aet-room-picker__clear"
+                        onClick={handleRoomClear}
+                        title="Clear selection"
+                      >×</button>
+                    </>
+                  ) : (
+                    <input
+                      className="aet-room-picker__input"
+                      type="text"
+                      placeholder={roomsLoading ? 'Loading rooms…' : 'Search by room number or name…'}
+                      value={roomSearch}
+                      disabled={roomsLoading}
+                      onChange={e => { setRoomSearch(e.target.value); setRoomPickerOpen(true); }}
+                      onFocus={() => setRoomPickerOpen(true)}
+                      autoComplete="off"
+                    />
+                  )}
+                  {!selectedEventRoom && (
+                    <span className="aet-room-picker__icon">🔍</span>
+                  )}
+                </div>
+                {roomPickerOpen && (
+                  <div className="aet-room-picker__dropdown">
+                    {filteredRooms.length === 0 ? (
+                      <div className="aet-room-picker__empty">
+                        {roomsLoading ? 'Loading…' : 'No matching rooms found.'}
+                      </div>
+                    ) : (
+                      filteredRooms.map(r => (
+                        <button
+                          key={r.id}
+                          type="button"
+                          className={`aet-room-picker__option${r.id === form.room_id ? ' aet-room-picker__option--selected' : ''}`}
+                          onMouseDown={e => { e.preventDefault(); handleRoomSelect(r); }}
+                        >
+                          <span className="aet-room-picker__opt-num">{r.room_number}</span>
+                          {r.name && <span className="aet-room-picker__opt-name">{r.name}</span>}
+                          <span className="aet-room-picker__opt-meta">
+                            {r.type?.replace(/_/g, ' ')}
+                            {r.capacity ? ` · ${r.capacity} seats` : ''}
+                          </span>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
+              <div className="aet-room-picker-footer">
+                <div className="aet-room-picker__hint">
+                  Only lecture halls, classrooms, amphitheaters, and meeting rooms can be booked for events.
+                </div>
+                <button
+                  type="button"
+                  className="aet-map-picker-btn"
+                  onClick={openMapPicker}
+                >
+                  Choose from Map
+                </button>
+              </div>
+              {mapWarning && (
+                <div className="aet-alert aet-alert--warn aet-alert--sm" style={{ marginTop: 6 }}>
+                  {mapWarning}
+                </div>
+              )}
             </div>
 
             <div className="aet-field">
@@ -615,6 +876,99 @@ export default function AdminEventsTab() {
         </div>
       )}
 
+      {/* ── Map room picker modal ── */}
+      {mapOpen && (
+        <div className="aet-map-overlay" onClick={() => setMapOpen(false)}>
+          <div className="aet-map-modal" onClick={e => e.stopPropagation()}>
+            <div className="aet-map-modal__header">
+              <div className="aet-map-modal__header-text">
+                <span className="aet-map-modal__title">Choose Room from Map</span>
+                <span className="aet-map-modal__sub">
+                  {form.event_date} &middot; {formatTime(form.start_time)} &ndash; {formatTime(form.end_time)}
+                </span>
+              </div>
+              <button
+                type="button"
+                className="aet-map-modal__close"
+                onClick={() => setMapOpen(false)}
+                aria-label="Close"
+              >
+                &times;
+              </button>
+            </div>
+
+            {mapFloors.length > 0 && (
+              <div className="aet-map-floor-tabs">
+                {mapFloors.map(f => (
+                  <button
+                    key={f.id}
+                    type="button"
+                    className={`aet-map-floor-tab${mapFloorId === f.id ? ' aet-map-floor-tab--active' : ''}`}
+                    onClick={() => {
+                      setMapFloorId(f.id);
+                      fetchMapRooms(f.id);
+                      setMapClickMsg('');
+                    }}
+                  >
+                    {f.floor_label || f.floor_number}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <div className="aet-map-body">
+              <div className="aet-map-area">
+                {mapRoomsLoading ? (
+                  <div className="aet-map-empty">Loading rooms&hellip;</div>
+                ) : mapFloorKey ? (
+                  <RoomAvailabilityMap
+                    floorKey={mapFloorKey}
+                    availabilityByRoomNumber={mapAvailability}
+                    selectedRoomId={form.room_id}
+                    onRoomClick={handleMapRoomClick}
+                    clickableStatuses={['available', 'lecture_conflict']}
+                  />
+                ) : (
+                  <div className="aet-map-empty">No map available for this floor.</div>
+                )}
+              </div>
+
+              <div className="aet-map-panel">
+                <div className="aet-map-legend">
+                  <div className="aet-map-legend__title">Legend</div>
+                  <div className="aet-map-legend__item">
+                    <span className="aet-map-legend__dot aet-map-legend__dot--available" />
+                    Available
+                  </div>
+                  <div className="aet-map-legend__item">
+                    <span className="aet-map-legend__dot aet-map-legend__dot--lecture" />
+                    Lecture conflict
+                  </div>
+                  <div className="aet-map-legend__item">
+                    <span className="aet-map-legend__dot aet-map-legend__dot--event" />
+                    Event conflict
+                  </div>
+                  <div className="aet-map-legend__item">
+                    <span className="aet-map-legend__dot aet-map-legend__dot--notbookable" />
+                    Not bookable
+                  </div>
+                </div>
+
+                <div className="aet-map-msg">
+                  {mapClickMsg ? (
+                    <div className="aet-map-msg__text aet-map-msg__text--warn">{mapClickMsg}</div>
+                  ) : (
+                    <div className="aet-map-msg__text aet-map-msg__text--hint">
+                      Click an available or conflict room to select it.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Events list ── */}
       <div className="aet-list-section">
         <div className="aet-list-header">
@@ -677,10 +1031,10 @@ export default function AdminEventsTab() {
                       <td className="aet-time-cell">
                         {formatTime(ev.start_time)} – {formatTime(ev.end_time)}
                       </td>
-                      <td><StatusBadge status={ev.status} /></td>
+                      <td><StatusBadge displayStatus={getDisplayStatus(ev)} /></td>
                       <td className="aet-created-by">{ev.created_by_name}</td>
                       <td className="aet-actions-cell">
-                        {ev.status === 'active' && (
+                        {['upcoming', 'ongoing'].includes(getDisplayStatus(ev)) && (
                           <button
                             type="button"
                             className="aet-btn-cancel"
@@ -702,7 +1056,7 @@ export default function AdminEventsTab() {
                 <div key={ev.id} className="aet-event-card">
                   <div className="aet-event-card__top">
                     <div className="aet-event-card__name">{ev.title}</div>
-                    <StatusBadge status={ev.status} />
+                    <StatusBadge displayStatus={getDisplayStatus(ev)} />
                   </div>
                   {ev.description && (
                     <div className="aet-event-card__desc">{ev.description}</div>
@@ -713,7 +1067,7 @@ export default function AdminEventsTab() {
                     <span>🕐 {formatTime(ev.start_time)} – {formatTime(ev.end_time)}</span>
                     <span>👤 {ev.created_by_name}</span>
                   </div>
-                  {ev.status === 'active' && (
+                  {['upcoming', 'ongoing'].includes(getDisplayStatus(ev)) && (
                     <div className="aet-event-card__cancel">
                       <button
                         type="button"

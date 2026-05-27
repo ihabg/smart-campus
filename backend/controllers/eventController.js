@@ -1,5 +1,14 @@
 const { query, withTransaction } = require('../config/db');
 
+// ─── Room types that are valid venues for event bookings ────────
+const EVENT_BOOKABLE_TYPES = [
+  'lecture_hall', 'classroom', 'lab', 'amphitheater', 'auditorium',
+  'meeting_room', 'engineering_drawing_room', 'engineering_drawing_studio',
+];
+const EVENT_BOOKABLE_MSG =
+  'This room type cannot be booked for events. ' +
+  'Please choose a lecture hall, classroom, amphitheater, or meeting room.';
+
 // ─── Time formatter for notification bodies ────────────────────
 function fmtTime(t) {
   if (!t) return '';
@@ -85,9 +94,11 @@ async function getConflicts(req, res, next) {
     if (isNaN(parsedDate.getTime()))
       return res.status(400).json({ success: false, message: 'Invalid date format.' });
 
-    const roomCheck = await query('SELECT id FROM rooms WHERE id = $1', [room_id]);
+    const roomCheck = await query('SELECT id, type::text AS type FROM rooms WHERE id = $1', [room_id]);
     if (!roomCheck.rows.length)
       return res.status(404).json({ success: false, message: 'Room not found.' });
+    if (!EVENT_BOOKABLE_TYPES.includes(roomCheck.rows[0].type))
+      return res.status(400).json({ success: false, message: EVENT_BOOKABLE_MSG });
 
     const result = await query(
       `
@@ -163,6 +174,8 @@ async function getAvailableRooms(req, res, next) {
       params.push(exclude_room_id);
       excludeClause = `AND r.id != $${params.length}`;
     }
+    params.push(EVENT_BOOKABLE_TYPES);
+    const typeIdx = params.length;
 
     const result = await query(
       `
@@ -179,6 +192,7 @@ async function getAvailableRooms(req, res, next) {
       JOIN floors    f ON f.id = r.floor_id
       JOIN buildings b ON b.id = f.building_id
       WHERE r.is_active = TRUE
+        AND r.type::text = ANY($${typeIdx}::text[])
         ${excludeClause}
         AND NOT EXISTS (
           SELECT 1
@@ -244,10 +258,12 @@ async function createEvent(req, res, next) {
     if (isNaN(parsedDate.getTime()))
       return res.status(400).json({ success: false, message: 'Invalid event_date.' });
 
-    // ── Verify room exists ────────────────────────────────────
-    const roomCheck = await query('SELECT id FROM rooms WHERE id = $1', [room_id]);
+    // ── Verify room exists and is event-bookable ──────────────
+    const roomCheck = await query('SELECT id, type::text AS type FROM rooms WHERE id = $1', [room_id]);
     if (!roomCheck.rows.length)
       return res.status(404).json({ success: false, message: 'Room not found.' });
+    if (!EVENT_BOOKABLE_TYPES.includes(roomCheck.rows[0].type))
+      return res.status(400).json({ success: false, message: EVENT_BOOKABLE_MSG });
 
     // ── Check for duplicate event booking ────────────────────
     const dupCheck = await query(
@@ -556,6 +572,21 @@ async function cancelEvent(req, res, next) {
       });
     }
 
+    // ── Block cancellation of finished events ─────────────────
+    const finishedCheck = await query(
+      `SELECT 1 FROM event_bookings
+       WHERE id = $1
+         AND (event_date < CURRENT_DATE
+              OR (event_date = CURRENT_DATE AND end_time <= CURRENT_TIME::time))`,
+      [id]
+    );
+    if (finishedCheck.rows.length) {
+      return res.status(400).json({
+        success: false,
+        message: 'This event has already finished and cannot be cancelled.',
+      });
+    }
+
     // ── Fetch active relocations linked to this event ─────────
     const relocRes = await query(
       `SELECT
@@ -685,4 +716,86 @@ async function cancelEvent(req, res, next) {
   }
 }
 
-module.exports = { listEvents, getConflicts, getAvailableRooms, createEvent, cancelEvent };
+// ─── Room states for map picker ───────────────────────────────
+async function getRoomStates(req, res, next) {
+  try {
+    const { floor_id, date, start_time, end_time } = req.query;
+
+    if (!floor_id)   return res.status(400).json({ success: false, message: 'floor_id is required.' });
+    if (!date)       return res.status(400).json({ success: false, message: 'date is required.' });
+    if (!start_time) return res.status(400).json({ success: false, message: 'start_time is required.' });
+    if (!end_time)   return res.status(400).json({ success: false, message: 'end_time is required.' });
+    if (start_time >= end_time)
+      return res.status(400).json({ success: false, message: 'start_time must be before end_time.' });
+
+    const floorCheck = await query('SELECT id FROM floors WHERE id = $1', [floor_id]);
+    if (!floorCheck.rows.length)
+      return res.status(404).json({ success: false, message: 'Floor not found.' });
+
+    const result = await query(
+      `
+      SELECT
+        r.id,
+        r.room_number,
+        r.name,
+        r.type::text AS type,
+        r.capacity,
+        lec.has_lecture,
+        evt.has_event
+      FROM rooms r
+      LEFT JOIN LATERAL (
+        SELECT EXISTS (
+          SELECT 1 FROM section_meetings sm
+          JOIN sections s ON s.id = sm.section_id
+          WHERE sm.room_id     = r.id
+            AND s.is_active    = TRUE
+            AND sm.day_of_week = EXTRACT(DOW FROM $2::date)::int
+            AND sm.start_time  < $3::time
+            AND sm.end_time    > $4::time
+        ) AS has_lecture
+      ) lec ON TRUE
+      LEFT JOIN LATERAL (
+        SELECT EXISTS (
+          SELECT 1 FROM event_bookings eb
+          WHERE eb.room_id    = r.id
+            AND eb.status     = 'active'
+            AND eb.event_date = $2::date
+            AND eb.start_time < $3::time
+            AND eb.end_time   > $4::time
+        ) AS has_event
+      ) evt ON TRUE
+      WHERE r.floor_id  = $1
+        AND r.is_active = TRUE
+      ORDER BY r.room_number
+      `,
+      [floor_id, date, end_time, start_time]
+    );
+
+    const rooms = result.rows.map(row => {
+      let status;
+      if (!EVENT_BOOKABLE_TYPES.includes(row.type)) {
+        status = 'not_bookable';
+      } else if (row.has_event) {
+        status = 'event_conflict';
+      } else if (row.has_lecture) {
+        status = 'lecture_conflict';
+      } else {
+        status = 'available';
+      }
+      return {
+        id:          row.id,
+        room_number: row.room_number,
+        name:        row.name,
+        type:        row.type,
+        capacity:    row.capacity,
+        status,
+      };
+    });
+
+    res.json({ success: true, data: { rooms } });
+  } catch (error) {
+    next(error);
+  }
+}
+
+module.exports = { listEvents, getConflicts, getAvailableRooms, createEvent, cancelEvent, getRoomStates };
