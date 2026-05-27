@@ -1,15 +1,6 @@
 const { query, withTransaction } = require('../config/db');
 const { logActivity } = require('../utils/activityLogger');
 
-// ─── Room types that are valid venues for event bookings ────────
-const EVENT_BOOKABLE_TYPES = [
-  'lecture_hall', 'classroom', 'lab', 'amphitheater', 'auditorium',
-  'meeting_room', 'engineering_drawing_room', 'engineering_drawing_studio',
-];
-const EVENT_BOOKABLE_MSG =
-  'This room type cannot be booked for events. ' +
-  'Please choose a lecture hall, classroom, amphitheater, or meeting room.';
-
 // ─── Time formatter for notification bodies ────────────────────
 function fmtTime(t) {
   if (!t) return '';
@@ -95,11 +86,18 @@ async function getConflicts(req, res, next) {
     if (isNaN(parsedDate.getTime()))
       return res.status(400).json({ success: false, message: 'Invalid date format.' });
 
-    const roomCheck = await query('SELECT id, type::text AS type FROM rooms WHERE id = $1', [room_id]);
+    const roomCheck = await query(
+      `SELECT r.id, r.type::text AS type,
+              COALESCE(rt.is_bookable_for_events, false) AS is_bookable_for_events
+       FROM rooms r
+       LEFT JOIN room_types rt ON rt.value = r.type::text AND rt.is_active = true
+       WHERE r.id = $1`,
+      [room_id]
+    );
     if (!roomCheck.rows.length)
       return res.status(404).json({ success: false, message: 'Room not found.' });
-    if (!EVENT_BOOKABLE_TYPES.includes(roomCheck.rows[0].type))
-      return res.status(400).json({ success: false, message: EVENT_BOOKABLE_MSG });
+    if (!roomCheck.rows[0].is_bookable_for_events)
+      return res.status(400).json({ success: false, message: 'This room type cannot be booked for events.' });
 
     const result = await query(
       `
@@ -175,8 +173,6 @@ async function getAvailableRooms(req, res, next) {
       params.push(exclude_room_id);
       excludeClause = `AND r.id != $${params.length}`;
     }
-    params.push(EVENT_BOOKABLE_TYPES);
-    const typeIdx = params.length;
 
     const result = await query(
       `
@@ -193,7 +189,12 @@ async function getAvailableRooms(req, res, next) {
       JOIN floors    f ON f.id = r.floor_id
       JOIN buildings b ON b.id = f.building_id
       WHERE r.is_active = TRUE
-        AND r.type::text = ANY($${typeIdx}::text[])
+        AND EXISTS (
+          SELECT 1 FROM room_types rt
+          WHERE rt.value = r.type::text
+            AND rt.is_teaching = true
+            AND rt.is_active = true
+        )
         ${excludeClause}
         AND NOT EXISTS (
           SELECT 1
@@ -260,11 +261,18 @@ async function createEvent(req, res, next) {
       return res.status(400).json({ success: false, message: 'Invalid event_date.' });
 
     // ── Verify room exists and is event-bookable ──────────────
-    const roomCheck = await query('SELECT id, type::text AS type, room_number FROM rooms WHERE id = $1', [room_id]);
+    const roomCheck = await query(
+      `SELECT r.id, r.type::text AS type, r.room_number,
+              COALESCE(rt.is_bookable_for_events, false) AS is_bookable_for_events
+       FROM rooms r
+       LEFT JOIN room_types rt ON rt.value = r.type::text AND rt.is_active = true
+       WHERE r.id = $1`,
+      [room_id]
+    );
     if (!roomCheck.rows.length)
       return res.status(404).json({ success: false, message: 'Room not found.' });
-    if (!EVENT_BOOKABLE_TYPES.includes(roomCheck.rows[0].type))
-      return res.status(400).json({ success: false, message: EVENT_BOOKABLE_MSG });
+    if (!roomCheck.rows[0].is_bookable_for_events)
+      return res.status(400).json({ success: false, message: 'This room type cannot be booked for events.' });
 
     // ── Check for duplicate event booking ────────────────────
     const dupCheck = await query(
@@ -776,9 +784,11 @@ async function getRoomStates(req, res, next) {
         r.name,
         r.type::text AS type,
         r.capacity,
+        COALESCE(rt.is_bookable_for_events, false) AS is_bookable_for_events,
         lec.has_lecture,
         evt.has_event
       FROM rooms r
+      LEFT JOIN room_types rt ON rt.value = r.type::text AND rt.is_active = true
       LEFT JOIN LATERAL (
         SELECT EXISTS (
           SELECT 1 FROM section_meetings sm
@@ -809,7 +819,7 @@ async function getRoomStates(req, res, next) {
 
     const rooms = result.rows.map(row => {
       let status;
-      if (!EVENT_BOOKABLE_TYPES.includes(row.type)) {
+      if (!row.is_bookable_for_events) {
         status = 'not_bookable';
       } else if (row.has_event) {
         status = 'event_conflict';

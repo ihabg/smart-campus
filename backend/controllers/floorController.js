@@ -2,6 +2,7 @@ const path = require('path');
 const { query, withTransaction } = require('../config/db');
 const { deleteFile }             = require('../config/multer');
 const { AppError }               = require('../middleware/errorHandler');
+const { logActivity }            = require('../utils/activityLogger');
 
 // ─── Get all floors (grouped by building) ───────────────────
 
@@ -284,7 +285,21 @@ async function createBuilding(req, res, next) {
       [code.trim().toUpperCase(), name.trim(), description?.trim() || null],
     );
 
-    res.status(201).json({ success: true, data: { building: result.rows[0] } });
+    const building = result.rows[0];
+
+    try {
+      await logActivity({
+        req,
+        action:      'building.create',
+        entityType:  'building',
+        entityId:    building.id,
+        entityLabel: `${building.code} — ${building.name}`,
+        description: `Created building ${building.code}: ${building.name}`,
+        metadata:    { code: building.code, name: building.name, description: building.description },
+      });
+    } catch { /* activity log failure must not block the response */ }
+
+    res.status(201).json({ success: true, data: { building } });
   } catch (error) {
     next(error);
   }
@@ -296,6 +311,11 @@ async function updateBuilding(req, res, next) {
   try {
     const { id } = req.params;
     const { code, name, description, is_active } = req.body;
+
+    const beforeRow = await query(
+      'SELECT code, name, description, is_active FROM buildings WHERE id = $1',
+      [id],
+    );
 
     const fields = [];
     const values = [];
@@ -334,7 +354,31 @@ async function updateBuilding(req, res, next) {
       return res.status(404).json({ success: false, message: 'Building not found.' });
     }
 
-    res.json({ success: true, data: { building: result.rows[0] } });
+    const building = result.rows[0];
+
+    if (beforeRow.rows.length) {
+      const before = beforeRow.rows[0];
+      const after  = { code: building.code, name: building.name, description: building.description, is_active: building.is_active };
+      const changes = {};
+      for (const key of Object.keys(after)) {
+        if (String(before[key]) !== String(after[key])) changes[key] = { from: before[key], to: after[key] };
+      }
+      if (Object.keys(changes).length) {
+        try {
+          await logActivity({
+            req,
+            action:      'building.update',
+            entityType:  'building',
+            entityId:    building.id,
+            entityLabel: `${building.code} — ${building.name}`,
+            description: `Updated building ${building.code}: ${building.name}`,
+            metadata:    { before, after, changes },
+          });
+        } catch { /* activity log failure must not block the response */ }
+      }
+    }
+
+    res.json({ success: true, data: { building } });
   } catch (error) {
     next(error);
   }
@@ -357,10 +401,30 @@ async function deleteBuilding(req, res, next) {
       });
     }
 
+    const beforeRow = await query(
+      'SELECT id, code, name, description FROM buildings WHERE id = $1',
+      [id],
+    );
+
     const result = await query('DELETE FROM buildings WHERE id = $1 RETURNING id', [id]);
 
     if (!result.rows.length) {
       return res.status(404).json({ success: false, message: 'Building not found.' });
+    }
+
+    if (beforeRow.rows.length) {
+      const b = beforeRow.rows[0];
+      try {
+        await logActivity({
+          req,
+          action:      'building.delete',
+          entityType:  'building',
+          entityId:    b.id,
+          entityLabel: `${b.code} — ${b.name}`,
+          description: `Deleted building ${b.code}: ${b.name}`,
+          metadata:    { code: b.code, name: b.name, description: b.description },
+        });
+      } catch { /* activity log failure must not block the response */ }
     }
 
     res.json({ success: true, message: 'Building deleted.' });

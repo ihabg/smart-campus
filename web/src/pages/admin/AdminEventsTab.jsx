@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import toast from 'react-hot-toast';
-import { eventAPI, roomAPI, floorAPI } from '../../api/index';
+import { eventAPI, roomAPI, floorAPI, roomTypeAPI } from '../../api/index';
 import { getErrorMessage } from '../../utils/helpers';
 import { RoomAvailabilityMap } from '../../components/map/RoomAvailabilityMap';
 import './AdminEventsTab.css';
@@ -48,12 +48,6 @@ function normalizeFloorKeyFromDb(floor) {
   if (n === 0)  return 'G';
   return String(n || label);
 }
-
-// Room types that can be booked for events (mirrors backend EVENT_BOOKABLE_TYPES)
-const EVENT_BOOKABLE_TYPES = new Set([
-  'lecture_hall', 'classroom', 'lab', 'amphitheater', 'auditorium',
-  'meeting_room', 'engineering_drawing_room', 'engineering_drawing_studio',
-]);
 
 // ── Compute display status from event fields ───────────────────
 function getDisplayStatus(ev) {
@@ -117,6 +111,9 @@ export default function AdminEventsTab() {
   const [roomsLoading, setRoomsLoading] = useState(false);
   const roomsLoadedRef = useRef(false);
 
+  const [bookableTypeSet, setBookableTypeSet] = useState(null);
+  const bookableTypesLoadedRef = useRef(false);
+
   // Searchable room picker state
   const [roomSearch,      setRoomSearch]      = useState('');
   const [roomPickerOpen,  setRoomPickerOpen]  = useState(false);
@@ -162,6 +159,20 @@ export default function AdminEventsTab() {
       .finally(() => setRoomsLoading(false));
   }, []);
 
+  // ── Load bookable room types once ──────────────────────────
+  useEffect(() => {
+    if (bookableTypesLoadedRef.current) return;
+    bookableTypesLoadedRef.current = true;
+    roomTypeAPI.getAll()
+      .then(res => {
+        const types = res?.data?.data?.roomTypes || [];
+        setBookableTypeSet(
+          new Set(types.filter(rt => rt.is_bookable_for_events).map(rt => rt.value))
+        );
+      })
+      .catch(() => setBookableTypeSet(new Set()));
+  }, []);
+
   // ── Load events list ───────────────────────────────────────
   function loadEvents() {
     setEventsLoading(true);
@@ -189,7 +200,10 @@ export default function AdminEventsTab() {
   }, []);
 
   // ── Filtered + bookable rooms for the event picker ────────
-  const bookableRooms = rooms.filter(r => EVENT_BOOKABLE_TYPES.has(r.type));
+  // null = still loading → fail open (backend remains the authority)
+  const bookableRooms = bookableTypeSet === null
+    ? rooms
+    : rooms.filter(r => bookableTypeSet.has(r.type));
   const filteredRooms = roomSearch.trim()
     ? bookableRooms.filter(r => {
         const q = roomSearch.toLowerCase();
@@ -561,7 +575,7 @@ export default function AdminEventsTab() {
               </div>
               <div className="aet-room-picker-footer">
                 <div className="aet-room-picker__hint">
-                  Only lecture halls, classrooms, amphitheaters, and meeting rooms can be booked for events.
+                  Only rooms whose type is marked as Bookable for Events can be selected.
                 </div>
                 <button
                   type="button"
