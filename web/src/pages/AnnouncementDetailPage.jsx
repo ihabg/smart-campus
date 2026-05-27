@@ -99,10 +99,13 @@ export default function AnnouncementDetailPage() {
             alt=""
             style={{
               width: '100%',
-              maxHeight: 320,
-              objectFit: 'cover',
+              height: 'auto',
+              maxHeight: '70vh',
+              objectFit: 'contain',
               borderRadius: 16,
               marginBottom: 24,
+              background: '#f1f5f9',
+              display: 'block',
             }}
           />
         )}
