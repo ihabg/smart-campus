@@ -731,7 +731,9 @@ export default function ProfessorDashboard() {
 
   const exportGrades = () => {
     if (!activeSection?.id) return;
-    downloadBlob(`/professor/sections/${activeSection.id}/export/grades`, `${activeSection.code || 'section'}-grades.csv`);
+    const sem = (activeSection.semester || 'semester').toLowerCase();
+    const yr = (activeSection.academic_year || 'year').replace('/', '-');
+    downloadBlob(`/professor/sections/${activeSection.id}/export/grades`, `grades_${activeSection.code || 'section'}_section_${activeSection.section_number || '1'}_${sem}_${yr}.xlsx`);
   };
 
   const exportAttendance = () => {

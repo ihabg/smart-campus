@@ -1,5 +1,6 @@
 const { query } = require('../config/db');
 const https = require('https');
+const ExcelJS = require('exceljs');
 
 function letterGrade(total) {
   if (total >= 90) return 'A';
@@ -2120,13 +2121,16 @@ async function exportGradesCsv(req, res, next) {
     const { sectionId } = req.params;
 
     const ownRes = await query(
-      `
-      SELECT s.id, s.section_number, c.code
-      FROM sections s
-      JOIN courses c ON c.id = s.course_id
-      WHERE s.id = $1
-        AND s.instructor_id = $2
-      `,
+      `SELECT s.id, s.section_number, c.code, c.name AS course_name,
+              s.semester::text AS semester, s.academic_year,
+              CONCAT_WS(' ', u.first_name, u.last_name) AS professor_name,
+              i.title AS professor_title
+       FROM sections s
+       JOIN courses c ON c.id = s.course_id
+       JOIN instructors i ON i.id = s.instructor_id
+       LEFT JOIN users u ON u.id = i.user_id
+       WHERE s.id = $1
+         AND s.instructor_id = $2`,
       [sectionId, instructorId]
     );
 
@@ -2134,9 +2138,10 @@ async function exportGradesCsv(req, res, next) {
       return res.status(403).json({ success: false, message: 'Not your section.' });
     }
 
+    const section = ownRes.rows[0];
+
     const result = await query(
-      `
-      SELECT
+      `SELECT
         u.student_id,
         CONCAT_WS(' ', u.first_name, u.last_name) AS student_name,
         u.email,
@@ -2146,22 +2151,273 @@ async function exportGradesCsv(req, res, next) {
         COALESCE(g.practical, 0) AS practical,
         COALESCE(g.letter_grade, '') AS letter_grade,
         (COALESCE(g.midterm,0) + COALESCE(g.assignments,0) + COALESCE(g.final,0) + COALESCE(g.practical,0)) AS total
-      FROM enrollments e
-      JOIN users u ON u.id = e.student_id
-      LEFT JOIN grades g ON g.student_id = u.id AND g.section_id = e.section_id
-      WHERE e.section_id = $1
-        AND e.status = 'enrolled'
-      ORDER BY u.last_name, u.first_name
-      `,
+       FROM enrollments e
+       JOIN users u ON u.id = e.student_id
+       LEFT JOIN grades g ON g.student_id = u.id AND g.section_id = e.section_id
+       WHERE e.section_id = $1
+         AND e.status = 'enrolled'
+       ORDER BY u.last_name, u.first_name`,
       [sectionId]
     );
 
-    const rows = [
-      ['Student ID', 'Student Name', 'Email', 'Midterm', 'Assignments', 'Final', 'Practical', 'Total', 'Letter Grade'],
-      ...result.rows.map((r) => [r.student_id, r.student_name, r.email, r.midterm, r.assignments, r.final, r.practical, r.total, r.letter_grade])
+    const students = result.rows;
+
+    // ---- Workbook setup ----
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'Smart Campus';
+    workbook.created = new Date();
+
+    const ws = workbook.addWorksheet('Grade Sheet', {
+      pageSetup: {
+        orientation: 'landscape',
+        fitToPage: true,
+        fitToWidth: 1,
+        fitToHeight: 0,
+        paperSize: 9
+      }
+    });
+
+    ws.columns = [
+      { key: 'a', width: 16 },
+      { key: 'b', width: 28 },
+      { key: 'c', width: 32 },
+      { key: 'd', width: 12 },
+      { key: 'e', width: 14 },
+      { key: 'f', width: 12 },
+      { key: 'g', width: 12 },
+      { key: 'h', width: 12 },
+      { key: 'i', width: 14 }
     ];
 
-    sendCsv(res, `${ownRes.rows[0].code}-section-${ownRes.rows[0].section_number}-grades.csv`, rows);
+    // ---- Row 1: Title ----
+    ws.mergeCells('A1:I1');
+    const titleCell = ws.getCell('A1');
+    titleCell.value = 'Smart Campus — Grade Sheet';
+    titleCell.font = { name: 'Calibri', size: 18, bold: true, color: { argb: 'FF1a2744' } };
+    titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
+    ws.getRow(1).height = 36;
+
+    // ---- Row 2: Instruction note ----
+    ws.mergeCells('A2:I2');
+    const noteCell = ws.getCell('A2');
+    noteCell.value = 'Edit Midterm / Assignments / Final / Practical — Total and Letter Grade update automatically.';
+    noteCell.font = { name: 'Calibri', size: 10, italic: true, color: { argb: 'FF64739a' } };
+    noteCell.alignment = { horizontal: 'center', vertical: 'middle' };
+    ws.getRow(2).height = 18;
+
+    ws.getRow(3).height = 6;
+
+    // ---- Rows 4-8: Course info ----
+    const semesterLabel = section.semester
+      ? section.semester.charAt(0).toUpperCase() + section.semester.slice(1)
+      : '';
+    const professorDisplay = [section.professor_title, section.professor_name].filter(Boolean).join(' ') || '—';
+    const exportDate = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+
+    const infoRows = [
+      ['Course:', `${section.code} — ${section.course_name}`],
+      ['Section:', `Section ${section.section_number}`],
+      ['Professor:', professorDisplay],
+      ['Semester:', `${semesterLabel} ${section.academic_year || ''}`.trim() || '—'],
+      ['Export Date:', exportDate]
+    ];
+
+    infoRows.forEach(([label, value], idx) => {
+      const rowNum = 4 + idx;
+      ws.mergeCells(`A${rowNum}:B${rowNum}`);
+      ws.mergeCells(`C${rowNum}:I${rowNum}`);
+
+      const labelCell = ws.getCell(`A${rowNum}`);
+      labelCell.value = label;
+      labelCell.font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FF4a5568' } };
+      labelCell.alignment = { horizontal: 'left', vertical: 'middle' };
+
+      const valueCell = ws.getCell(`C${rowNum}`);
+      valueCell.value = value;
+      valueCell.font = { name: 'Calibri', size: 11 };
+      valueCell.alignment = { horizontal: 'left', vertical: 'middle' };
+
+      ws.getRow(rowNum).height = 18;
+    });
+
+    ws.getRow(9).height = 8;
+
+    // ---- Row 10: Table header ----
+    const HEADER_ROW = 10;
+    const DATA_START = 11;
+
+    const headerLabels = ['Student ID', 'Student Name', 'Email', 'Midterm', 'Assignments', 'Final', 'Practical', 'Total', 'Letter Grade'];
+    const headerRow = ws.getRow(HEADER_ROW);
+    headerRow.height = 24;
+
+    headerLabels.forEach((label, colIdx) => {
+      const cell = headerRow.getCell(colIdx + 1);
+      cell.value = label;
+      cell.font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1a2744' } };
+      cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'FF0f1a2e' } },
+        left: { style: 'thin', color: { argb: 'FF0f1a2e' } },
+        bottom: { style: 'thin', color: { argb: 'FF0f1a2e' } },
+        right: { style: 'thin', color: { argb: 'FF0f1a2e' } }
+      };
+    });
+
+    ws.views = [{ state: 'frozen', ySplit: HEADER_ROW, xSplit: 0 }];
+    ws.autoFilter = { from: { row: HEADER_ROW, column: 1 }, to: { row: HEADER_ROW, column: 9 } };
+
+    // ---- Grade scale nested IF formula (matches backend letterGrade function) ----
+    function gradeFormula(hRef) {
+      return (
+        `IF(${hRef}>=90,"A",` +
+        `IF(${hRef}>=88,"A-",` +
+        `IF(${hRef}>=85,"B+",` +
+        `IF(${hRef}>=80,"B",` +
+        `IF(${hRef}>=78,"B-",` +
+        `IF(${hRef}>=73,"C+",` +
+        `IF(${hRef}>=70,"C",` +
+        `IF(${hRef}>=65,"C-",` +
+        `IF(${hRef}>=63,"D+",` +
+        `IF(${hRef}>=60,"D",` +
+        `IF(${hRef}>=45,"D-","E")))))))))))`
+      );
+    }
+
+    // ---- Data rows ----
+    const BORDER = { style: 'thin', color: { argb: 'FFD1D5DB' } };
+    const cellBorder = { top: BORDER, left: BORDER, bottom: BORDER, right: BORDER };
+    const LIGHT_RED = 'FFFFE5E5';
+    const LIGHT_GREEN = 'FFE6F4EA';
+    const ROW_ALT = 'FFF0F4FB';
+    const ROW_NORMAL = 'FFFFFFFF';
+
+    let passedCount = 0;
+    let failedCount = 0;
+    let totalSum = 0;
+    let highestTotal = null;
+    let lowestTotal = null;
+
+    students.forEach((student, idx) => {
+      const rowNum = DATA_START + idx;
+      const dataRow = ws.getRow(rowNum);
+      dataRow.height = 20;
+
+      const total = parseFloat(student.total) || 0;
+      const letterGrade = student.letter_grade || 'E';
+      const isFailed = letterGrade === 'E';
+      const isHigh = letterGrade.startsWith('A');
+
+      totalSum += total;
+      if (highestTotal === null || total > highestTotal) highestTotal = total;
+      if (lowestTotal === null || total < lowestTotal) lowestTotal = total;
+      if (isFailed) failedCount++; else passedCount++;
+
+      const rowBg = isFailed ? LIGHT_RED : isHigh ? LIGHT_GREEN : (idx % 2 === 0 ? ROW_NORMAL : ROW_ALT);
+
+      // Columns A–G: static values
+      const staticCols = [
+        student.student_id,
+        student.student_name,
+        student.email,
+        parseFloat(student.midterm),
+        parseFloat(student.assignments),
+        parseFloat(student.final),
+        parseFloat(student.practical)
+      ];
+
+      staticCols.forEach((val, colIdx) => {
+        const cell = dataRow.getCell(colIdx + 1);
+        cell.value = val;
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: rowBg } };
+        cell.border = cellBorder;
+        cell.font = { name: 'Calibri', size: 11 };
+        cell.alignment = { horizontal: colIdx >= 3 ? 'center' : 'left', vertical: 'middle' };
+      });
+
+      // Column H: Total = SUM(D:G) formula
+      const totalCell = dataRow.getCell(8);
+      totalCell.value = { formula: `SUM(D${rowNum}:G${rowNum})`, result: total };
+      totalCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: rowBg } };
+      totalCell.border = cellBorder;
+      totalCell.font = { name: 'Calibri', size: 11, bold: true };
+      totalCell.alignment = { horizontal: 'center', vertical: 'middle' };
+
+      // Column I: Letter Grade = IFS formula keyed to H
+      const gradeCell = dataRow.getCell(9);
+      gradeCell.value = { formula: gradeFormula(`H${rowNum}`), result: letterGrade };
+      gradeCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: rowBg } };
+      gradeCell.border = cellBorder;
+      gradeCell.font = { name: 'Calibri', size: 11, bold: true };
+      gradeCell.alignment = { horizontal: 'center', vertical: 'middle' };
+    });
+
+    // ---- Summary section ----
+    const SUMMARY_LABEL_ROW = DATA_START + students.length + 2;
+    const SUMMARY_DATA_START = SUMMARY_LABEL_ROW + 1;
+
+    ws.mergeCells(`A${SUMMARY_LABEL_ROW}:I${SUMMARY_LABEL_ROW}`);
+    const sumHdrCell = ws.getCell(`A${SUMMARY_LABEL_ROW}`);
+    sumHdrCell.value = 'Summary';
+    sumHdrCell.font = { name: 'Calibri', size: 12, bold: true, color: { argb: 'FF1a2744' } };
+    sumHdrCell.alignment = { horizontal: 'left', vertical: 'middle' };
+    ws.getRow(SUMMARY_LABEL_ROW).height = 22;
+
+    let summaryItems;
+    if (students.length > 0) {
+      const DATA_FIRST = DATA_START;
+      const DATA_LAST = DATA_START + students.length - 1;
+      const HR = `H${DATA_FIRST}:H${DATA_LAST}`;
+      const IR = `I${DATA_FIRST}:I${DATA_LAST}`;
+      const classAvg = parseFloat((totalSum / students.length).toFixed(1));
+
+      summaryItems = [
+        ['Number of Students:', { formula: `COUNTA(A${DATA_FIRST}:A${DATA_LAST})`,          result: students.length }],
+        ['Class Average:',       { formula: `IFERROR(ROUND(AVERAGE(${HR}),1),0)`,            result: classAvg }],
+        ['Highest Total:',       { formula: `IFERROR(MAX(${HR}),0)`,                         result: highestTotal ?? 0 }],
+        ['Lowest Total:',        { formula: `IFERROR(MIN(${HR}),0)`,                         result: lowestTotal ?? 0 }],
+        ['Passed:',              { formula: `COUNTA(${IR})-COUNTIF(${IR},"E")`,              result: passedCount }],
+        ['Failed:',              { formula: `COUNTIF(${IR},"E")`,                            result: failedCount }]
+      ];
+    } else {
+      summaryItems = [
+        ['Number of Students:', 0],
+        ['Class Average:', '—'],
+        ['Highest Total:', '—'],
+        ['Lowest Total:', '—'],
+        ['Passed:', 0],
+        ['Failed:', 0]
+      ];
+    }
+
+    summaryItems.forEach(([label, value], idx) => {
+      const rowNum = SUMMARY_DATA_START + idx;
+      ws.mergeCells(`A${rowNum}:C${rowNum}`);
+      ws.mergeCells(`D${rowNum}:E${rowNum}`);
+
+      const lc = ws.getCell(`A${rowNum}`);
+      lc.value = label;
+      lc.font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FF4a5568' } };
+      lc.alignment = { horizontal: 'right', vertical: 'middle' };
+
+      const vc = ws.getCell(`D${rowNum}`);
+      vc.value = value;
+      vc.font = { name: 'Calibri', size: 11, bold: true };
+      vc.alignment = { horizontal: 'center', vertical: 'middle' };
+      vc.border = cellBorder;
+
+      ws.getRow(rowNum).height = 20;
+    });
+
+    // ---- Stream response ----
+    const sanitize = (s) => String(s || '').replace(/[^A-Za-z0-9-]/g, '_');
+    const yearStr = (section.academic_year || 'year').replace('/', '-');
+    const filename = `grades_${sanitize(section.code)}_section_${section.section_number}_${sanitize(section.semester || 'semester')}_${sanitize(yearStr)}.xlsx`;
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    await workbook.xlsx.write(res);
+    res.end();
   } catch (e) {
     next(e);
   }
