@@ -415,7 +415,7 @@ export const activityLogAPI = {
 
 export default api;
 // ─── assessmentAPI ──────────────────────────────────────────
-function assessmentFormData(data = {}, file, questionImageFiles = []) {
+function assessmentFormData(data = {}, files = [], questionImageFiles = []) {
   const form = new FormData();
   Object.entries(data || {}).forEach(([key, value]) => {
     if (value === undefined || value === null) return;
@@ -425,7 +425,8 @@ function assessmentFormData(data = {}, file, questionImageFiles = []) {
       form.append(key, value);
     }
   });
-  if (file) form.append('attachment', file);
+  const fileList = Array.isArray(files) ? files : (files ? [files] : []);
+  fileList.forEach((f) => { if (f) form.append('attachments', f); });
   questionImageFiles.forEach((imageFile) => {
     if (imageFile) form.append('question_images', imageFile);
   });
@@ -437,15 +438,18 @@ export const assessmentAPI = {
 
   professorList: (params = {}) => api.get('/assessments/professor', { params }),
 
-  professorCreate: (data, file, questionImageFiles = []) => api.post('/assessments/professor', assessmentFormData(data, file, questionImageFiles), {
+  professorCreate: (data, files = [], questionImageFiles = []) => api.post('/assessments/professor', assessmentFormData(data, files, questionImageFiles), {
     headers: { 'Content-Type': 'multipart/form-data' }
   }),
 
   professorDetail: (assessmentId) => api.get(`/assessments/professor/${assessmentId}`),
 
-  professorUpdate: (assessmentId, data, file, questionImageFiles = []) => api.patch(`/assessments/professor/${assessmentId}`, assessmentFormData(data, file, questionImageFiles), {
+  professorUpdate: (assessmentId, data, files = [], questionImageFiles = []) => api.patch(`/assessments/professor/${assessmentId}`, assessmentFormData(data, files, questionImageFiles), {
     headers: { 'Content-Type': 'multipart/form-data' }
   }),
+
+  deleteAttachment: (assessmentId, attachmentId) =>
+    api.delete(`/assessments/professor/${assessmentId}/attachments/${attachmentId}`),
 
   professorDelete: (assessmentId) => api.delete(`/assessments/professor/${assessmentId}`),
 

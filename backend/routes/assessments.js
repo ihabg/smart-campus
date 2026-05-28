@@ -78,7 +78,7 @@ const uploadAssessment = multer({
 });
 
 const uploadAssessmentWithQuestionImages = uploadAssessment.fields([
-  { name: 'attachment', maxCount: 1 },
+  { name: 'attachments', maxCount: 10 },
   { name: 'question_images', maxCount: 80 }
 ]);
 
@@ -91,6 +91,7 @@ router.post('/professor', restrictTo('professor', 'department_head', 'super_admi
 router.get('/professor/:assessmentId', restrictTo('professor', 'department_head', 'super_admin'), ctrl.getProfessorAssessmentDetail);
 router.patch('/professor/:assessmentId', restrictTo('professor', 'department_head', 'super_admin'), uploadAssessmentWithQuestionImages, ctrl.updateProfessorAssessment);
 router.delete('/professor/:assessmentId', restrictTo('professor', 'department_head', 'super_admin'), ctrl.deleteProfessorAssessment);
+router.delete('/professor/:assessmentId/attachments/:attachmentId', restrictTo('professor', 'department_head', 'super_admin'), ctrl.deleteProfessorAttachment);
 router.get('/professor/:assessmentId/results', restrictTo('professor', 'department_head', 'super_admin'), ctrl.listProfessorResults);
 router.patch('/professor/:assessmentId/review', restrictTo('professor', 'department_head', 'super_admin'), ctrl.setQuizReviewAccess);
 router.get('/professor/:assessmentId/attempts/:attemptId/review', restrictTo('professor', 'department_head', 'super_admin'), ctrl.getProfessorQuizAttemptReview);

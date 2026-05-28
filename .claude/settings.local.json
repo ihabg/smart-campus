@@ -63,7 +63,16 @@
       "Bash(node -e \"require\\('./controllers/studyPlanController.js'\\); console.log\\('OK'\\);\")",
       "Bash(xargs grep -l \"CREATE TABLE rooms\")",
       "Bash(xargs grep -l \"navigate.*state\\\\|state.*room\")",
-      "Bash(xargs grep -l \"navigate\")"
+      "Bash(xargs grep -l \"navigate\")",
+      "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\Kebab\\\\Desktop\\\\smartwhek\" -Directory)",
+      "Bash(Select-Object Name)",
+      "Bash(git show *)",
+      "Read(//tmp/**)",
+      "Bash(PGPASSWORD=ihab1234 psql -U postgres -d smart_campus -h localhost -f \"c:\\\\Users\\\\Kebab\\\\Desktop\\\\smartwhek\\\\backend\\\\database\\\\migrations\\\\add_assessment_attachments.sql\")",
+      "PowerShell($env:PGPASSWORD = \"ihab1234\"; & \"C:\\\\Program Files\\\\PostgreSQL\\\\17\\\\bin\\\\psql.exe\" -U postgres -d smart_campus -h localhost -f \"c:\\\\Users\\\\Kebab\\\\Desktop\\\\smartwhek\\\\backend\\\\database\\\\migrations\\\\add_assessment_attachments.sql\")",
+      "PowerShell($env:PGPASSWORD = \"ihab1234\"; & \"C:\\\\Program Files\\\\PostgreSQL\\\\18\\\\bin\\\\psql.exe\" -U postgres -d smart_campus -h localhost -f \"c:\\\\Users\\\\Kebab\\\\Desktop\\\\smartwhek\\\\backend\\\\database\\\\migrations\\\\add_assessment_attachments.sql\")",
+      "PowerShell($env:PGPASSWORD = \"ihab1234\"; & \"C:\\\\Program Files\\\\PostgreSQL\\\\18\\\\bin\\\\psql.exe\" -U postgres -d smart_campus -h localhost -c \"\\\\d assessment_attachments\")",
+      "PowerShell($env:PGPASSWORD = \"ihab1234\"; & \"C:\\\\Program Files\\\\PostgreSQL\\\\18\\\\bin\\\\psql.exe\" -U postgres -d smart_campus -h localhost -c \"\\\\d course_assessments\" 2>&1 | Select-String \"Column|attachment|instructor|section|title|allow\")"
     ]
   }
 }

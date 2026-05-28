@@ -52,23 +52,49 @@ function getUploadedFile(req, fieldName) {
   return null;
 }
 
-function assessmentAttachment(req) {
-  const file = getUploadedFile(req, 'attachment');
-  if (!file) {
-    return {
-      attachment_url: null,
-      attachment_name: null,
-      attachment_type: null,
-      attachment_size: null
-    };
-  }
+function getUploadedFiles(req) {
+  if (!req.files || !Array.isArray(req.files.attachments)) return [];
+  return req.files.attachments;
+}
 
-  return {
-    attachment_url: `/uploads/assessments/${file.filename}`,
-    attachment_name: file.originalname,
-    attachment_type: file.mimetype,
-    attachment_size: file.size
-  };
+async function getAttachments(assessmentId, legacyRow = null) {
+  const result = await query(
+    `SELECT id, file_url, file_name, file_type, file_size, position
+     FROM assessment_attachments
+     WHERE assessment_id = $1
+     ORDER BY position, created_at`,
+    [assessmentId]
+  );
+  if (result.rows.length > 0) return result.rows;
+  if (legacyRow?.attachment_url) {
+    return [{
+      id: null,
+      file_url: legacyRow.attachment_url,
+      file_name: legacyRow.attachment_name || 'attachment',
+      file_type: legacyRow.attachment_type || null,
+      file_size: legacyRow.attachment_size || null,
+      position: 1
+    }];
+  }
+  return [];
+}
+
+async function insertAttachments(client, assessmentId, files) {
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    await client.query(
+      `INSERT INTO assessment_attachments (assessment_id, file_url, file_name, file_type, file_size, position)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [
+        assessmentId,
+        `/uploads/assessments/${file.filename}`,
+        file.originalname,
+        file.mimetype,
+        file.size,
+        i + 1
+      ]
+    );
+  }
 }
 
 function quizQuestionImageFiles(req) {
@@ -355,7 +381,7 @@ async function createProfessorAssessment(req, res, next) {
       return res.status(400).json({ success: false, message: 'Add at least one quiz question.' });
     }
 
-    const attachment = assessmentAttachment(req);
+    const uploadedFiles = getUploadedFiles(req);
 
     const created = await withTransaction(async (client) => {
       const assessmentRes = await client.query(
@@ -363,9 +389,9 @@ async function createProfessorAssessment(req, res, next) {
         INSERT INTO course_assessments (
           instructor_id, section_id, course_id, title, description, assessment_type,
           week_number, opens_at, closes_at, duration_minutes, points, allow_late, is_published,
-          attachment_url, attachment_name, attachment_type, attachment_size, allow_review
+          allow_review
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8::timestamptz, $9::timestamptz, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8::timestamptz, $9::timestamptz, $10, $11, $12, $13, $14)
         RETURNING *
         `,
         [
@@ -382,16 +408,18 @@ async function createProfessorAssessment(req, res, next) {
           asNumber(req.body.points, 100) || 100,
           asBool(req.body.allow_late, false),
           asBool(req.body.is_published, true),
-          attachment.attachment_url,
-          attachment.attachment_name,
-          attachment.attachment_type,
-          attachment.attachment_size,
           assessmentType === 'quiz' ? asBool(req.body.allow_review, false) : false
         ]
       );
 
+      const assessmentId = assessmentRes.rows[0].id;
+
+      if (uploadedFiles.length > 0) {
+        await insertAttachments(client, assessmentId, uploadedFiles);
+      }
+
       if (assessmentType === 'quiz') {
-        await insertQuestions(client, assessmentRes.rows[0].id, questions, quizQuestionImageFiles(req));
+        await insertQuestions(client, assessmentId, questions, quizQuestionImageFiles(req));
       }
 
       return assessmentRes.rows[0];
@@ -407,7 +435,8 @@ async function createProfessorAssessment(req, res, next) {
       );
     }
 
-    res.status(201).json({ success: true, data: created });
+    const attachments = await getAttachments(created.id, created);
+    res.status(201).json({ success: true, data: { ...created, attachments } });
   } catch (error) {
     next(error);
   }
@@ -426,7 +455,7 @@ async function updateProfessorAssessment(req, res, next) {
 
     const opensAt = req.body.opens_at || existing.opens_at;
     const closesAt = req.body.closes_at || existing.closes_at;
-    const attachment = assessmentAttachment(req);
+    const uploadedFiles = getUploadedFiles(req);
     if (new Date(closesAt).getTime() <= new Date(opensAt).getTime()) {
       return res.status(400).json({ success: false, message: 'Close time must be after open time.' });
     }
@@ -444,12 +473,8 @@ async function updateProfessorAssessment(req, res, next) {
             points = $7,
             allow_late = $8,
             is_published = $9,
-            allow_review = $10,
-            attachment_url = COALESCE($11, attachment_url),
-            attachment_name = COALESCE($12, attachment_name),
-            attachment_type = COALESCE($13, attachment_type),
-            attachment_size = COALESCE($14, attachment_size)
-        WHERE id = $15 AND instructor_id = $16
+            allow_review = $10
+        WHERE id = $11 AND instructor_id = $12
         RETURNING *
         `,
         [
@@ -463,14 +488,14 @@ async function updateProfessorAssessment(req, res, next) {
           asBool(req.body.allow_late, existing.allow_late),
           asBool(req.body.is_published, existing.is_published),
           existing.assessment_type === 'quiz' ? asBool(req.body.allow_review, existing.allow_review) : false,
-          attachment.attachment_url,
-          attachment.attachment_name,
-          attachment.attachment_type,
-          attachment.attachment_size,
           existing.id,
           instructorId
         ]
       );
+
+      if (uploadedFiles.length > 0) {
+        await insertAttachments(client, existing.id, uploadedFiles);
+      }
 
       if (existing.assessment_type === 'quiz' && req.body.questions !== undefined) {
         await client.query(`DELETE FROM quiz_questions WHERE assessment_id = $1`, [existing.id]);
@@ -480,7 +505,8 @@ async function updateProfessorAssessment(req, res, next) {
       return updateRes.rows[0];
     });
 
-    res.json({ success: true, data: updated });
+    const attachments = await getAttachments(updated.id, updated);
+    res.json({ success: true, data: { ...updated, attachments } });
   } catch (error) {
     next(error);
   }
@@ -523,7 +549,8 @@ async function getProfessorAssessmentDetail(req, res, next) {
       [assessment.id]
     );
 
-    res.json({ success: true, data: { ...assessment, questions: questions.rows } });
+    const attachments = await getAttachments(assessment.id, assessment);
+    res.json({ success: true, data: { ...assessment, questions: questions.rows, attachments } });
   } catch (error) {
     next(error);
   }
@@ -803,6 +830,7 @@ async function getStudentAssessment(req, res, next) {
         [assessment.id, req.user.id]
       );
       extra.submission = sub.rows[0] || null;
+      extra.attachments = await getAttachments(assessment.id, assessment);
     } else {
       const questions = await query(
         `
@@ -1020,12 +1048,33 @@ async function submitQuiz(req, res, next) {
   }
 }
 
+async function deleteProfessorAttachment(req, res, next) {
+  try {
+    const instructorId = await requireInstructor(req, res);
+    if (!instructorId) return;
+
+    const assessment = await assertAssessmentOwner(instructorId, req.params.assessmentId);
+    if (!assessment) return res.status(404).json({ success: false, message: 'Assessment not found.' });
+
+    const result = await query(
+      `DELETE FROM assessment_attachments WHERE id = $1 AND assessment_id = $2 RETURNING id`,
+      [req.params.attachmentId, assessment.id]
+    );
+
+    if (!result.rowCount) return res.status(404).json({ success: false, message: 'Attachment not found.' });
+    res.json({ success: true, message: 'Attachment deleted.' });
+  } catch (error) {
+    next(error);
+  }
+}
+
 module.exports = {
   listProfessorSections,
   listProfessorAssessments,
   createProfessorAssessment,
   updateProfessorAssessment,
   deleteProfessorAssessment,
+  deleteProfessorAttachment,
   getProfessorAssessmentDetail,
   listProfessorResults,
   gradeAssignmentSubmission,

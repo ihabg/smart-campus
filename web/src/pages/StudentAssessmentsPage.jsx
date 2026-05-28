@@ -351,11 +351,85 @@ export default function StudentAssessmentsPage() {
   );
 }
 
+function fileIcon(type, name) {
+  const mime = (type || '').toLowerCase();
+  const ext = name ? name.split('.').pop().toLowerCase() : '';
+  if (mime.includes('pdf') || ext === 'pdf') return '📄';
+  if (mime.includes('word') || mime.includes('.document') || ext === 'doc' || ext === 'docx') return '📝';
+  if (mime.includes('powerpoint') || mime.includes('.presentation') || ext === 'ppt' || ext === 'pptx') return '📊';
+  if (mime.includes('excel') || mime.includes('.sheet') || ext === 'xls' || ext === 'xlsx') return '📋';
+  if (mime.startsWith('image/') || ['png', 'jpg', 'jpeg', 'webp', 'gif'].includes(ext)) return '🖼️';
+  if (mime.includes('zip') || mime.includes('compressed') || ext === 'zip' || ext === 'rar') return '🗜️';
+  if (mime.includes('text') || ext === 'txt') return '📃';
+  return '📎';
+}
+
+function fileExtLabel(type, name) {
+  if (name) {
+    const parts = name.split('.');
+    if (parts.length > 1) return parts[parts.length - 1].toUpperCase();
+  }
+  const mimeMap = {
+    'application/pdf': 'PDF',
+    'application/msword': 'DOC',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'DOCX',
+    'application/vnd.ms-powerpoint': 'PPT',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'PPTX',
+    'application/vnd.ms-excel': 'XLS',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'XLSX',
+    'image/png': 'PNG', 'image/jpeg': 'JPG', 'image/webp': 'WEBP',
+    'text/plain': 'TXT', 'application/zip': 'ZIP',
+  };
+  return mimeMap[type] || '';
+}
+
+function formatFileSize(bytes) {
+  if (!bytes) return '';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function AttachmentRow({ att, idx }) {
+  const icon = fileIcon(att.file_type, att.file_name);
+  const ext = fileExtLabel(att.file_type, att.file_name);
+  const size = formatFileSize(att.file_size);
+  return (
+    <a
+      href={publicFileUrl(att.file_url)}
+      target="_blank"
+      rel="noreferrer"
+      className="attachment-row"
+      download={att.file_name || undefined}
+    >
+      <span className="attachment-row__icon">{icon}</span>
+      <span className="attachment-row__info">
+        <span className="attachment-row__name">{att.file_name || `File ${idx + 1}`}</span>
+        {(ext || size) && (
+          <span className="attachment-row__meta">
+            {ext && <span className="attachment-row__ext">{ext}</span>}
+            {size && <span className="attachment-row__size">{size}</span>}
+          </span>
+        )}
+      </span>
+      <span className="attachment-row__btn">Download</span>
+    </a>
+  );
+}
+
 function AssignmentPanel({ selected, submissionText, setSubmissionText, setSubmissionFile, submitAssignment, saving }) {
   const status = statusOf(selected);
-  const closed = status === 'Closed' && !selected.allow_late;
-  const [editing, setEditing] = useState(!selected.submission);
+  const notOpen = status === 'Scheduled';
+  const closedNoLate = status === 'Closed' && !selected.allow_late;
+  const canSubmit = !notOpen && !closedNoLate;
+  const [editing, setEditing] = useState(!selected.submission && canSubmit);
   const [fileName, setFileName] = useState('');
+
+  const attachments = Array.isArray(selected.attachments) && selected.attachments.length > 0
+    ? selected.attachments
+    : selected.attachment_url
+      ? [{ id: null, file_url: selected.attachment_url, file_name: selected.attachment_name || 'Attachment', file_type: selected.attachment_type || null, file_size: selected.attachment_size || null }]
+      : [];
 
   function chooseFile(file) {
     setSubmissionFile(file || null);
@@ -374,35 +448,66 @@ function AssignmentPanel({ selected, submissionText, setSubmissionText, setSubmi
   }
 
   return (
-    <div className="student-assess-card student-assignment-view">
-      <div className="student-assess-card__head">
-        <div>
-          <span>{selected.course_code} §{selected.section_number}</span>
-          <h2>{selected.title}</h2>
+    <div className="assignment-panel">
+      <div className="assignment-panel__header">
+        <div className="assignment-panel__header-left">
+          <span className="assignment-panel__course">{selected.course_code} §{selected.section_number}</span>
+          <h2 className="assignment-panel__title">{selected.title}</h2>
         </div>
-        <strong>{status}</strong>
+        <span className={`assignment-status-badge assignment-status-badge--${status.toLowerCase().replace(/\s+/g, '-')}`}>
+          {status}
+        </span>
       </div>
 
-      <div className="assignment-brief">
-        <span><b>Opened:</b> {dateTimeLabel(selected.opens_at)}</span>
-        <span><b>Due:</b> {dateTimeLabel(selected.closes_at)}</span>
-        <span><b>Points:</b> {selected.points}</span>
+      <div className="assignment-meta">
+        <div className="assignment-meta__item">
+          <span className="assignment-meta__label">Opens</span>
+          <span className="assignment-meta__value">{dateTimeLabel(selected.opens_at)}</span>
+        </div>
+        <div className="assignment-meta__item">
+          <span className="assignment-meta__label">Due</span>
+          <span className="assignment-meta__value">{dateTimeLabel(selected.closes_at)}</span>
+        </div>
+        <div className="assignment-meta__item">
+          <span className="assignment-meta__label">Points</span>
+          <span className="assignment-meta__value">{selected.points} pts</span>
+        </div>
       </div>
 
-      <p className="assignment-description">{selected.description || 'No instructions were added.'}</p>
+      <div className="assignment-section">
+        <div className="assignment-section__label">Description / Instructions</div>
+        <p className="assignment-description">{selected.description || 'No instructions provided.'}</p>
+      </div>
 
-      {selected.attachment_url && (
-        <div className="assignment-resource">
-          <strong>Assignment file</strong>
-          <a href={publicFileUrl(selected.attachment_url)} target="_blank" rel="noreferrer">
-            {selected.attachment_name || 'Open assignment file'}
-          </a>
+      {attachments.length > 0 && (
+        <div className="assignment-section">
+          <div className="assignment-section__label">Assignment files</div>
+          <div className="assignment-attachments">
+            {attachments.map((att, idx) => (
+              <AttachmentRow key={att.id || idx} att={att} idx={idx} />
+            ))}
+          </div>
         </div>
       )}
 
-      {!editing && (
+      {notOpen && (
+        <div className="assignment-not-open">
+          <span className="assignment-not-open__icon">🕐</span>
+          <div>
+            <strong>Submissions not open yet</strong>
+            <p>This assignment opens on {dateTimeLabel(selected.opens_at)}.</p>
+          </div>
+        </div>
+      )}
+
+      {!notOpen && !editing && (
         <div className="submission-status-card">
-          <button className="student-assess-btn student-assess-btn--primary" type="button" onClick={() => setEditing(true)} disabled={closed}>
+          <button
+            className="student-assess-btn student-assess-btn--primary"
+            type="button"
+            onClick={() => setEditing(true)}
+            disabled={!canSubmit}
+          >
             {selected.submission ? 'Edit submission' : 'Add submission'}
           </button>
 
@@ -423,7 +528,7 @@ function AssignmentPanel({ selected, submissionText, setSubmissionText, setSubmi
               </tr>
               <tr>
                 <th>Time remaining</th>
-                <td>{closed ? 'Deadline passed' : 'Open for submission'}</td>
+                <td>{closedNoLate ? 'Deadline passed' : 'Open for submission'}</td>
               </tr>
               <tr>
                 <th>Last modified</th>
@@ -443,11 +548,11 @@ function AssignmentPanel({ selected, submissionText, setSubmissionText, setSubmi
               </tr>
             </tbody>
           </table>
-          {closed && <small className="danger-text">Deadline passed. Late submissions are not allowed.</small>}
+          {closedNoLate && <small className="danger-text">Deadline passed. Late submissions are not allowed.</small>}
         </div>
       )}
 
-      {editing && (
+      {!notOpen && editing && (
         <form className="student-submit-form moodle-submit-form" onSubmit={onSubmit}>
           <h3>{selected.submission ? 'Edit submission' : 'Add submission'}</h3>
 
@@ -480,7 +585,7 @@ function AssignmentPanel({ selected, submissionText, setSubmissionText, setSubmi
           )}
 
           <div className="submission-actions">
-            <button className="student-assess-btn student-assess-btn--primary" disabled={saving || closed}>
+            <button className="student-assess-btn student-assess-btn--primary" disabled={saving || !canSubmit}>
               {saving ? 'Saving...' : 'Save changes'}
             </button>
             <button className="student-assess-btn student-assess-btn--light" type="button" onClick={() => setEditing(false)}>
@@ -488,7 +593,7 @@ function AssignmentPanel({ selected, submissionText, setSubmissionText, setSubmi
             </button>
           </div>
 
-          {closed && <small className="danger-text">Deadline passed. Late submissions are not allowed.</small>}
+          {closedNoLate && <small className="danger-text">Deadline passed. Late submissions are not allowed.</small>}
         </form>
       )}
     </div>

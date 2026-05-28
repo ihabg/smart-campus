@@ -401,6 +401,68 @@
   color: #153b8a;
   font-weight: 800;
   text-decoration: none;
+  display: block;
+  margin-bottom: 4px;
+}
+
+/* ── Multi-file upload list ─── */
+
+.prof-upload-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.prof-file-list {
+  list-style: none;
+  padding: 0;
+  margin: 4px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.prof-file-list__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  background: var(--surface-2, #f8f9fd);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.prof-file-list__name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-weight: 500;
+}
+
+.prof-file-list__size {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-family: var(--font-mono);
+}
+
+.prof-file-list__remove {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: #dc2626;
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+  transition: color 120ms;
+}
+
+.prof-file-list__remove:hover {
+  color: #991b1b;
 }
 
 .assess-attachment-line a:hover {

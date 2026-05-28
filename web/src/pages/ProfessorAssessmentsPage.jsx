@@ -90,7 +90,7 @@ export default function ProfessorAssessmentsPage() {
   const [assessments, setAssessments] = useState([]);
   const [form, setForm] = useState(defaultForm(''));
   const [questions, setQuestions] = useState([defaultQuestion(1)]);
-  const [assignmentFile, setAssignmentFile] = useState(null);
+  const [assignmentFiles, setAssignmentFiles] = useState([]);
   const [results, setResults] = useState(null);
   const [quizReview, setQuizReview] = useState(null);
   const [reviewLoading, setReviewLoading] = useState(false);
@@ -318,13 +318,13 @@ export default function ProfessorAssessmentsPage() {
 
       await assessmentAPI.professorCreate(
         payload,
-        form.assessment_type === 'assignment' ? assignmentFile : null,
+        form.assessment_type === 'assignment' ? assignmentFiles : [],
         form.assessment_type === 'quiz' ? questionImageFiles : []
       );
       setMessage(`${form.assessment_type === 'quiz' ? 'Quiz' : 'Assignment'} created successfully.`);
       setForm(defaultForm(selectedSection));
       setQuestions([defaultQuestion(1)]);
-      setAssignmentFile(null);
+      setAssignmentFiles([]);
       await loadAssessments(selectedSection);
     } catch (err) {
       setError(err?.response?.data?.message || err?.message || 'Could not save assessment.');
@@ -491,16 +491,39 @@ export default function ProfessorAssessmentsPage() {
           </label>
 
           {form.assessment_type === 'assignment' && (
-            <label>
-              Assignment file / instructions
-              <div className="prof-upload-box">
-                <input
-                  type="file"
-                  onChange={(e) => setAssignmentFile(e.target.files?.[0] || null)}
-                />
-                <span>{assignmentFile ? assignmentFile.name : 'Optional: PDF, Word, slides, image, ZIP...'}</span>
-              </div>
-            </label>
+            <div className="prof-upload-section">
+              <label>
+                Attachment files (up to 10)
+                <div className="prof-upload-box">
+                  <input
+                    type="file"
+                    multiple
+                    onChange={(e) => {
+                      const picked = Array.from(e.target.files || []);
+                      setAssignmentFiles((current) => [...current, ...picked].slice(0, 10));
+                      e.target.value = '';
+                    }}
+                  />
+                  <span>Optional: PDF, Word, slides, image, ZIP... (up to 10 files)</span>
+                </div>
+              </label>
+              {assignmentFiles.length > 0 && (
+                <ul className="prof-file-list">
+                  {assignmentFiles.map((f, i) => (
+                    <li key={i} className="prof-file-list__item">
+                      <span className="prof-file-list__name">{f.name}</span>
+                      <span className="prof-file-list__size">{(f.size / 1024).toFixed(0)} KB</span>
+                      <button
+                        type="button"
+                        className="prof-file-list__remove"
+                        onClick={() => setAssignmentFiles((current) => current.filter((_, j) => j !== i))}
+                        title="Remove file"
+                      >×</button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           )}
 
           <div className="assess-row">
@@ -668,13 +691,21 @@ export default function ProfessorAssessmentsPage() {
                   Opens {dateTimeLabel(item.opens_at)} · Closes {dateTimeLabel(item.closes_at)} · {item.points} pts
                   {item.assessment_type === 'quiz' ? ` · ${item.duration_minutes} minutes` : ''}
                 </small>
-                {item.attachment_url && (
+                {Array.isArray(item.attachments) && item.attachments.length > 0 ? (
+                  <div className="assess-attachment-line">
+                    {item.attachments.map((att, idx) => (
+                      <a key={att.id || idx} href={publicFileUrl(att.file_url)} target="_blank" rel="noreferrer">
+                        {att.file_name || `File ${idx + 1}`}
+                      </a>
+                    ))}
+                  </div>
+                ) : item.attachment_url ? (
                   <div className="assess-attachment-line">
                     <a href={publicFileUrl(item.attachment_url)} target="_blank" rel="noreferrer">
-                      Open assignment file{item.attachment_name ? `: ${item.attachment_name}` : ''}
+                      {item.attachment_name || 'Open assignment file'}
                     </a>
                   </div>
-                )}
+                ) : null}
               </div>
               <div className="assess-item__actions">
                 <button className="assess-btn assess-btn--secondary" onClick={() => openResults(item)}>Results</button>
