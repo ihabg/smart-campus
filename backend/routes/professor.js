@@ -51,6 +51,18 @@ const uploadMaterial = multer({
   }
 });
 
+const uploadGradeFile = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') {
+      cb(null, true);
+    } else {
+      cb(new Error('Only .xlsx files are accepted for grade import.'));
+    }
+  }
+});
+
 
 router.use(protect);
 router.use(restrictTo('professor','department_head','super_admin'));
@@ -78,8 +90,9 @@ router.delete('/meeting-changes/:changeId',           ctrl.cancelMeetingChange);
 router.get('/analytics',                              ctrl.getAnalytics);
 router.post('/sections/:sectionId/meeting-change',    ctrl.changeMeeting);
 router.get('/sections/:sectionId/students',           ctrl.getSectionStudents);
-router.get('/sections/:sectionId/export/grades',      ctrl.exportGradesCsv);
-router.get('/sections/:sectionId/export/attendance',  ctrl.exportAttendanceCsv);
+router.get('/sections/:sectionId/export/grades',                           ctrl.exportGradesCsv);
+router.post('/sections/:sectionId/import/grades', uploadGradeFile.single('grades_file'), ctrl.importGrades);
+router.get('/sections/:sectionId/export/attendance',                        ctrl.exportAttendanceCsv);
 router.get('/sections/:sectionId/attendance',         ctrl.getAttendance);
 router.get('/sections/:sectionId/attendance/summary', ctrl.getAttendanceSummary);
 router.post('/attendance',                            ctrl.markAttendance);

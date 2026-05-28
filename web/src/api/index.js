@@ -378,6 +378,15 @@ export const professorAPI = {
 
   saveGradesBulk: (data) => api.post('/professor/grades/bulk', data),
 
+  importGrades: (sectionId, file, dryRun) => {
+    const form = new FormData();
+    form.append('grades_file', file);
+    form.append('dry_run', dryRun ? 'true' : 'false');
+    return api.post(`/professor/sections/${sectionId}/import/grades`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
+  },
+
   sendWarning: (data) => api.post('/professor/warning', data)
 };
 

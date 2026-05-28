@@ -1,6 +1,7 @@
-const { query } = require('../config/db');
+const { query, withTransaction } = require('../config/db');
 const https = require('https');
 const ExcelJS = require('exceljs');
+const { logActivity } = require('../utils/activityLogger');
 
 function letterGrade(total) {
   if (total >= 90) return 'A';
@@ -2736,6 +2737,268 @@ async function getAnalytics(req, res, next) {
 }
 
 
+async function importGrades(req, res, next) {
+  try {
+    const instructorId = await requireInstructor(req, res);
+    if (!instructorId) return;
+
+    const { sectionId } = req.params;
+    const dryRun = String(req.body?.dry_run ?? 'true').toLowerCase() !== 'false';
+
+    // Permission check
+    const ownRes = await query(
+      `SELECT s.id, s.section_number, c.code AS course_code, c.name AS course_name
+       FROM sections s
+       JOIN courses c ON c.id = s.course_id
+       WHERE s.id = $1 AND s.instructor_id = $2`,
+      [sectionId, instructorId]
+    );
+    if (!ownRes.rows.length) {
+      return res.status(403).json({ success: false, message: 'Not your section.' });
+    }
+    const sectionMeta = ownRes.rows[0];
+
+    // File check
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: 'No file uploaded.' });
+    }
+
+    // Parse workbook from memory buffer
+    const workbook = new ExcelJS.Workbook();
+    try {
+      await workbook.xlsx.load(req.file.buffer);
+    } catch {
+      return res.status(400).json({ success: false, message: 'Could not parse Excel file. Please upload a valid .xlsx file.' });
+    }
+
+    const ws = workbook.worksheets[0];
+    if (!ws) {
+      return res.status(400).json({ success: false, message: 'Excel file has no worksheets.' });
+    }
+
+    // Find header row (scan rows 1-15 for any row containing "student id")
+    let headerRowNum = null;
+    let colMap = {};
+    const REQUIRED = ['student id', 'midterm', 'assignments', 'final', 'practical'];
+
+    for (let r = 1; r <= Math.min(15, ws.rowCount); r++) {
+      const rowObj = ws.getRow(r);
+      const found = {};
+      let hasStudentId = false;
+      rowObj.eachCell({ includeEmpty: false }, (cell, colIdx) => {
+        const text = String(cell.value ?? '').trim().toLowerCase();
+        if (text) {
+          found[text] = colIdx;
+          if (text === 'student id') hasStudentId = true;
+        }
+      });
+      if (hasStudentId) {
+        headerRowNum = r;
+        colMap = found;
+        break;
+      }
+    }
+
+    if (headerRowNum === null) {
+      return res.status(400).json({ success: false, message: 'Could not find header row. Ensure the file has a "Student ID" column.' });
+    }
+
+    const missingCols = REQUIRED.filter((c) => !(c in colMap));
+    if (missingCols.length > 0) {
+      const pretty = missingCols.map((c) => c.split(' ').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' '));
+      return res.status(400).json({ success: false, message: `Required columns not found: ${pretty.join(', ')}` });
+    }
+
+    // Load all enrolled students with current grades
+    const enrolledRes = await query(
+      `SELECT u.id AS user_id,
+              u.student_id AS student_number,
+              CONCAT_WS(' ', u.first_name, u.last_name) AS student_name,
+              u.email,
+              COALESCE(g.midterm, 0)     AS cur_midterm,
+              COALESCE(g.assignments, 0) AS cur_assignments,
+              COALESCE(g.final, 0)       AS cur_final,
+              COALESCE(g.practical, 0)   AS cur_practical,
+              COALESCE(g.letter_grade, '') AS cur_letter_grade
+       FROM enrollments e
+       JOIN users u ON u.id = e.student_id
+       LEFT JOIN grades g ON g.student_id = u.id AND g.section_id = $1
+       WHERE e.section_id = $1 AND e.status = 'enrolled'`,
+      [sectionId]
+    );
+    const enrolledMap = {};
+    enrolledRes.rows.forEach((row) => { enrolledMap[String(row.student_number)] = row; });
+
+    // Helper: resolve cell value (handles formula result objects)
+    function cellVal(row, colName) {
+      const colIdx = colMap[colName];
+      if (!colIdx) return null;
+      const cell = row.getCell(colIdx);
+      if (cell.value !== null && typeof cell.value === 'object' && 'result' in cell.value) {
+        return cell.value.result;
+      }
+      return cell.value;
+    }
+
+    // Helper: parse a grade cell — empty → 0, non-numeric → error
+    function parseGradeCell(row, colName) {
+      const raw = cellVal(row, colName);
+      if (raw === null || raw === undefined || String(raw).trim() === '') return { value: 0, error: null };
+      const num = parseFloat(raw);
+      if (isNaN(num)) {
+        const label = colName.charAt(0).toUpperCase() + colName.slice(1);
+        return { value: null, error: `${label} is not a number ("${raw}")` };
+      }
+      if (num < 0) {
+        const label = colName.charAt(0).toUpperCase() + colName.slice(1);
+        return { value: null, error: `${label} cannot be negative` };
+      }
+      return { value: num, error: null };
+    }
+
+    // Parse data rows
+    const rows = [];
+    let totalRows = 0;
+
+    ws.eachRow((row, rowNum) => {
+      if (rowNum <= headerRowNum) return;
+
+      const rawId = cellVal(row, 'student id');
+      if (rawId === null || rawId === undefined || String(rawId).trim() === '') return;
+
+      totalRows++;
+      const studentIdStr = String(rawId).trim();
+      const enrolled = enrolledMap[studentIdStr];
+
+      if (!enrolled) {
+        rows.push({
+          student_id: studentIdStr,
+          student_name: null,
+          email: null,
+          status: 'not_enrolled',
+          current: null,
+          imported: null,
+          errors: [`Student ID "${studentIdStr}" is not enrolled in this section`]
+        });
+        return;
+      }
+
+      const mp = parseGradeCell(row, 'midterm');
+      const ap = parseGradeCell(row, 'assignments');
+      const fp = parseGradeCell(row, 'final');
+      const pp = parseGradeCell(row, 'practical');
+      const errors = [mp.error, ap.error, fp.error, pp.error].filter(Boolean);
+
+      const curMid = parseFloat(enrolled.cur_midterm);
+      const curAss = parseFloat(enrolled.cur_assignments);
+      const curFin = parseFloat(enrolled.cur_final);
+      const curPra = parseFloat(enrolled.cur_practical);
+      const curTot = curMid + curAss + curFin + curPra;
+
+      if (errors.length > 0) {
+        rows.push({
+          student_id: studentIdStr,
+          student_name: enrolled.student_name,
+          email: enrolled.email,
+          status: 'invalid',
+          current: { midterm: curMid, assignments: curAss, final: curFin, practical: curPra, total: curTot, letter_grade: enrolled.cur_letter_grade },
+          imported: null,
+          errors
+        });
+        return;
+      }
+
+      const impMid = mp.value;
+      const impAss = ap.value;
+      const impFin = fp.value;
+      const impPra = pp.value;
+      const impTot = impMid + impAss + impFin + impPra;
+      const impLg  = letterGrade(impTot);
+
+      const changed = impMid !== curMid || impAss !== curAss || impFin !== curFin || impPra !== curPra;
+
+      rows.push({
+        student_id: studentIdStr,
+        student_name: enrolled.student_name,
+        email: enrolled.email,
+        status: changed ? 'changed' : 'unchanged',
+        current: { midterm: curMid, assignments: curAss, final: curFin, practical: curPra, total: curTot, letter_grade: enrolled.cur_letter_grade },
+        imported: { midterm: impMid, assignments: impAss, final: impFin, practical: impPra, total: impTot, letter_grade: impLg },
+        errors: []
+      });
+    });
+
+    const changedRows   = rows.filter((r) => r.status === 'changed');
+    const summary = {
+      total_rows:   totalRows,
+      matched:      rows.filter((r) => r.status === 'changed' || r.status === 'unchanged').length,
+      changed:      changedRows.length,
+      unchanged:    rows.filter((r) => r.status === 'unchanged').length,
+      invalid:      rows.filter((r) => r.status === 'invalid').length,
+      not_enrolled: rows.filter((r) => r.status === 'not_enrolled').length
+    };
+
+    const responseData = {
+      section: { id: sectionId, code: sectionMeta.course_code, name: sectionMeta.course_name, section_number: sectionMeta.section_number },
+      summary,
+      rows
+    };
+
+    // Preview only
+    if (dryRun) {
+      return res.json({ success: true, data: responseData });
+    }
+
+    // Confirm — apply changed rows inside a transaction
+    if (changedRows.length > 0) {
+      await withTransaction(async (client) => {
+        for (const row of changedRows) {
+          const enr = enrolledMap[row.student_id];
+          const imp = row.imported;
+          const tot = imp.midterm + imp.assignments + imp.final + imp.practical;
+          const lg  = letterGrade(tot);
+
+          await client.query(
+            `INSERT INTO grades (student_id, section_id, midterm, final, assignments, practical, letter_grade, updated_by, updated_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NOW())
+             ON CONFLICT (student_id, section_id)
+             DO UPDATE SET
+               midterm      = $3,
+               final        = $4,
+               assignments  = $5,
+               practical    = $6,
+               letter_grade = $7,
+               updated_by   = $8,
+               updated_at   = NOW()`,
+            [enr.user_id, sectionId, imp.midterm, imp.final, imp.assignments, imp.practical, lg, req.user.id]
+          );
+        }
+      });
+    }
+
+    // Activity log — fire-and-forget
+    logActivity({
+      req,
+      action:      'grades.import',
+      entityType:  'section',
+      entityId:    sectionId,
+      entityLabel: `${sectionMeta.course_code} §${sectionMeta.section_number}`,
+      description: `Imported grades for section ${sectionMeta.course_code} §${sectionMeta.section_number}`,
+      metadata: {
+        total_rows:       totalRows,
+        updated_count:    changedRows.length,
+        invalid_count:    summary.invalid,
+        not_enrolled_count: summary.not_enrolled,
+        source:           'excel'
+      }
+    });
+
+    return res.json({ success: true, data: { ...responseData, updated_count: changedRows.length } });
+  } catch (e) {
+    next(e);
+  }
+}
+
 module.exports = {
   getDashboard,
   getProfessorTerms,
@@ -2764,6 +3027,7 @@ module.exports = {
   deleteCourseMessage,
   exportGradesCsv,
   exportAttendanceCsv,
+  importGrades,
   getChangeHistory,
   cancelMeetingChange,
   getAnalytics

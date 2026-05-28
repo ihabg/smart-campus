@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useLocation, useNavigate, Link } from 'react-router-dom';
 import axiosInstance from '../api/axiosInstance';
 import { notificationAPI } from '../api/index';
@@ -225,6 +226,12 @@ export default function ProfessorDashboard() {
   const [gradeEdit, setGradeEdit] = useState({});
   const [savingGrades, setSavingGrades] = useState(false);
   const [hasUnsavedGrades, setHasUnsavedGrades] = useState(false);
+
+  const [importModalOpen, setImportModalOpen] = useState(false);
+  const [importFile, setImportFile] = useState(null);
+  const [importPreview, setImportPreview] = useState(null);
+  const [importLoading, setImportLoading] = useState(false);
+  const [importConfirming, setImportConfirming] = useState(false);
 
   const [roomOptions, setRoomOptions] = useState([]);
   const [changeModal, setChangeModal] = useState(null);
@@ -499,6 +506,16 @@ export default function ProfessorDashboard() {
     if (mode === 'analytics') loadAnalytics();
   }, [mode, loadAnalytics]);
 
+  // Lock background scroll while import modal is open
+  useEffect(() => {
+    if (importModalOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => { document.body.style.overflow = ''; };
+  }, [importModalOpen]);
+
   useEffect(() => {
     if (
       analyticsSectionId !== 'all'
@@ -734,6 +751,69 @@ export default function ProfessorDashboard() {
     const sem = (activeSection.semester || 'semester').toLowerCase();
     const yr = (activeSection.academic_year || 'year').replace('/', '-');
     downloadBlob(`/professor/sections/${activeSection.id}/export/grades`, `grades_${activeSection.code || 'section'}_section_${activeSection.section_number || '1'}_${sem}_${yr}.xlsx`);
+  };
+
+  const openImportModal = () => {
+    setImportModalOpen(true);
+    setImportFile(null);
+    setImportPreview(null);
+  };
+
+  const closeImportModal = () => {
+    if (importLoading || importConfirming) return;
+    setImportModalOpen(false);
+    setImportFile(null);
+    setImportPreview(null);
+  };
+
+  const handleImportPreview = async () => {
+    if (!importFile || !activeSection?.id) return;
+    setImportLoading(true);
+    try {
+      const form = new FormData();
+      form.append('grades_file', importFile);
+      form.append('dry_run', 'true');
+      const r = await axiosInstance.post(
+        `/professor/sections/${activeSection.id}/import/grades`,
+        form,
+        { headers: { 'Content-Type': 'multipart/form-data' } }
+      );
+      setImportPreview(r.data.data);
+    } catch (err) {
+      showToast(err?.response?.data?.message || 'Failed to parse file', 'error');
+    } finally {
+      setImportLoading(false);
+    }
+  };
+
+  const handleImportConfirm = async () => {
+    if (!importFile || !activeSection?.id || !importPreview?.summary?.changed) return;
+    setImportConfirming(true);
+    try {
+      const form = new FormData();
+      form.append('grades_file', importFile);
+      form.append('dry_run', 'false');
+      await axiosInstance.post(
+        `/professor/sections/${activeSection.id}/import/grades`,
+        form,
+        { headers: { 'Content-Type': 'multipart/form-data' } }
+      );
+      showToast(`✅ ${importPreview.summary.changed} grade(s) imported successfully`);
+      closeImportModal();
+      const r2 = await axiosInstance.get(`/professor/sections/${activeSection.id}/students`);
+      const fresh = r2.data.data.students || [];
+      setStudents(fresh);
+      const ge = {};
+      fresh.forEach((s) => {
+        ge[s.id] = { midterm: s.midterm ?? '', assignments: s.assignments ?? '', final: s.final ?? '' };
+      });
+      setGradeEdit(ge);
+      setHasUnsavedGrades(false);
+    } catch (err) {
+      showToast(err?.response?.data?.message || 'Import failed', 'error');
+    } finally {
+      setImportConfirming(false);
+    }
   };
 
   const exportAttendance = () => {
@@ -1085,6 +1165,157 @@ export default function ProfessorDashboard() {
         <div className={`prof-toast prof-toast--${toast.type}`}>{toast.msg}</div>
       )}
 
+
+      {importModalOpen && createPortal(
+        <div className="prof-modal-backdrop" onClick={closeImportModal}>
+          <div className="prof-import-modal" onClick={(e) => e.stopPropagation()}>
+
+            {/* Header */}
+            <div className="prof-change-modal__head">
+              <div>
+                <h3>⬆ Import Grades</h3>
+                <p>{activeSection?.code} — Section {activeSection?.section_number}</p>
+              </div>
+              <button onClick={closeImportModal} disabled={importLoading || importConfirming}>×</button>
+            </div>
+
+            {/* Scrollable body — no action buttons here */}
+            <div className="prof-import-modal__body">
+              {!importPreview ? (
+                /* ── Upload step ── */
+                <div className="prof-import-upload">
+                  <p className="prof-import-hint">
+                    Use the exported grade sheet format. Only <strong>Student ID</strong>, <strong>Midterm</strong>, <strong>Assignments</strong>, <strong>Final</strong>, and <strong>Practical</strong> columns are read. Empty grade cells are treated as 0.
+                  </p>
+                  <label className="prof-import-file-label">
+                    <input
+                      type="file"
+                      accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                      onChange={(e) => { setImportFile(e.target.files[0] || null); setImportPreview(null); }}
+                    />
+                    <span className="prof-import-file-btn">
+                      {importFile ? `📄 ${importFile.name}` : '📂 Choose .xlsx file'}
+                    </span>
+                  </label>
+                </div>
+              ) : (
+                /* ── Preview step ── */
+                <div className="prof-import-preview">
+                  {/* Summary cards */}
+                  <div className="prof-import-summary">
+                    {[
+                      { label: 'Rows Found',   value: importPreview.summary.total_rows,   color: 'blue' },
+                      { label: 'Changed',      value: importPreview.summary.changed,      color: 'green' },
+                      { label: 'Unchanged',    value: importPreview.summary.unchanged,    color: 'gray' },
+                      { label: 'Invalid',      value: importPreview.summary.invalid,      color: 'red' },
+                      { label: 'Not Enrolled', value: importPreview.summary.not_enrolled, color: 'orange' }
+                    ].map(({ label, value, color }) => (
+                      <div key={label} className={`prof-import-card prof-import-card--${color}`}>
+                        <span className="prof-import-card__val">{value}</span>
+                        <span className="prof-import-card__lbl">{label}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Preview table — horizontal scroll inside scrollable body */}
+                  <div className="prof-import-table-wrap">
+                    <table className="table prof-import-table">
+                      <thead>
+                        <tr>
+                          <th>Student</th>
+                          <th style={{ textAlign: 'center' }}>Status</th>
+                          <th style={{ textAlign: 'center' }}>Cur. Mid</th>
+                          <th style={{ textAlign: 'center' }}>New Mid</th>
+                          <th style={{ textAlign: 'center' }}>Cur. Ass.</th>
+                          <th style={{ textAlign: 'center' }}>New Ass.</th>
+                          <th style={{ textAlign: 'center' }}>Cur. Final</th>
+                          <th style={{ textAlign: 'center' }}>New Final</th>
+                          <th style={{ textAlign: 'center' }}>Cur. Total</th>
+                          <th style={{ textAlign: 'center' }}>New Total</th>
+                          <th style={{ textAlign: 'center' }}>New Grade</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {importPreview.rows.map((row, i) => (
+                          <tr key={i} className={`prof-import-row--${row.status}`}>
+                            <td>
+                              <div style={{ fontWeight: 600, fontSize: 13 }}>{row.student_name || row.student_id}</div>
+                              <div style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{row.student_id}</div>
+                              {row.errors.length > 0 && (
+                                <div className="prof-import-errors">
+                                  {row.errors.map((e, ei) => <span key={ei}>{e}</span>)}
+                                </div>
+                              )}
+                            </td>
+                            <td style={{ textAlign: 'center' }}>
+                              <span className={`prof-import-status prof-import-status--${row.status}`}>
+                                {row.status === 'changed' ? '✏️ Changed' :
+                                 row.status === 'unchanged' ? '— Same' :
+                                 row.status === 'invalid' ? '⚠ Invalid' :
+                                 '✕ Not Enrolled'}
+                              </span>
+                            </td>
+                            <td style={{ textAlign: 'center' }}>{row.current?.midterm ?? '—'}</td>
+                            <td style={{ textAlign: 'center' }} className={row.status === 'changed' && row.imported?.midterm !== row.current?.midterm ? 'prof-import-cell--changed' : ''}>{row.imported?.midterm ?? '—'}</td>
+                            <td style={{ textAlign: 'center' }}>{row.current?.assignments ?? '—'}</td>
+                            <td style={{ textAlign: 'center' }} className={row.status === 'changed' && row.imported?.assignments !== row.current?.assignments ? 'prof-import-cell--changed' : ''}>{row.imported?.assignments ?? '—'}</td>
+                            <td style={{ textAlign: 'center' }}>{row.current?.final ?? '—'}</td>
+                            <td style={{ textAlign: 'center' }} className={row.status === 'changed' && row.imported?.final !== row.current?.final ? 'prof-import-cell--changed' : ''}>{row.imported?.final ?? '—'}</td>
+                            <td style={{ textAlign: 'center', fontWeight: 600 }}>{row.current?.total ?? '—'}</td>
+                            <td style={{ textAlign: 'center', fontWeight: 600 }} className={row.status === 'changed' ? 'prof-import-cell--changed' : ''}>{row.imported?.total ?? '—'}</td>
+                            <td style={{ textAlign: 'center', fontWeight: 600 }}>{row.imported?.letter_grade ?? '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Sticky footer — always visible, never scrolls away */}
+            <div className="prof-import-modal__footer">
+              {!importPreview ? (
+                <>
+                  <button className="btn btn--secondary" onClick={closeImportModal} disabled={importLoading}>
+                    Cancel
+                  </button>
+                  <button
+                    className="btn btn--primary"
+                    onClick={handleImportPreview}
+                    disabled={!importFile || importLoading}
+                  >
+                    {importLoading ? 'Parsing...' : 'Preview Changes'}
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    className="btn btn--secondary"
+                    onClick={() => { setImportPreview(null); setImportFile(null); }}
+                    disabled={importConfirming}
+                  >
+                    ← Choose different file
+                  </button>
+                  <button
+                    className="btn btn--primary"
+                    onClick={handleImportConfirm}
+                    disabled={importPreview.summary.changed === 0 || importConfirming}
+                  >
+                    {importConfirming
+                      ? 'Importing...'
+                      : importPreview.summary.changed === 0
+                        ? 'No changes to import'
+                        : `Confirm Import (${importPreview.summary.changed} student${importPreview.summary.changed !== 1 ? 's' : ''})`}
+                  </button>
+                </>
+              )}
+            </div>
+
+          </div>
+        </div>,
+        document.body
+      )}
 
       {changeModal && (
         <div className="prof-modal-backdrop" onClick={() => !changeSaving && setChangeModal(null)}>
@@ -1772,6 +2003,7 @@ export default function ProfessorDashboard() {
                 <h3>👥 Students & Grades</h3>
                 <div className="prof-header-actions">
                   <button className="btn btn--secondary btn--sm" onClick={exportGrades}>⬇ Export grades</button>
+                  <button className="btn btn--secondary btn--sm" onClick={openImportModal}>⬆ Import grades</button>
                   {hasUnsavedGrades && (
                     <span style={{ fontSize: 12, color: '#d97706', fontWeight: 600, alignSelf: 'center' }}>
                       Unsaved changes
