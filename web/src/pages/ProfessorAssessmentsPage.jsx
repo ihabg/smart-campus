@@ -92,6 +92,7 @@ export default function ProfessorAssessmentsPage() {
   const [questions, setQuestions] = useState([defaultQuestion(1)]);
   const [assignmentFiles, setAssignmentFiles] = useState([]);
   const [results, setResults] = useState(null);
+  const [resultsLoading, setResultsLoading] = useState(false);
   const [quizReview, setQuizReview] = useState(null);
   const [reviewLoading, setReviewLoading] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -352,12 +353,15 @@ export default function ProfessorAssessmentsPage() {
 
   async function openResults(item) {
     setError('');
+    setResultsLoading(true);
     try {
       const response = await assessmentAPI.professorResults(item.id);
       setResults(response.data?.data || null);
       setQuizReview(null);
     } catch (err) {
       setError(err?.response?.data?.message || 'Could not load results.');
+    } finally {
+      setResultsLoading(false);
     }
   }
 
@@ -403,6 +407,20 @@ export default function ProfessorAssessmentsPage() {
       setReviewLoading(false);
     }
   }
+
+  useEffect(() => {
+    if (!results && !resultsLoading) return;
+    function onKeyDown(e) {
+      if (e.key === 'Escape') { setResults(null); setQuizReview(null); }
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [results, resultsLoading]);
+
+  useEffect(() => {
+    document.body.style.overflow = (results || resultsLoading) ? 'hidden' : '';
+    return () => { document.body.style.overflow = ''; };
+  }, [results, resultsLoading]);
 
   if (loading || (termLoading && !hasTerm)) return <Spinner center />;
 
@@ -708,7 +726,9 @@ export default function ProfessorAssessmentsPage() {
                 ) : null}
               </div>
               <div className="assess-item__actions">
-                <button className="assess-btn assess-btn--secondary" onClick={() => openResults(item)}>Results</button>
+                <button className="assess-btn assess-btn--secondary" onClick={() => openResults(item)} disabled={resultsLoading}>
+                  {resultsLoading ? 'Loading…' : 'Results'}
+                </button>
                 {item.assessment_type === 'quiz' && (
                   <button
                     className={`assess-btn ${item.allow_review ? 'assess-btn--warning' : 'assess-btn--success'}`}
@@ -724,59 +744,90 @@ export default function ProfessorAssessmentsPage() {
         </section>
       </div>
 
-      {results && (
-        <section className="assess-card results-card">
-          <div className="assess-card__head">
-            <div>
-              <h2>Results — {results.assessment.title}</h2>
-              {results.assessment.assessment_type === 'quiz' && (
-                <small>{results.assessment.allow_review ? 'Student review is enabled.' : 'Student review is disabled.'}</small>
-              )}
-            </div>
-            <div className="results-actions">
-              {results.assessment.assessment_type === 'quiz' && (
-                <button
-                  className={`assess-btn ${results.assessment.allow_review ? 'assess-btn--warning' : 'assess-btn--success'}`}
-                  onClick={() => toggleQuizReview(results.assessment)}
-                >
-                  {results.assessment.allow_review ? 'Disable student review' : 'Allow student review'}
-                </button>
-              )}
-              <button className="assess-btn assess-btn--secondary" onClick={() => { setResults(null); setQuizReview(null); }}>Close</button>
-            </div>
-          </div>
+      {(resultsLoading || results) && (
+        <div
+          className="results-modal-overlay"
+          role="presentation"
+          onClick={(e) => { if (e.target === e.currentTarget) { setResults(null); setQuizReview(null); } }}
+        >
+          <div className="results-modal" role="dialog" aria-modal="true">
+            {resultsLoading ? (
+              <div className="results-modal__loading"><Spinner center /></div>
+            ) : results && (
+              <>
+                <div className="results-modal__head">
+                  <div>
+                    <h2 className="results-modal__title">Results — {results.assessment.title}</h2>
+                    <small className="results-modal__subtitle">
+                      {results.rows.length} student{results.rows.length !== 1 ? 's' : ''} enrolled
+                      {results.assessment.assessment_type === 'quiz' && (
+                        results.assessment.allow_review ? ' · Review enabled' : ' · Review disabled'
+                      )}
+                    </small>
+                  </div>
+                  <div className="results-actions">
+                    {results.assessment.assessment_type === 'quiz' && (
+                      <button
+                        className={`assess-btn ${results.assessment.allow_review ? 'assess-btn--warning' : 'assess-btn--success'}`}
+                        onClick={() => toggleQuizReview(results.assessment)}
+                      >
+                        {results.assessment.allow_review ? 'Disable review' : 'Allow review'}
+                      </button>
+                    )}
+                    <button
+                      className="assess-btn assess-btn--secondary"
+                      onClick={() => { setResults(null); setQuizReview(null); }}
+                    >
+                      Close
+                    </button>
+                  </div>
+                </div>
 
-          <div className="results-table-wrap">
-            <table className="results-table">
-              <thead>
-                <tr>
-                  <th>Student</th>
-                  <th>ID</th>
-                  <th>Status</th>
-                  <th>Submitted</th>
-                  <th>Score / Grade</th>
-                  <th>File / Feedback</th>
-                </tr>
-              </thead>
-              <tbody>
-                {results.rows.map((row) => (
-                  <ResultRow
-                    key={row.student_id}
-                    row={row}
+                {results.rows.length === 0 ? (
+                  <div className="assess-empty">No enrolled students found for this section.</div>
+                ) : results.assessment.assessment_type === 'assignment' ? (
+                  <AssignmentResultsSection
+                    rows={results.rows}
                     assessment={results.assessment}
                     onGrade={gradeSubmission}
-                    onViewQuizAttempt={openQuizAttemptReview}
                   />
-                ))}
-              </tbody>
-            </table>
+                ) : (
+                  <>
+                    <div className="results-table-wrap">
+                      <table className="results-table">
+                        <thead>
+                          <tr>
+                            <th>Student</th>
+                            <th>ID</th>
+                            <th>Status</th>
+                            <th>Submitted</th>
+                            <th>Score</th>
+                            <th>Answers</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {results.rows.map((row) => (
+                            <ResultRow
+                              key={row.student_id}
+                              row={row}
+                              assessment={results.assessment}
+                              onGrade={gradeSubmission}
+                              onViewQuizAttempt={openQuizAttemptReview}
+                            />
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    {reviewLoading && <div className="assess-empty">Loading quiz answers...</div>}
+                    {quizReview && !reviewLoading && (
+                      <QuizReviewPanel review={quizReview} onClose={() => setQuizReview(null)} />
+                    )}
+                  </>
+                )}
+              </>
+            )}
           </div>
-
-          {reviewLoading && <div className="assess-empty">Loading quiz answers...</div>}
-          {quizReview && !reviewLoading && (
-            <QuizReviewPanel review={quizReview} onClose={() => setQuizReview(null)} />
-          )}
-        </section>
+        </div>
       )}
     </div>
   );
@@ -822,6 +873,198 @@ function ResultRow({ row, assessment, onGrade, onViewQuizAttempt }) {
   );
 }
 
+
+function AssignmentResultCard({ row, assessment, onGrade }) {
+  const [grade, setGrade] = useState(
+    row.grade !== null && row.grade !== undefined ? String(row.grade) : ''
+  );
+  const [feedback, setFeedback] = useState(row.feedback || '');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setGrade(row.grade !== null && row.grade !== undefined ? String(row.grade) : '');
+    setFeedback(row.feedback || '');
+  }, [row.grade, row.feedback]);
+
+  const hasSubmission = Boolean(row.submission_id);
+  const isGraded = row.grade !== null && row.grade !== undefined;
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      await onGrade(row, grade, feedback);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className={`assignment-result-card${hasSubmission ? ' assignment-result-card--submitted' : ''}`}>
+      <div className="assignment-result-card__student">
+        <div className="assignment-result-card__name">{row.student_name}</div>
+        <div className="assignment-result-card__meta">
+          <span>{row.university_id || '—'}</span>
+          <span>{row.email}</span>
+        </div>
+      </div>
+
+      <div className="assignment-result-card__body">
+        <div className="assignment-result-card__status-row">
+          <span className={`result-status-badge result-status-badge--${!hasSubmission ? 'none' : isGraded ? 'graded' : 'submitted'}`}>
+            {!hasSubmission ? 'No submission' : isGraded ? 'Graded' : 'Submitted'}
+          </span>
+          {hasSubmission && (
+            <span className="result-submitted-at">Submitted {dateTimeLabel(row.submitted_at)}</span>
+          )}
+        </div>
+
+        {hasSubmission && row.submission_text && (
+          <div className="result-text-preview">
+            <strong>Submission text</strong>
+            <p>{row.submission_text}</p>
+          </div>
+        )}
+
+        {hasSubmission && row.file_url && (
+          <a
+            href={publicFileUrl(row.file_url)}
+            target="_blank"
+            rel="noreferrer"
+            className="result-file-download"
+          >
+            <span>📎</span>
+            <span>Open submitted file</span>
+          </a>
+        )}
+
+        {!hasSubmission && (
+          <p className="result-no-submission">Student has not submitted anything yet.</p>
+        )}
+
+        {hasSubmission && (
+          <div className="result-grade-form">
+            <div className="result-grade-row">
+              <label className="result-grade-label">
+                Grade (0 – {assessment.points})
+                <input
+                  type="number"
+                  min="0"
+                  max={assessment.points}
+                  step="0.5"
+                  value={grade}
+                  onChange={(e) => setGrade(e.target.value)}
+                  placeholder={`0 – ${assessment.points}`}
+                />
+              </label>
+              {isGraded && (
+                <div className="result-current-grade">
+                  Current: <strong>{row.grade}</strong> / {assessment.points}
+                </div>
+              )}
+            </div>
+            <label className="result-feedback-label">
+              Feedback
+              <textarea
+                value={feedback}
+                onChange={(e) => setFeedback(e.target.value)}
+                placeholder="Optional feedback for the student..."
+                rows="3"
+              />
+            </label>
+            <button
+              className="assess-btn assess-btn--primary"
+              onClick={handleSave}
+              disabled={saving || grade === ''}
+            >
+              {saving ? 'Saving…' : isGraded ? 'Update grade' : 'Save grade'}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const RESULT_FILTERS = [
+  { key: 'all',           label: 'All' },
+  { key: 'submitted',     label: 'Submitted' },
+  { key: 'not_submitted', label: 'Not submitted' },
+  { key: 'graded',        label: 'Graded' },
+  { key: 'not_graded',    label: 'Not graded' },
+];
+
+function AssignmentResultsSection({ rows, assessment, onGrade }) {
+  const [filter, setFilter] = useState('all');
+  const [search, setSearch] = useState('');
+
+  const counts = useMemo(() => ({
+    all:           rows.length,
+    submitted:     rows.filter((r) => Boolean(r.submission_id)).length,
+    not_submitted: rows.filter((r) => !r.submission_id).length,
+    graded:        rows.filter((r) => Boolean(r.submission_id) && r.grade !== null && r.grade !== undefined).length,
+    not_graded:    rows.filter((r) => Boolean(r.submission_id) && (r.grade === null || r.grade === undefined)).length,
+  }), [rows]);
+
+  const filteredRows = useMemo(() => {
+    let list = rows;
+    if (filter === 'submitted')     list = list.filter((r) => Boolean(r.submission_id));
+    else if (filter === 'not_submitted') list = list.filter((r) => !r.submission_id);
+    else if (filter === 'graded')   list = list.filter((r) => Boolean(r.submission_id) && r.grade !== null && r.grade !== undefined);
+    else if (filter === 'not_graded') list = list.filter((r) => Boolean(r.submission_id) && (r.grade === null || r.grade === undefined));
+
+    const q = search.trim().toLowerCase();
+    if (q) {
+      list = list.filter((r) =>
+        (r.student_name || '').toLowerCase().includes(q) ||
+        (r.university_id || '').toLowerCase().includes(q) ||
+        (r.email || '').toLowerCase().includes(q)
+      );
+    }
+    return list;
+  }, [rows, filter, search]);
+
+  return (
+    <>
+      <div className="results-filters">
+        <div className="results-filter-chips">
+          {RESULT_FILTERS.map((f) => (
+            <button
+              key={f.key}
+              type="button"
+              className={`results-filter-chip${filter === f.key ? ' results-filter-chip--active' : ''}`}
+              onClick={() => setFilter(f.key)}
+            >
+              {f.label}
+              <span className="results-filter-chip__count">{counts[f.key]}</span>
+            </button>
+          ))}
+        </div>
+        <input
+          type="search"
+          className="results-search"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search by name, ID, or email…"
+        />
+      </div>
+
+      {filteredRows.length === 0 ? (
+        <div className="assess-empty">No students match this filter.</div>
+      ) : (
+        <div className="assignment-results-list">
+          {filteredRows.map((row) => (
+            <AssignmentResultCard
+              key={row.student_id}
+              row={row}
+              assessment={assessment}
+              onGrade={onGrade}
+            />
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
 
 function QuizReviewPanel({ review, onClose }) {
   const { assessment, attempt, questions = [] } = review || {};
