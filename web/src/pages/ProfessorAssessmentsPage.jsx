@@ -874,6 +874,26 @@ function ResultRow({ row, assessment, onGrade, onViewQuizAttempt }) {
 }
 
 
+function fileIcon(type, name) {
+  const mime = (type || '').toLowerCase();
+  const ext = name ? name.split('.').pop().toLowerCase() : '';
+  if (mime.includes('pdf') || ext === 'pdf') return '📄';
+  if (mime.includes('word') || mime.includes('.document') || ext === 'doc' || ext === 'docx') return '📝';
+  if (mime.includes('powerpoint') || mime.includes('.presentation') || ext === 'ppt' || ext === 'pptx') return '📊';
+  if (mime.includes('excel') || mime.includes('.sheet') || ext === 'xls' || ext === 'xlsx') return '📋';
+  if (mime.startsWith('image/') || ['png', 'jpg', 'jpeg', 'webp', 'gif'].includes(ext)) return '🖼️';
+  if (mime.includes('zip') || mime.includes('compressed') || ext === 'zip' || ext === 'rar') return '🗜️';
+  if (mime.includes('text') || ext === 'txt') return '📃';
+  return '📎';
+}
+
+function formatFileSize(bytes) {
+  if (!bytes) return '';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 function AssignmentResultCard({ row, assessment, onGrade }) {
   const [grade, setGrade] = useState(
     row.grade !== null && row.grade !== undefined ? String(row.grade) : ''
@@ -925,16 +945,23 @@ function AssignmentResultCard({ row, assessment, onGrade }) {
           </div>
         )}
 
-        {hasSubmission && row.file_url && (
-          <a
-            href={publicFileUrl(row.file_url)}
-            target="_blank"
-            rel="noreferrer"
-            className="result-file-download"
-          >
-            <span>📎</span>
-            <span>Open submitted file</span>
-          </a>
+        {hasSubmission && row.submission_attachments?.length > 0 && (
+          <div className="result-files-list">
+            {row.submission_attachments.map((att, i) => (
+              <a
+                key={att.id || i}
+                href={publicFileUrl(att.file_url)}
+                target="_blank"
+                rel="noreferrer"
+                className="result-file-download"
+                download={att.original_name || undefined}
+              >
+                <span>{fileIcon(att.mime_type, att.original_name)}</span>
+                <span>{att.original_name || `File ${i + 1}`}</span>
+                {att.size_bytes && <span className="result-file-size">{formatFileSize(att.size_bytes)}</span>}
+              </a>
+            ))}
+          </div>
         )}
 
         {!hasSubmission && (

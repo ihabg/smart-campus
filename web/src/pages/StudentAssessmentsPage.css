@@ -968,3 +968,165 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* ── Submitted files list (edit mode + status view) ─── */
+
+.submitted-files-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-top: 8px;
+}
+
+.submitted-file-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: #f5f8ff;
+  border: 1px solid #dfe7fb;
+  border-radius: 11px;
+  min-width: 0;
+}
+
+.submitted-file-row__icon {
+  font-size: 18px;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.submitted-file-row__name {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #1a2c5e;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.submitted-file-row__size {
+  font-size: 11px;
+  color: #64739a;
+  flex-shrink: 0;
+}
+
+.submitted-file-row__remove {
+  flex-shrink: 0;
+  border: 1px solid #ffc7c7;
+  border-radius: 8px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  background: #fff1f1;
+  color: #b42318;
+  cursor: pointer;
+  transition: background 120ms, color 120ms;
+}
+
+.submitted-file-row__remove:hover:not(:disabled) {
+  background: #b42318;
+  color: #fff;
+  border-color: #b42318;
+}
+
+.submitted-file-row__remove:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* ── Staged files list (pre-upload) ────────────────── */
+
+.staged-files-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.staged-file-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  background: #fffbea;
+  border: 1px dashed #f0d978;
+  border-radius: 11px;
+  min-width: 0;
+}
+
+.staged-file-row__icon {
+  font-size: 18px;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.staged-file-row__name {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #3a3000;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.staged-file-row__size {
+  font-size: 11px;
+  color: #7a6800;
+  flex-shrink: 0;
+}
+
+.staged-file-row__remove {
+  flex-shrink: 0;
+  border: 1px solid #f0d978;
+  border-radius: 8px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  background: transparent;
+  color: #7a5a00;
+  cursor: pointer;
+  transition: background 120ms;
+}
+
+.staged-file-row__remove:hover {
+  background: #f0d978;
+}
+
+/* ── Submission file links (status table) ──────────── */
+
+.submission-file-links {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.submission-file-links a {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #0755ff;
+  text-decoration: none;
+  word-break: break-word;
+}
+
+.submission-file-links a:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 720px) {
+  .staged-file-row,
+  .submitted-file-row {
+    flex-wrap: wrap;
+  }
+
+  .staged-file-row__remove,
+  .submitted-file-row__remove {
+    margin-left: auto;
+  }
+}

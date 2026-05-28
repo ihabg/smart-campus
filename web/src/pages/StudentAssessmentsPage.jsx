@@ -52,7 +52,6 @@ export default function StudentAssessmentsPage() {
   const [data, setData] = useState({ sections: [], assessments: [] });
   const [selected, setSelected] = useState(null);
   const [submissionText, setSubmissionText] = useState('');
-  const [submissionFile, setSubmissionFile] = useState(null);
   const [answers, setAnswers] = useState({});
   const [quizReview, setQuizReview] = useState(null);
   const [reviewLoading, setReviewLoading] = useState(false);
@@ -122,7 +121,6 @@ export default function StudentAssessmentsPage() {
     setError('');
     setMessage('');
     setSubmissionText('');
-    setSubmissionFile(null);
     setAnswers({});
     setQuizReview(null);
 
@@ -138,7 +136,7 @@ export default function StudentAssessmentsPage() {
     }
   }
 
-  async function submitAssignment(event) {
+  async function submitAssignment(event, filesToSubmit) {
     event.preventDefault();
     if (!selected) return;
     setSaving(true);
@@ -146,7 +144,7 @@ export default function StudentAssessmentsPage() {
     setMessage('');
 
     try {
-      await assessmentAPI.submitAssignment(selected.id, { submission_text: submissionText }, submissionFile);
+      await assessmentAPI.submitAssignment(selected.id, { submission_text: submissionText }, filesToSubmit);
       setMessage('Assignment submitted successfully.');
       await openAssessment(selected);
       await load();
@@ -173,6 +171,19 @@ export default function StudentAssessmentsPage() {
       setError(err?.response?.data?.message || 'Could not remove submission.');
     } finally {
       setRemoving(false);
+    }
+  }
+
+  async function deleteSubmissionFile(fileId) {
+    setError('');
+    setMessage('');
+    try {
+      await assessmentAPI.deleteSubmissionFile(selected.id, fileId);
+      setMessage('File removed successfully.');
+      await openAssessment(selected);
+      await load();
+    } catch (err) {
+      setError(err?.response?.data?.message || 'Could not remove file.');
     }
   }
 
@@ -344,9 +355,9 @@ export default function StudentAssessmentsPage() {
                 selected={selected}
                 submissionText={submissionText}
                 setSubmissionText={setSubmissionText}
-                setSubmissionFile={setSubmissionFile}
                 submitAssignment={submitAssignment}
                 removeSubmission={removeSubmission}
+                deleteSubmissionFile={deleteSubmissionFile}
                 saving={saving}
                 removing={removing}
               />
@@ -439,26 +450,35 @@ function AttachmentRow({ att, idx }) {
   );
 }
 
-function AssignmentPanel({ selected, submissionText, setSubmissionText, setSubmissionFile, submitAssignment, removeSubmission, saving, removing }) {
+function getExistingSubmissionAttachments(submission) {
+  if (!submission) return [];
+  if (Array.isArray(submission.submission_attachments) && submission.submission_attachments.length > 0) {
+    return submission.submission_attachments;
+  }
+  if (submission.file_url) {
+    return [{ id: null, file_url: submission.file_url, original_name: 'Submitted file', mime_type: null, size_bytes: null }];
+  }
+  return [];
+}
+
+function AssignmentPanel({ selected, submissionText, setSubmissionText, submitAssignment, removeSubmission, deleteSubmissionFile, saving, removing }) {
   const status = statusOf(selected);
   const notOpen = status === 'Scheduled';
   const closedNoLate = status === 'Closed' && !selected.allow_late;
   const canSubmit = !notOpen && !closedNoLate;
 
-  // A "real" submission exists only when the DB row has at least one piece of content.
-  // An empty row (both text and file null) does not count.
+  const existingAttachments = getExistingSubmissionAttachments(selected.submission);
+
   const hasSubmission = Boolean(
     selected.submission?.id &&
-    (selected.submission.file_url || selected.submission.submission_text)
+    (existingAttachments.length > 0 || selected.submission?.submission_text)
   );
 
-  // The time-based statusOf() never returns 'Submitted' in the detail view because
-  // the detail API does not carry submission_id on the assessment root object.
-  // Derive the correct display label locally.
   const displayStatus = hasSubmission ? 'Submitted' : status;
 
   const [editing, setEditing] = useState(!hasSubmission && canSubmit);
-  const [fileName, setFileName] = useState('');
+  const [stagedFiles, setStagedFiles] = useState([]);
+  const [deletingFileId, setDeletingFileId] = useState(null);
 
   const attachments = Array.isArray(selected.attachments) && selected.attachments.length > 0
     ? selected.attachments
@@ -466,19 +486,32 @@ function AssignmentPanel({ selected, submissionText, setSubmissionText, setSubmi
       ? [{ id: null, file_url: selected.attachment_url, file_name: selected.attachment_name || 'Attachment', file_type: selected.attachment_type || null, file_size: selected.attachment_size || null }]
       : [];
 
-  function chooseFile(file) {
-    setSubmissionFile(file || null);
-    setFileName(file?.name || '');
+  function addFiles(fileList) {
+    if (!fileList) return;
+    setStagedFiles((prev) => [...prev, ...Array.from(fileList)]);
+  }
+
+  function removeStagedFile(index) {
+    setStagedFiles((prev) => prev.filter((_, i) => i !== index));
   }
 
   function onDrop(event) {
     event.preventDefault();
-    const file = event.dataTransfer.files?.[0];
-    if (file) chooseFile(file);
+    if (event.dataTransfer.files?.length) addFiles(event.dataTransfer.files);
+  }
+
+  async function handleDeleteSubmittedFile(fileId) {
+    setDeletingFileId(fileId);
+    try {
+      await deleteSubmissionFile(fileId);
+    } finally {
+      setDeletingFileId(null);
+    }
   }
 
   async function onSubmit(event) {
-    await submitAssignment(event);
+    await submitAssignment(event, stagedFiles);
+    setStagedFiles([]);
     setEditing(false);
   }
 
@@ -596,8 +629,19 @@ function AssignmentPanel({ selected, submissionText, setSubmissionText, setSubmi
               <tr>
                 <th>File submissions</th>
                 <td>
-                  {hasSubmission && selected.submission.file_url ? (
-                    <a href={publicFileUrl(selected.submission.file_url)} target="_blank" rel="noreferrer">Open submitted file</a>
+                  {existingAttachments.length > 0 ? (
+                    <div className="submission-file-links">
+                      {existingAttachments.map((att, i) => (
+                        <a
+                          key={att.id || i}
+                          href={publicFileUrl(att.file_url)}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          {fileIcon(att.mime_type, att.original_name)} {att.original_name || `File ${i + 1}`}
+                        </a>
+                      ))}
+                    </div>
                   ) : '—'}
                 </td>
               </tr>
@@ -620,26 +664,69 @@ function AssignmentPanel({ selected, submissionText, setSubmissionText, setSubmi
             <textarea value={submissionText} onChange={(e) => setSubmissionText(e.target.value)} rows="5" placeholder="Write your answer or notes here..." />
           </label>
 
+          {existingAttachments.length > 0 && (
+            <div className="file-submission-field">
+              <span className="file-submission-label">Submitted files</span>
+              <div className="submitted-files-list">
+                {existingAttachments.map((att, i) => (
+                  <div key={att.id || i} className="submitted-file-row">
+                    <span className="submitted-file-row__icon">{fileIcon(att.mime_type, att.original_name)}</span>
+                    <span className="submitted-file-row__name">{att.original_name || `File ${i + 1}`}</span>
+                    {att.size_bytes && <span className="submitted-file-row__size">{formatFileSize(att.size_bytes)}</span>}
+                    {att.id && canSubmit && (
+                      <button
+                        type="button"
+                        className="submitted-file-row__remove"
+                        onClick={() => handleDeleteSubmittedFile(att.id)}
+                        disabled={deletingFileId === att.id}
+                      >
+                        {deletingFileId === att.id ? '…' : 'Remove'}
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="file-submission-field">
-            <span className="file-submission-label">File submissions</span>
+            <span className="file-submission-label">
+              {existingAttachments.length > 0 ? 'Add more files' : 'File submissions'}
+            </span>
             <div
               className="drop-zone"
               onDragOver={(event) => event.preventDefault()}
               onDrop={onDrop}
             >
-              <input id={`submission-file-${selected.id}`} type="file" onChange={(e) => chooseFile(e.target.files?.[0] || null)} />
-              <label htmlFor={`submission-file-${selected.id}`} className="drop-zone__button">Choose file</label>
+              <input
+                id={`submission-file-${selected.id}`}
+                type="file"
+                multiple
+                onChange={(e) => addFiles(e.target.files)}
+              />
+              <label htmlFor={`submission-file-${selected.id}`} className="drop-zone__button">Choose files</label>
               <div className="drop-zone__content">
                 <strong>⬇</strong>
-                <span>{fileName || 'Drag and drop a file here or choose a file.'}</span>
-                <small>Maximum file size: 50 MB</small>
+                <span>
+                  {stagedFiles.length > 0
+                    ? `${stagedFiles.length} file${stagedFiles.length > 1 ? 's' : ''} selected`
+                    : 'Drag and drop files here or choose files.'}
+                </span>
+                <small>Up to 10 files · Max 50 MB each</small>
               </div>
             </div>
           </div>
 
-          {selected.submission?.file_url && !fileName && (
-            <div className="current-file-note">
-              Current file: <a href={publicFileUrl(selected.submission.file_url)} target="_blank" rel="noreferrer">Open submitted file</a>
+          {stagedFiles.length > 0 && (
+            <div className="staged-files-list">
+              {stagedFiles.map((file, i) => (
+                <div key={i} className="staged-file-row">
+                  <span className="staged-file-row__icon">{fileIcon(file.type, file.name)}</span>
+                  <span className="staged-file-row__name">{file.name}</span>
+                  <span className="staged-file-row__size">{formatFileSize(file.size)}</span>
+                  <button type="button" className="staged-file-row__remove" onClick={() => removeStagedFile(i)}>✕</button>
+                </div>
+              ))}
             </div>
           )}
 
@@ -647,7 +734,7 @@ function AssignmentPanel({ selected, submissionText, setSubmissionText, setSubmi
             <button className="student-assess-btn student-assess-btn--primary" disabled={saving || !canSubmit}>
               {saving ? 'Saving...' : 'Save changes'}
             </button>
-            <button className="student-assess-btn student-assess-btn--light" type="button" onClick={() => setEditing(false)}>
+            <button className="student-assess-btn student-assess-btn--light" type="button" onClick={() => { setStagedFiles([]); setEditing(false); }}>
               Cancel
             </button>
           </div>

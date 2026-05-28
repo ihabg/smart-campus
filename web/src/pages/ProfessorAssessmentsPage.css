@@ -1152,3 +1152,23 @@
     gap: 6px;
   }
 }
+
+/* ── Submission file list in Results modal ─────────── */
+
+.result-files-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 4px 0;
+}
+
+.result-files-list .result-file-download {
+  display: flex;
+}
+
+.result-file-size {
+  font-size: 11px;
+  color: #64739a;
+  margin-left: auto;
+  flex-shrink: 0;
+}

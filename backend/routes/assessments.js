@@ -100,8 +100,10 @@ router.patch('/professor/:assessmentId/submissions/:submissionId/grade', restric
 // Student routes
 router.get('/student', restrictTo('student'), ctrl.listStudentAssessments);
 router.get('/student/:assessmentId', restrictTo('student'), ctrl.getStudentAssessment);
-router.post('/student/:assessmentId/assignment-submit', restrictTo('student'), uploadSubmission.single('submission'), ctrl.submitAssignment);
+const uploadSubmissionFiles = uploadSubmission.fields([{ name: 'submission_files', maxCount: 10 }]);
+router.post('/student/:assessmentId/assignment-submit', restrictTo('student'), uploadSubmissionFiles, ctrl.submitAssignment);
 router.delete('/student/:assessmentId/assignment-submit', restrictTo('student'), ctrl.deleteStudentSubmission);
+router.delete('/student/:assessmentId/submission/files/:fileId', restrictTo('student'), ctrl.deleteStudentSubmissionFile);
 router.post('/student/:assessmentId/quiz-start', restrictTo('student'), ctrl.startQuiz);
 router.post('/student/:assessmentId/quiz-submit', restrictTo('student'), ctrl.submitQuiz);
 router.get('/student/:assessmentId/quiz-review', restrictTo('student'), ctrl.getStudentQuizReview);

@@ -468,13 +468,13 @@ export const assessmentAPI = {
 
   studentDetail: (assessmentId) => api.get(`/assessments/student/${assessmentId}`),
 
-  submitAssignment: (assessmentId, data, file) => {
+  submitAssignment: (assessmentId, data, files) => {
     const form = new FormData();
     Object.entries(data || {}).forEach(([key, value]) => {
       if (value !== undefined && value !== null) form.append(key, value);
     });
-    if (file) form.append('submission', file);
-
+    const fileList = Array.isArray(files) ? files : (files ? [files] : []);
+    fileList.forEach((file) => form.append('submission_files', file));
     return api.post(`/assessments/student/${assessmentId}/assignment-submit`, form, {
       headers: { 'Content-Type': 'multipart/form-data' }
     });
@@ -482,6 +482,9 @@ export const assessmentAPI = {
 
   deleteSubmission: (assessmentId) =>
     api.delete(`/assessments/student/${assessmentId}/assignment-submit`),
+
+  deleteSubmissionFile: (assessmentId, fileId) =>
+    api.delete(`/assessments/student/${assessmentId}/submission/files/${fileId}`),
 
   startQuiz: (assessmentId) => api.post(`/assessments/student/${assessmentId}/quiz-start`),
 

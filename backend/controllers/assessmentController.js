@@ -81,6 +81,53 @@ async function getAttachments(assessmentId, legacyRow = null) {
   return [];
 }
 
+async function getSubmissionAttachments(submissionId, legacyRow = null) {
+  const attachments = [];
+  if (submissionId) {
+    const result = await query(
+      `SELECT id, original_name, file_url, mime_type, size_bytes
+       FROM assessment_submission_attachments
+       WHERE submission_id = $1
+       ORDER BY created_at`,
+      [submissionId]
+    );
+    attachments.push(...result.rows);
+  }
+  if (legacyRow?.file_url) {
+    attachments.push({
+      id: null,
+      original_name: 'Submitted file',
+      file_url: legacyRow.file_url,
+      mime_type: null,
+      size_bytes: null
+    });
+  }
+  return attachments;
+}
+
+async function insertSubmissionAttachments(client, submissionId, files, uploadedBy) {
+  for (const file of files) {
+    await client.query(
+      `INSERT INTO assessment_submission_attachments (submission_id, original_name, stored_name, file_url, mime_type, size_bytes, uploaded_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [
+        submissionId,
+        file.originalname,
+        file.filename,
+        `/uploads/submissions/${file.filename}`,
+        file.mimetype || null,
+        file.size || null,
+        uploadedBy
+      ]
+    );
+  }
+}
+
+function getUploadedSubmissionFiles(req) {
+  if (req.files && Array.isArray(req.files.submission_files)) return req.files.submission_files;
+  return [];
+}
+
 async function insertAttachments(client, assessmentId, files) {
   for (let i = 0; i < files.length; i++) {
     const file = files[i];
@@ -582,7 +629,35 @@ async function listProfessorResults(req, res, next) {
         `,
         [assessment.id, assessment.section_id]
       );
-      return res.json({ success: true, data: { assessment, rows: rows.rows } });
+      const rowsList = rows.rows;
+      const submissionIds = rowsList.filter((r) => r.submission_id).map((r) => r.submission_id);
+      let attachmentsBySubmission = {};
+
+      if (submissionIds.length > 0) {
+        const attRes = await query(
+          `SELECT id, submission_id, original_name, file_url, mime_type, size_bytes
+           FROM assessment_submission_attachments
+           WHERE submission_id = ANY($1::uuid[])
+           ORDER BY created_at`,
+          [submissionIds]
+        );
+        for (const att of attRes.rows) {
+          if (!attachmentsBySubmission[att.submission_id]) attachmentsBySubmission[att.submission_id] = [];
+          attachmentsBySubmission[att.submission_id].push(att);
+        }
+      }
+
+      const rowsWithAttachments = rowsList.map((row) => {
+        if (!row.submission_id) return { ...row, submission_attachments: [] };
+        const newAtts = attachmentsBySubmission[row.submission_id] || [];
+        const allAtts = [...newAtts];
+        if (row.file_url) {
+          allAtts.push({ id: null, original_name: 'Submitted file', file_url: row.file_url, mime_type: null, size_bytes: null });
+        }
+        return { ...row, submission_attachments: allAtts };
+      });
+
+      return res.json({ success: true, data: { assessment, rows: rowsWithAttachments } });
     }
 
     const rows = await query(
@@ -831,7 +906,11 @@ async function getStudentAssessment(req, res, next) {
         `SELECT * FROM assignment_submissions WHERE assessment_id = $1 AND student_id = $2 LIMIT 1`,
         [assessment.id, req.user.id]
       );
-      extra.submission = sub.rows[0] || null;
+      const submission = sub.rows[0] || null;
+      if (submission) {
+        submission.submission_attachments = await getSubmissionAttachments(submission.id, submission);
+      }
+      extra.submission = submission;
       extra.attachments = await getAttachments(assessment.id, assessment);
     } else {
       const questions = await query(
@@ -901,27 +980,34 @@ async function submitAssignment(req, res, next) {
       return res.status(400).json({ success: false, message: 'The assignment deadline has passed.' });
     }
 
-    const fileUrl = studentFileUrl(req);
+    const uploadedFiles = getUploadedSubmissionFiles(req);
     const status = current > closes ? 'late' : 'submitted';
 
-    const result = await query(
-      `
-      INSERT INTO assignment_submissions (assessment_id, student_id, submission_text, file_url, status, submitted_at)
-      VALUES ($1, $2, $3, $4, $5, NOW())
-      ON CONFLICT (assessment_id, student_id)
-      DO UPDATE SET submission_text = EXCLUDED.submission_text,
-                    file_url = COALESCE(EXCLUDED.file_url, assignment_submissions.file_url),
-                    status = EXCLUDED.status,
-                    submitted_at = NOW(),
-                    grade = NULL,
-                    feedback = NULL,
-                    graded_at = NULL
-      RETURNING *
-      `,
-      [assessment.id, req.user.id, req.body.submission_text || null, fileUrl, status]
-    );
+    const submission = await withTransaction(async (client) => {
+      const result = await client.query(
+        `
+        INSERT INTO assignment_submissions (assessment_id, student_id, submission_text, file_url, status, submitted_at)
+        VALUES ($1, $2, $3, NULL, $4, NOW())
+        ON CONFLICT (assessment_id, student_id)
+        DO UPDATE SET submission_text = EXCLUDED.submission_text,
+                      status = EXCLUDED.status,
+                      submitted_at = NOW(),
+                      grade = NULL,
+                      feedback = NULL,
+                      graded_at = NULL
+        RETURNING *
+        `,
+        [assessment.id, req.user.id, req.body.submission_text || null, status]
+      );
+      const sub = result.rows[0];
+      if (uploadedFiles.length > 0) {
+        await insertSubmissionAttachments(client, sub.id, uploadedFiles, req.user.id);
+      }
+      return sub;
+    });
 
-    res.json({ success: true, data: result.rows[0] });
+    const submissionAttachments = await getSubmissionAttachments(submission.id, submission);
+    res.json({ success: true, data: { ...submission, submission_attachments: submissionAttachments } });
   } catch (error) {
     next(error);
   }
@@ -1097,6 +1183,11 @@ async function deleteStudentSubmission(req, res, next) {
       return res.status(404).json({ success: false, message: 'No submission found to remove.' });
     }
 
+    const attachmentsResult = await query(
+      `SELECT stored_name FROM assessment_submission_attachments WHERE submission_id = $1`,
+      [submission.id]
+    );
+
     await query(`DELETE FROM assignment_submissions WHERE id = $1`, [submission.id]);
 
     if (submission.file_url) {
@@ -1104,8 +1195,61 @@ async function deleteStudentSubmission(req, res, next) {
         fs.unlink(path.join(__dirname, '..', submission.file_url), () => {});
       } catch { /* missing file is fine */ }
     }
+    for (const att of attachmentsResult.rows) {
+      try {
+        fs.unlink(path.join(__dirname, '..', 'uploads', 'submissions', att.stored_name), () => {});
+      } catch { /* missing file is fine */ }
+    }
 
     res.json({ success: true, message: 'Submission removed.' });
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function deleteStudentSubmissionFile(req, res, next) {
+  try {
+    const assessment = await assertEnrolledAssessment(req.user.id, req.params.assessmentId);
+    if (!assessment || assessment.assessment_type !== 'assignment') {
+      return res.status(404).json({ success: false, message: 'Assignment not found.' });
+    }
+
+    const current = nowMs();
+    const opens = new Date(assessment.opens_at).getTime();
+    const closes = new Date(assessment.closes_at).getTime();
+
+    if (current < opens) {
+      return res.status(400).json({ success: false, message: 'This assignment is not open yet.' });
+    }
+    if (current > closes && !assessment.allow_late) {
+      return res.status(400).json({ success: false, message: 'Submission cannot be edited after the deadline.' });
+    }
+
+    const result = await query(
+      `
+      SELECT a.id, a.stored_name
+      FROM assessment_submission_attachments a
+      JOIN assignment_submissions s ON s.id = a.submission_id
+      WHERE a.id = $1
+        AND s.assessment_id = $2
+        AND s.student_id = $3
+      LIMIT 1
+      `,
+      [req.params.fileId, assessment.id, req.user.id]
+    );
+
+    const attachment = result.rows[0];
+    if (!attachment) {
+      return res.status(404).json({ success: false, message: 'File not found.' });
+    }
+
+    await query(`DELETE FROM assessment_submission_attachments WHERE id = $1`, [attachment.id]);
+
+    try {
+      fs.unlink(path.join(__dirname, '..', 'uploads', 'submissions', attachment.stored_name), () => {});
+    } catch { /* missing file is fine */ }
+
+    res.json({ success: true, message: 'File removed.' });
   } catch (error) {
     next(error);
   }
@@ -1128,6 +1272,7 @@ module.exports = {
   getStudentQuizReview,
   submitAssignment,
   deleteStudentSubmission,
+  deleteStudentSubmissionFile,
   startQuiz,
   submitQuiz
 };
