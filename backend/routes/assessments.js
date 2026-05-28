@@ -101,6 +101,7 @@ router.patch('/professor/:assessmentId/submissions/:submissionId/grade', restric
 router.get('/student', restrictTo('student'), ctrl.listStudentAssessments);
 router.get('/student/:assessmentId', restrictTo('student'), ctrl.getStudentAssessment);
 router.post('/student/:assessmentId/assignment-submit', restrictTo('student'), uploadSubmission.single('submission'), ctrl.submitAssignment);
+router.delete('/student/:assessmentId/assignment-submit', restrictTo('student'), ctrl.deleteStudentSubmission);
 router.post('/student/:assessmentId/quiz-start', restrictTo('student'), ctrl.startQuiz);
 router.post('/student/:assessmentId/quiz-submit', restrictTo('student'), ctrl.submitQuiz);
 router.get('/student/:assessmentId/quiz-review', restrictTo('student'), ctrl.getStudentQuizReview);

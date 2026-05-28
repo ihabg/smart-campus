@@ -60,6 +60,7 @@ export default function StudentAssessmentsPage() {
   const [loading, setLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [removing, setRemoving] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
 
@@ -153,6 +154,25 @@ export default function StudentAssessmentsPage() {
       setError(err?.response?.data?.message || 'Could not submit assignment.');
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function removeSubmission() {
+    if (!selected) return;
+    const ok = window.confirm('Are you sure you want to remove your submission? This cannot be undone.');
+    if (!ok) return;
+    setRemoving(true);
+    setError('');
+    setMessage('');
+    try {
+      await assessmentAPI.deleteSubmission(selected.id);
+      setMessage('Submission removed successfully.');
+      await openAssessment(selected);
+      await load();
+    } catch (err) {
+      setError(err?.response?.data?.message || 'Could not remove submission.');
+    } finally {
+      setRemoving(false);
     }
   }
 
@@ -326,7 +346,9 @@ export default function StudentAssessmentsPage() {
                 setSubmissionText={setSubmissionText}
                 setSubmissionFile={setSubmissionFile}
                 submitAssignment={submitAssignment}
+                removeSubmission={removeSubmission}
                 saving={saving}
+                removing={removing}
               />
             ) : (
               <QuizPanel
@@ -417,12 +439,25 @@ function AttachmentRow({ att, idx }) {
   );
 }
 
-function AssignmentPanel({ selected, submissionText, setSubmissionText, setSubmissionFile, submitAssignment, saving }) {
+function AssignmentPanel({ selected, submissionText, setSubmissionText, setSubmissionFile, submitAssignment, removeSubmission, saving, removing }) {
   const status = statusOf(selected);
   const notOpen = status === 'Scheduled';
   const closedNoLate = status === 'Closed' && !selected.allow_late;
   const canSubmit = !notOpen && !closedNoLate;
-  const [editing, setEditing] = useState(!selected.submission && canSubmit);
+
+  // A "real" submission exists only when the DB row has at least one piece of content.
+  // An empty row (both text and file null) does not count.
+  const hasSubmission = Boolean(
+    selected.submission?.id &&
+    (selected.submission.file_url || selected.submission.submission_text)
+  );
+
+  // The time-based statusOf() never returns 'Submitted' in the detail view because
+  // the detail API does not carry submission_id on the assessment root object.
+  // Derive the correct display label locally.
+  const displayStatus = hasSubmission ? 'Submitted' : status;
+
+  const [editing, setEditing] = useState(!hasSubmission && canSubmit);
   const [fileName, setFileName] = useState('');
 
   const attachments = Array.isArray(selected.attachments) && selected.attachments.length > 0
@@ -454,8 +489,8 @@ function AssignmentPanel({ selected, submissionText, setSubmissionText, setSubmi
           <span className="assignment-panel__course">{selected.course_code} §{selected.section_number}</span>
           <h2 className="assignment-panel__title">{selected.title}</h2>
         </div>
-        <span className={`assignment-status-badge assignment-status-badge--${status.toLowerCase().replace(/\s+/g, '-')}`}>
-          {status}
+        <span className={`assignment-status-badge assignment-status-badge--${displayStatus.toLowerCase().replace(/\s+/g, '-')}`}>
+          {displayStatus}
         </span>
       </div>
 
@@ -502,49 +537,73 @@ function AssignmentPanel({ selected, submissionText, setSubmissionText, setSubmi
 
       {!notOpen && !editing && (
         <div className="submission-status-card">
-          <button
-            className="student-assess-btn student-assess-btn--primary"
-            type="button"
-            onClick={() => setEditing(true)}
-            disabled={!canSubmit}
-          >
-            {selected.submission ? 'Edit submission' : 'Add submission'}
-          </button>
+          <div className="submission-primary-actions">
+            <button
+              className="student-assess-btn student-assess-btn--primary"
+              type="button"
+              onClick={() => setEditing(true)}
+              disabled={!canSubmit}
+            >
+              {hasSubmission ? 'Edit submission' : 'Add submission'}
+            </button>
+            {hasSubmission && canSubmit && (
+              <button
+                className="student-assess-btn student-assess-btn--remove"
+                type="button"
+                onClick={removeSubmission}
+                disabled={removing}
+              >
+                {removing ? 'Removing…' : 'Remove submission'}
+              </button>
+            )}
+          </div>
 
           <h3>Submission status</h3>
           <table>
             <tbody>
               <tr>
                 <th>Submission status</th>
-                <td>{selected.submission ? 'Submitted for grading' : 'No submissions have been made yet'}</td>
+                <td>
+                  {hasSubmission
+                    ? (selected.submission.grade !== null && selected.submission.grade !== undefined
+                        ? 'Graded'
+                        : 'Submitted for grading')
+                    : 'No submission has been made yet'}
+                </td>
               </tr>
               <tr>
                 <th>Grading status</th>
                 <td>
-                  {selected.submission?.grade !== null && selected.submission?.grade !== undefined
+                  {hasSubmission && selected.submission.grade !== null && selected.submission.grade !== undefined
                     ? `Graded: ${selected.submission.grade} / ${selected.points}`
                     : 'Not graded'}
                 </td>
               </tr>
               <tr>
                 <th>Time remaining</th>
-                <td>{closedNoLate ? 'Deadline passed' : 'Open for submission'}</td>
+                <td>
+                  {notOpen
+                    ? `Opens ${dateTimeLabel(selected.opens_at)}`
+                    : closedNoLate
+                      ? 'Deadline passed'
+                      : 'Open for submission'}
+                </td>
               </tr>
               <tr>
                 <th>Last modified</th>
-                <td>{selected.submission ? dateTimeLabel(selected.submission.submitted_at) : '—'}</td>
+                <td>{hasSubmission ? dateTimeLabel(selected.submission.submitted_at) : '—'}</td>
               </tr>
               <tr>
                 <th>File submissions</th>
                 <td>
-                  {selected.submission?.file_url ? (
+                  {hasSubmission && selected.submission.file_url ? (
                     <a href={publicFileUrl(selected.submission.file_url)} target="_blank" rel="noreferrer">Open submitted file</a>
                   ) : '—'}
                 </td>
               </tr>
               <tr>
                 <th>Submission comments</th>
-                <td>{selected.submission?.feedback || 'No comments yet'}</td>
+                <td>{(hasSubmission && selected.submission.feedback) || 'No comments yet'}</td>
               </tr>
             </tbody>
           </table>

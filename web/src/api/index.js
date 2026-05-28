@@ -480,6 +480,9 @@ export const assessmentAPI = {
     });
   },
 
+  deleteSubmission: (assessmentId) =>
+    api.delete(`/assessments/student/${assessmentId}/assignment-submit`),
+
   startQuiz: (assessmentId) => api.post(`/assessments/student/${assessmentId}/quiz-start`),
 
   submitQuiz: (assessmentId, answers) =>

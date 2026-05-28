@@ -522,6 +522,25 @@
   border: 1px solid #d7e0f2;
 }
 
+.student-assess-btn--remove {
+  background: #fff1f1;
+  color: #b42318;
+  border: 1px solid #ffc7c7;
+}
+
+.student-assess-btn--remove:hover:not(:disabled) {
+  background: #b42318;
+  color: #fff;
+  border-color: #b42318;
+}
+
+.submission-primary-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+
 @media (max-width: 720px) {
   .submission-status-card th,
   .submission-status-card td {

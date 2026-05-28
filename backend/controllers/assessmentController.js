@@ -1,3 +1,5 @@
+const path = require('path');
+const fs = require('fs');
 const { query, withTransaction } = require('../config/db');
 
 function asBool(value, fallback = true) {
@@ -1068,6 +1070,47 @@ async function deleteProfessorAttachment(req, res, next) {
   }
 }
 
+async function deleteStudentSubmission(req, res, next) {
+  try {
+    const assessment = await assertEnrolledAssessment(req.user.id, req.params.assessmentId);
+    if (!assessment || assessment.assessment_type !== 'assignment') {
+      return res.status(404).json({ success: false, message: 'Assignment not found.' });
+    }
+
+    const current = nowMs();
+    const opens = new Date(assessment.opens_at).getTime();
+    const closes = new Date(assessment.closes_at).getTime();
+
+    if (current < opens) {
+      return res.status(400).json({ success: false, message: 'This assignment is not open yet.' });
+    }
+    if (current > closes && !assessment.allow_late) {
+      return res.status(400).json({ success: false, message: 'Submission cannot be removed after the deadline.' });
+    }
+
+    const subResult = await query(
+      `SELECT * FROM assignment_submissions WHERE assessment_id = $1 AND student_id = $2 LIMIT 1`,
+      [assessment.id, req.user.id]
+    );
+    const submission = subResult.rows[0];
+    if (!submission) {
+      return res.status(404).json({ success: false, message: 'No submission found to remove.' });
+    }
+
+    await query(`DELETE FROM assignment_submissions WHERE id = $1`, [submission.id]);
+
+    if (submission.file_url) {
+      try {
+        fs.unlink(path.join(__dirname, '..', submission.file_url), () => {});
+      } catch { /* missing file is fine */ }
+    }
+
+    res.json({ success: true, message: 'Submission removed.' });
+  } catch (error) {
+    next(error);
+  }
+}
+
 module.exports = {
   listProfessorSections,
   listProfessorAssessments,
@@ -1084,6 +1127,7 @@ module.exports = {
   getStudentAssessment,
   getStudentQuizReview,
   submitAssignment,
+  deleteStudentSubmission,
   startQuiz,
   submitQuiz
 };
