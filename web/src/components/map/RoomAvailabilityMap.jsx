@@ -9,6 +9,7 @@ const STATUS_STYLE = {
   lecture_conflict:  { fill: 'rgba(239,68,68,0.55)',  stroke: '#dc2626', strokeWidth: 2 },
   event_conflict:    { fill: 'rgba(168,85,247,0.55)', stroke: '#9333ea', strokeWidth: 2 },
   not_bookable:      { fill: 'rgba(209,213,219,0.25)',stroke: '#9ca3af', strokeWidth: 1 },
+  selected:          { fill: 'rgba(37,99,235,0.55)',  stroke: '#2563eb', strokeWidth: 2.5 },
 };
 const DEFAULT_STYLE  = { fill: 'rgba(148,163,184,0.15)', stroke: '#94a3b8', strokeWidth: 1 };
 const SELECTED_STYLE = { fill: 'rgba(37,99,235,0.55)',   stroke: '#2563eb', strokeWidth: 2.5 };

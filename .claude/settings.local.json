@@ -78,7 +78,10 @@
       "Bash(xargs wc -l)",
       "Bash(xargs grep -l \"assignment_submissions\\\\|schema\\\\|migration\")",
       "Bash(npm install *)",
-      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\Kebab\\\\Desktop\\\\smartwhek\\\\backend\\\\database\\\\migrations\" -Name)"
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\Kebab\\\\Desktop\\\\smartwhek\\\\backend\\\\database\\\\migrations\" -Name)",
+      "Bash(Get-Content \"c:\\\\Users\\\\Kebab\\\\Desktop\\\\smartwhek\\\\web\\\\src\\\\pages\\\\admin\\\\AdminEventsTab.css\")",
+      "Bash(Measure-Object -Line)",
+      "Bash(Select-Object -ExpandProperty Lines)"
     ]
   }
 }

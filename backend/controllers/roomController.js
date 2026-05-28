@@ -615,14 +615,15 @@ async function getRoomLiveStatus(req, res, next) {
 
     // Check for an active event booking happening right now
     const eventRes = await query(
-      `SELECT id, title, description,
-              start_time::text, end_time::text
-       FROM event_bookings
-       WHERE room_id    = $1
-         AND status     = 'active'
-         AND event_date = CURRENT_DATE
-         AND start_time <= CURRENT_TIME::time
-         AND end_time    > CURRENT_TIME::time
+      `SELECT eb.id, eb.title, eb.description,
+              eb.start_time::text, eb.end_time::text
+       FROM event_booking_rooms ebr
+       JOIN event_bookings eb ON eb.id = ebr.event_booking_id
+       WHERE ebr.room_id    = $1
+         AND eb.status     = 'active'
+         AND eb.event_date = CURRENT_DATE
+         AND eb.start_time <= CURRENT_TIME::time
+         AND eb.end_time    > CURRENT_TIME::time
        LIMIT 1`,
       [roomId]
     );

@@ -31,7 +31,26 @@ async function listEvents(req, res, next) {
         r.name                AS room_name,
         r.type                AS room_type,
         r.capacity            AS room_capacity,
-        u.first_name || ' ' || u.last_name AS created_by_name
+        u.first_name || ' ' || u.last_name AS created_by_name,
+        COALESCE(
+          (
+            SELECT json_agg(
+              json_build_object(
+                'id',            ebr_r.id,
+                'room_number',   ebr_r.room_number,
+                'name',          ebr_r.name,
+                'floor_name',    ebr_f.floor_label,
+                'building_name', ebr_b.name
+              ) ORDER BY ebr_r.room_number
+            )
+            FROM event_booking_rooms ebr
+            JOIN rooms     ebr_r ON ebr_r.id = ebr.room_id
+            JOIN floors    ebr_f ON ebr_f.id = ebr_r.floor_id
+            JOIN buildings ebr_b ON ebr_b.id = ebr_f.building_id
+            WHERE ebr.event_booking_id = eb.id
+          ),
+          '[]'::json
+        ) AS rooms
       FROM event_bookings eb
       JOIN rooms r ON r.id = eb.room_id
       JOIN users u ON u.id = eb.created_by
@@ -70,12 +89,20 @@ async function listEvents(req, res, next) {
   }
 }
 
-// ─── Check lecture conflicts ───────────────────────────────────
+// ─── Check lecture conflicts (supports multiple rooms) ─────────
 async function getConflicts(req, res, next) {
   try {
-    const { room_id, date, start_time, end_time } = req.query;
+    const { date, start_time, end_time } = req.query;
 
-    if (!room_id)    return res.status(400).json({ success: false, message: 'room_id is required.' });
+    // Accept room_ids (comma-separated) or single room_id for backward compat
+    const rawRoomIds = req.query.room_ids
+      ? String(req.query.room_ids).split(',').map(s => s.trim()).filter(Boolean)
+      : req.query.room_id
+        ? [req.query.room_id]
+        : [];
+
+    if (!rawRoomIds.length)
+      return res.status(400).json({ success: false, message: 'room_id or room_ids is required.' });
     if (!date)       return res.status(400).json({ success: false, message: 'date is required.' });
     if (!start_time) return res.status(400).json({ success: false, message: 'start_time is required.' });
     if (!end_time)   return res.status(400).json({ success: false, message: 'end_time is required.' });
@@ -86,35 +113,42 @@ async function getConflicts(req, res, next) {
     if (isNaN(parsedDate.getTime()))
       return res.status(400).json({ success: false, message: 'Invalid date format.' });
 
+    // Validate all rooms exist and are bookable
     const roomCheck = await query(
-      `SELECT r.id, r.type::text AS type,
+      `SELECT r.id, r.room_number, r.type::text AS type,
               COALESCE(rt.is_bookable_for_events, false) AS is_bookable_for_events
        FROM rooms r
        LEFT JOIN room_types rt ON rt.value = r.type::text AND rt.is_active = true
-       WHERE r.id = $1`,
-      [room_id]
+       WHERE r.id = ANY($1::uuid[])`,
+      [rawRoomIds]
     );
-    if (!roomCheck.rows.length)
-      return res.status(404).json({ success: false, message: 'Room not found.' });
-    if (!roomCheck.rows[0].is_bookable_for_events)
-      return res.status(400).json({ success: false, message: 'This room type cannot be booked for events.' });
+    if (roomCheck.rows.length !== rawRoomIds.length)
+      return res.status(404).json({ success: false, message: 'One or more rooms not found.' });
+    const notBookable = roomCheck.rows.filter(r => !r.is_bookable_for_events);
+    if (notBookable.length) {
+      return res.status(400).json({
+        success: false,
+        message: `Room ${notBookable[0].room_number} cannot be booked for events.`,
+      });
+    }
 
+    // Query all conflicts for all rooms at once
     const result = await query(
       `
       SELECT
-        sm.id                                                      AS section_meeting_id,
-        s.id                                                       AS section_id,
-        c.code                                                     AS course_code,
-        c.name                                                     AS course_name,
+        sm.id                                                       AS section_meeting_id,
+        s.id                                                        AS section_id,
+        c.code                                                      AS course_code,
+        c.name                                                      AS course_name,
         s.section_number,
         sm.day_of_week,
-        sm.start_time::text                                        AS start_time,
-        sm.end_time::text                                          AS end_time,
-        r.id                                                       AS original_room_id,
-        r.room_number                                              AS original_room_number,
-        r.name                                                     AS original_room_name,
+        sm.start_time::text                                         AS start_time,
+        sm.end_time::text                                           AS end_time,
+        r.id                                                        AS original_room_id,
+        r.room_number                                               AS original_room_number,
+        r.name                                                      AS original_room_name,
         COALESCE(u.first_name || ' ' || u.last_name, 'Unassigned') AS instructor_name,
-        COUNT(e.student_id)::int                                   AS enrolled_count
+        COUNT(e.student_id)::int                                    AS enrolled_count
       FROM section_meetings sm
       JOIN sections s         ON s.id  = sm.section_id
       JOIN courses c          ON c.id  = s.course_id
@@ -122,7 +156,7 @@ async function getConflicts(req, res, next) {
       LEFT JOIN instructors inst ON inst.id = s.instructor_id
       LEFT JOIN users u       ON u.id  = inst.user_id
       LEFT JOIN enrollments e ON e.section_id = s.id AND e.status = 'enrolled'
-      WHERE sm.room_id    = $1
+      WHERE sm.room_id    = ANY($1::uuid[])
         AND s.is_active   = TRUE
         AND sm.day_of_week = EXTRACT(DOW FROM $2::date)::int
         AND sm.start_time <  $3::time
@@ -133,20 +167,37 @@ async function getConflicts(req, res, next) {
         c.code, c.name,
         r.id, r.room_number, r.name,
         u.first_name, u.last_name
-      ORDER BY sm.start_time
+      ORDER BY r.room_number, sm.start_time
       `,
-      [room_id, date, end_time, start_time]
+      [rawRoomIds, date, end_time, start_time]
     );
 
-    res.json({
-      success: true,
-      data: {
-        conflicts:     result.rows,
-        has_conflicts: result.rows.length > 0,
-        event_date:    date,
-        weekday:       parsedDate.toLocaleDateString('en-US', { weekday: 'long' }),
-      },
-    });
+    // Group conflicts by room
+    const roomMap = {};
+    for (const row of roomCheck.rows) {
+      roomMap[row.id] = { room_id: row.id, room_number: row.room_number, conflicts: [] };
+    }
+    for (const row of result.rows) {
+      if (roomMap[row.original_room_id]) {
+        roomMap[row.original_room_id].conflicts.push(row);
+      }
+    }
+    const rooms = rawRoomIds.map(id => roomMap[id]).filter(Boolean);
+    const allConflicts = result.rows;
+
+    const response = {
+      rooms,
+      has_conflicts:   allConflicts.length > 0,
+      total_conflicts: allConflicts.length,
+      event_date:      date,
+      weekday:         parsedDate.toLocaleDateString('en-US', { weekday: 'long' }),
+    };
+    // Backward compat: single-room callers get flat conflicts array too
+    if (rawRoomIds.length === 1) {
+      response.conflicts = allConflicts;
+    }
+
+    res.json({ success: true, data: response });
   } catch (error) {
     next(error);
   }
@@ -155,7 +206,14 @@ async function getConflicts(req, res, next) {
 // ─── Get available replacement rooms ──────────────────────────
 async function getAvailableRooms(req, res, next) {
   try {
-    const { date, start_time, end_time, exclude_room_id } = req.query;
+    const { date, start_time, end_time } = req.query;
+
+    // Accept exclude_room_ids (comma-separated) or single exclude_room_id
+    const excludeIds = req.query.exclude_room_ids
+      ? String(req.query.exclude_room_ids).split(',').map(s => s.trim()).filter(Boolean)
+      : req.query.exclude_room_id
+        ? [req.query.exclude_room_id]
+        : [];
 
     if (!date)       return res.status(400).json({ success: false, message: 'date is required.' });
     if (!start_time) return res.status(400).json({ success: false, message: 'start_time is required.' });
@@ -169,9 +227,9 @@ async function getAvailableRooms(req, res, next) {
 
     const params = [date, end_time, start_time];
     let excludeClause = '';
-    if (exclude_room_id) {
-      params.push(exclude_room_id);
-      excludeClause = `AND r.id != $${params.length}`;
+    if (excludeIds.length) {
+      params.push(excludeIds);
+      excludeClause = `AND r.id != ALL($${params.length}::uuid[])`;
     }
 
     const result = await query(
@@ -208,8 +266,9 @@ async function getAvailableRooms(req, res, next) {
         )
         AND NOT EXISTS (
           SELECT 1
-          FROM event_bookings eb
-          WHERE eb.room_id    = r.id
+          FROM event_booking_rooms ebr
+          JOIN event_bookings eb ON eb.id = ebr.event_booking_id
+          WHERE ebr.room_id    = r.id
             AND eb.status     = 'active'
             AND eb.event_date = $1::date
             AND eb.start_time < $2::time
@@ -235,18 +294,24 @@ async function createEvent(req, res, next) {
     const {
       title,
       description,
-      room_id,
       event_date,
       start_time,
       end_time,
       relocations = [],
     } = req.body;
 
+    // Accept room_ids (array) or single room_id for backward compat
+    const rawRoomIds = Array.isArray(req.body.room_ids) && req.body.room_ids.length
+      ? req.body.room_ids
+      : req.body.room_id
+        ? [req.body.room_id]
+        : [];
+
     // ── Basic validation ──────────────────────────────────────
     if (!title || !String(title).trim())
       return res.status(400).json({ success: false, message: 'title is required.' });
-    if (!room_id)
-      return res.status(400).json({ success: false, message: 'room_id is required.' });
+    if (!rawRoomIds.length)
+      return res.status(400).json({ success: false, message: 'At least one room is required.' });
     if (!event_date)
       return res.status(400).json({ success: false, message: 'event_date is required.' });
     if (!start_time)
@@ -260,38 +325,52 @@ async function createEvent(req, res, next) {
     if (isNaN(parsedDate.getTime()))
       return res.status(400).json({ success: false, message: 'Invalid event_date.' });
 
-    // ── Verify room exists and is event-bookable ──────────────
+    // Deduplicate and check for duplicates in request
+    const uniqueRoomIds = [...new Set(rawRoomIds)];
+    if (uniqueRoomIds.length !== rawRoomIds.length)
+      return res.status(400).json({ success: false, message: 'Duplicate rooms in selection.' });
+
+    // ── Verify all rooms exist and are event-bookable ─────────
     const roomCheck = await query(
       `SELECT r.id, r.type::text AS type, r.room_number,
               COALESCE(rt.is_bookable_for_events, false) AS is_bookable_for_events
        FROM rooms r
        LEFT JOIN room_types rt ON rt.value = r.type::text AND rt.is_active = true
-       WHERE r.id = $1`,
-      [room_id]
+       WHERE r.id = ANY($1::uuid[])`,
+      [uniqueRoomIds]
     );
-    if (!roomCheck.rows.length)
-      return res.status(404).json({ success: false, message: 'Room not found.' });
-    if (!roomCheck.rows[0].is_bookable_for_events)
-      return res.status(400).json({ success: false, message: 'This room type cannot be booked for events.' });
-
-    // ── Check for duplicate event booking ────────────────────
-    const dupCheck = await query(
-      `SELECT id FROM event_bookings
-       WHERE room_id    = $1
-         AND event_date = $2::date
-         AND status     = 'active'
-         AND start_time < $3::time
-         AND end_time   > $4::time`,
-      [room_id, event_date, end_time, start_time]
-    );
-    if (dupCheck.rows.length) {
-      return res.status(409).json({
+    if (roomCheck.rows.length !== uniqueRoomIds.length)
+      return res.status(404).json({ success: false, message: 'One or more rooms not found.' });
+    const notBookable = roomCheck.rows.filter(r => !r.is_bookable_for_events);
+    if (notBookable.length) {
+      return res.status(400).json({
         success: false,
-        message: 'This room is already booked for an overlapping event at that date and time.',
+        message: `Room ${notBookable[0].room_number} cannot be booked for events.`,
       });
     }
 
-    // ── Re-calculate conflicts server-side ────────────────────
+    // ── Check for overlapping active event booking per room ───
+    const dupCheck = await query(
+      `SELECT ebr.room_id
+       FROM event_booking_rooms ebr
+       JOIN event_bookings eb ON eb.id = ebr.event_booking_id
+       WHERE ebr.room_id   = ANY($1::uuid[])
+         AND eb.event_date = $2::date
+         AND eb.status     = 'active'
+         AND eb.start_time < $3::time
+         AND eb.end_time   > $4::time
+       LIMIT 1`,
+      [uniqueRoomIds, event_date, end_time, start_time]
+    );
+    if (dupCheck.rows.length) {
+      const conflRoom = roomCheck.rows.find(r => r.id === dupCheck.rows[0].room_id);
+      return res.status(409).json({
+        success: false,
+        message: `Room ${conflRoom?.room_number || ''} is already booked for an overlapping event at that date and time.`,
+      });
+    }
+
+    // ── Re-calculate lecture conflicts server-side ────────────
     const conflictsResult = await query(
       `
       SELECT
@@ -310,13 +389,13 @@ async function createEvent(req, res, next) {
       JOIN sections s       ON s.id  = sm.section_id
       JOIN courses c        ON c.id  = s.course_id
       LEFT JOIN rooms r     ON r.id  = sm.room_id
-      WHERE sm.room_id    = $1
+      WHERE sm.room_id    = ANY($1::uuid[])
         AND s.is_active   = TRUE
         AND sm.day_of_week = EXTRACT(DOW FROM $2::date)::int
         AND sm.start_time <  $3::time
         AND sm.end_time   >  $4::time
       `,
-      [room_id, event_date, end_time, start_time]
+      [uniqueRoomIds, event_date, end_time, start_time]
     );
     const conflicts = conflictsResult.rows;
 
@@ -341,10 +420,11 @@ async function createEvent(req, res, next) {
             message: `Missing replacement room for ${conflict.course_code} Section ${conflict.section_number}.`,
           });
         }
-        if (rel.replacement_room_id === room_id) {
+        // Replacement must not be any of the selected event rooms
+        if (uniqueRoomIds.includes(rel.replacement_room_id)) {
           return res.status(400).json({
             success: false,
-            message: `Replacement room for ${conflict.course_code} cannot be the same as the event room.`,
+            message: `Replacement room for ${conflict.course_code} cannot be one of the event rooms.`,
           });
         }
       }
@@ -357,20 +437,17 @@ async function createEvent(req, res, next) {
           'SELECT id FROM rooms WHERE id = $1 AND is_active = TRUE', [repId]
         );
         if (!repExists.rows.length) {
-          return res.status(400).json({
-            success: false,
-            message: `Replacement room not found or inactive.`,
-          });
+          return res.status(400).json({ success: false, message: 'Replacement room not found or inactive.' });
         }
 
         const repLecConflict = await query(
           `SELECT 1 FROM section_meetings sm
            JOIN sections s ON s.id = sm.section_id
-           WHERE sm.room_id    = $1
-             AND s.is_active   = TRUE
+           WHERE sm.room_id     = $1
+             AND s.is_active    = TRUE
              AND sm.day_of_week = EXTRACT(DOW FROM $2::date)::int
-             AND sm.start_time <  $3::time
-             AND sm.end_time   >  $4::time
+             AND sm.start_time  < $3::time
+             AND sm.end_time    > $4::time
            LIMIT 1`,
           [repId, event_date, end_time, start_time]
         );
@@ -382,12 +459,14 @@ async function createEvent(req, res, next) {
         }
 
         const repEvtConflict = await query(
-          `SELECT 1 FROM event_bookings
-           WHERE room_id    = $1
-             AND status     = 'active'
-             AND event_date = $2::date
-             AND start_time < $3::time
-             AND end_time   > $4::time
+          `SELECT 1
+           FROM event_booking_rooms ebr
+           JOIN event_bookings eb ON eb.id = ebr.event_booking_id
+           WHERE ebr.room_id    = $1
+             AND eb.status     = 'active'
+             AND eb.event_date = $2::date
+             AND eb.start_time < $3::time
+             AND eb.end_time   > $4::time
            LIMIT 1`,
           [repId, event_date, end_time, start_time]
         );
@@ -400,7 +479,7 @@ async function createEvent(req, res, next) {
       }
     }
 
-    // ── Transaction: event + relocations + notifications ──────
+    // ── Transaction: event + rooms + relocations + notifications ──────
     const cleanTitle = String(title).trim();
     const adminId    = req.user.id;
 
@@ -409,7 +488,7 @@ async function createEvent(req, res, next) {
     });
 
     const txResult = await withTransaction(async (client) => {
-      // 1. Insert event booking
+      // 1. Insert event booking (first room stored in room_id for backward compat)
       const eventRes = await client.query(
         `INSERT INTO event_bookings
            (title, description, room_id, event_date, start_time, end_time, created_by, status)
@@ -418,7 +497,7 @@ async function createEvent(req, res, next) {
         [
           cleanTitle,
           description ? String(description).trim() || null : null,
-          room_id,
+          uniqueRoomIds[0],
           event_date,
           start_time,
           end_time,
@@ -426,6 +505,16 @@ async function createEvent(req, res, next) {
         ]
       );
       const eventId = eventRes.rows[0].id;
+
+      // 2. Insert event_booking_rooms for all selected rooms
+      for (const roomId of uniqueRoomIds) {
+        await client.query(
+          `INSERT INTO event_booking_rooms (event_booking_id, room_id)
+           VALUES ($1, $2)
+           ON CONFLICT (event_booking_id, room_id) DO NOTHING`,
+          [eventId, roomId]
+        );
+      }
 
       let relocationsCreated = 0;
       let notificationsSent  = 0;
@@ -436,10 +525,10 @@ async function createEvent(req, res, next) {
         );
 
         for (const conflict of conflicts) {
-          const rel     = relocationMap[conflict.section_meeting_id];
-          const repId   = rel.replacement_room_id;
+          const rel   = relocationMap[conflict.section_meeting_id];
+          const repId = rel.replacement_room_id;
 
-          // 2. Insert section_meeting_changes (single-day room relocation)
+          // 3. Insert section_meeting_changes
           await client.query(
             `INSERT INTO section_meeting_changes (
                section_id, section_meeting_id,
@@ -464,7 +553,6 @@ async function createEvent(req, res, next) {
           );
           relocationsCreated++;
 
-          // Fetch replacement room label for notification bodies
           const repRoomRes = await client.query(
             'SELECT room_number, name FROM rooms WHERE id = $1', [repId]
           );
@@ -481,7 +569,7 @@ async function createEvent(req, res, next) {
             : conflict.course_code;
           const timeStr = `${fmtTime(conflict.start_time)} to ${fmtTime(conflict.end_time)}`;
 
-          // 3. Notify enrolled students
+          // 4. Notify enrolled students
           const studentBody =
             `Your class ${courseStr} on ${dateLabel} from ${timeStr} ` +
             `has been moved from Room ${oldLabel} to Room ${repLabel} ` +
@@ -505,7 +593,7 @@ async function createEvent(req, res, next) {
           );
           notificationsSent++;
 
-          // 4. Notify professor (if instructor has a linked user account)
+          // 5. Notify professor
           const profRes = await client.query(
             `SELECT i.user_id
              FROM sections s
@@ -548,6 +636,7 @@ async function createEvent(req, res, next) {
     });
 
     const ev = txResult.event;
+    const firstRoom = roomCheck.rows.find(r => r.id === uniqueRoomIds[0]);
     await logActivity({
       req,
       action:      'event.create',
@@ -557,8 +646,9 @@ async function createEvent(req, res, next) {
       description: `Created event booking: ${ev.title} on ${ev.event_date}`,
       metadata: {
         title:               ev.title,
-        room_id:             ev.room_id,
-        room_number:         roomCheck.rows[0].room_number,
+        room_ids:            uniqueRoomIds,
+        room_id:             uniqueRoomIds[0],
+        room_number:         firstRoom?.room_number,
         event_date:          ev.event_date,
         start_time:          ev.start_time,
         end_time:            ev.end_time,
@@ -579,7 +669,6 @@ async function cancelEvent(req, res, next) {
     const { id } = req.params;
     const adminId = req.user.id;
 
-    // ── Fetch event ───────────────────────────────────────────
     const eventRes = await query(
       `SELECT eb.*,
               r.room_number, r.name AS room_name
@@ -601,7 +690,6 @@ async function cancelEvent(req, res, next) {
       });
     }
 
-    // ── Block cancellation of finished events ─────────────────
     const finishedCheck = await query(
       `SELECT 1 FROM event_bookings
        WHERE id = $1
@@ -616,7 +704,6 @@ async function cancelEvent(req, res, next) {
       });
     }
 
-    // ── Fetch active relocations linked to this event ─────────
     const relocRes = await query(
       `SELECT
          smc.id,
@@ -644,9 +731,7 @@ async function cancelEvent(req, res, next) {
       weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
     });
 
-    // ── Transaction ───────────────────────────────────────────
     const txResult = await withTransaction(async (client) => {
-      // 1. Mark event cancelled
       const updatedEvent = await client.query(
         `UPDATE event_bookings
          SET status = 'cancelled', updated_at = NOW()
@@ -655,7 +740,6 @@ async function cancelEvent(req, res, next) {
         [id]
       );
 
-      // 2. Deactivate all relocation rows for this event
       await client.query(
         `UPDATE section_meeting_changes
          SET is_active = FALSE
@@ -665,7 +749,6 @@ async function cancelEvent(req, res, next) {
 
       let notificationsSent = 0;
 
-      // 3. Notify students + professor for each deactivated relocation
       for (const rel of relocations) {
         const oldRoomLabel = rel.old_room_name
           ? `${rel.old_room_number} — ${rel.old_room_name}`
@@ -676,7 +759,6 @@ async function cancelEvent(req, res, next) {
           : rel.course_code;
         const timeStr = `${fmtTime(rel.start_time)} to ${fmtTime(rel.end_time)}`;
 
-        // Student notification
         const studentBody =
           `Your class ${courseStr} on ${dateLabel} from ${timeStr} ` +
           `has returned to Room ${oldRoomLabel} because event "${event.title}" was cancelled.`;
@@ -699,7 +781,6 @@ async function cancelEvent(req, res, next) {
         );
         notificationsSent++;
 
-        // Professor notification
         const profRes = await client.query(
           `SELECT i.user_id
            FROM sections s
@@ -802,8 +883,10 @@ async function getRoomStates(req, res, next) {
       ) lec ON TRUE
       LEFT JOIN LATERAL (
         SELECT EXISTS (
-          SELECT 1 FROM event_bookings eb
-          WHERE eb.room_id    = r.id
+          SELECT 1
+          FROM event_booking_rooms ebr
+          JOIN event_bookings eb ON eb.id = ebr.event_booking_id
+          WHERE ebr.room_id    = r.id
             AND eb.status     = 'active'
             AND eb.event_date = $2::date
             AND eb.start_time < $3::time
