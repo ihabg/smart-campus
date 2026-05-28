@@ -604,11 +604,23 @@ async function saveGradesBulk(req, res, next) {
       });
     }
 
+    const GRADE_LIMITS = { midterm: 30, assignments: 20, final: 50 };
+
     for (const g of list) {
-      const total =
-  (Number(g.midterm) || 0) +
-  (Number(g.assignments) || 0) +
-  (Number(g.final) || 0);
+      const mid = Number(g.midterm) || 0;
+      const ass = Number(g.assignments) || 0;
+      const fin = Number(g.final) || 0;
+
+      if (mid > GRADE_LIMITS.midterm)
+        return res.status(400).json({ success: false, message: `Midterm cannot exceed ${GRADE_LIMITS.midterm}` });
+      if (ass > GRADE_LIMITS.assignments)
+        return res.status(400).json({ success: false, message: `Assignments cannot exceed ${GRADE_LIMITS.assignments}` });
+      if (fin > GRADE_LIMITS.final)
+        return res.status(400).json({ success: false, message: `Final cannot exceed ${GRADE_LIMITS.final}` });
+
+      const total = mid + ass + fin;
+      if (total > 100)
+        return res.status(400).json({ success: false, message: 'Total cannot exceed 100' });
 
       const lg = letterGrade(total);
 
@@ -2836,21 +2848,29 @@ async function importGrades(req, res, next) {
       return cell.value;
     }
 
-    // Helper: parse a grade cell — empty → 0, non-numeric → error
-    function parseGradeCell(row, colName) {
+    // Helper: parse a grade cell — empty → 0, non-numeric/out-of-range → error
+    function parseGradeCell(row, colName, max) {
       const raw = cellVal(row, colName);
       if (raw === null || raw === undefined || String(raw).trim() === '') return { value: 0, error: null };
       const num = parseFloat(raw);
-      if (isNaN(num)) {
-        const label = colName.charAt(0).toUpperCase() + colName.slice(1);
-        return { value: null, error: `${label} is not a number ("${raw}")` };
-      }
-      if (num < 0) {
-        const label = colName.charAt(0).toUpperCase() + colName.slice(1);
-        return { value: null, error: `${label} cannot be negative` };
-      }
+      const label = colName.charAt(0).toUpperCase() + colName.slice(1);
+      if (isNaN(num)) return { value: null, error: `${label} is not a number ("${raw}")` };
+      if (num < 0)    return { value: null, error: `${label} cannot be negative` };
+      if (max !== undefined && num > max) return { value: null, error: `${label} cannot exceed ${max}` };
       return { value: num, error: null };
     }
+
+    // Pre-scan: count Student ID occurrences to detect duplicates, and collect all IDs seen in file
+    const idCounts = {};
+    ws.eachRow((row, rowNum) => {
+      if (rowNum <= headerRowNum) return;
+      const rawId = cellVal(row, 'student id');
+      if (rawId === null || rawId === undefined || String(rawId).trim() === '') return;
+      const sid = String(rawId).trim();
+      idCounts[sid] = (idCounts[sid] || 0) + 1;
+    });
+    const duplicateIds = new Set(Object.keys(idCounts).filter((sid) => idCounts[sid] > 1));
+    const studentIdsInFile = new Set(Object.keys(idCounts));
 
     // Parse data rows
     const rows = [];
@@ -2864,6 +2884,25 @@ async function importGrades(req, res, next) {
 
       totalRows++;
       const studentIdStr = String(rawId).trim();
+
+      // Duplicate check — mark ALL occurrences of duplicated IDs as invalid
+      if (duplicateIds.has(studentIdStr)) {
+        const enr = enrolledMap[studentIdStr];
+        const curMid = enr ? parseFloat(enr.cur_midterm) : null;
+        const curAss = enr ? parseFloat(enr.cur_assignments) : null;
+        const curFin = enr ? parseFloat(enr.cur_final) : null;
+        rows.push({
+          student_id: studentIdStr,
+          student_name: enr?.student_name ?? null,
+          email: enr?.email ?? null,
+          status: 'invalid',
+          current: enr ? { midterm: curMid, assignments: curAss, final: curFin, total: curMid + curAss + curFin, letter_grade: enr.cur_letter_grade } : null,
+          imported: null,
+          errors: ['Duplicate Student ID in uploaded file']
+        });
+        return;
+      }
+
       const enrolled = enrolledMap[studentIdStr];
 
       if (!enrolled) {
@@ -2879,9 +2918,9 @@ async function importGrades(req, res, next) {
         return;
       }
 
-      const mp = parseGradeCell(row, 'midterm');
-      const ap = parseGradeCell(row, 'assignments');
-      const fp = parseGradeCell(row, 'final');
+      const mp = parseGradeCell(row, 'midterm', 30);
+      const ap = parseGradeCell(row, 'assignments', 20);
+      const fp = parseGradeCell(row, 'final', 50);
       const errors = [mp.error, ap.error, fp.error].filter(Boolean);
 
       const curMid = parseFloat(enrolled.cur_midterm);
@@ -2906,8 +2945,21 @@ async function importGrades(req, res, next) {
       const impAss = ap.value;
       const impFin = fp.value;
       const impTot = impMid + impAss + impFin;
-      const impLg  = letterGrade(impTot);
 
+      if (impTot > 100) {
+        rows.push({
+          student_id: studentIdStr,
+          student_name: enrolled.student_name,
+          email: enrolled.email,
+          status: 'invalid',
+          current: { midterm: curMid, assignments: curAss, final: curFin, total: curTot, letter_grade: enrolled.cur_letter_grade },
+          imported: null,
+          errors: ['Total cannot exceed 100']
+        });
+        return;
+      }
+
+      const impLg  = letterGrade(impTot);
       const changed = impMid !== curMid || impAss !== curAss || impFin !== curFin;
 
       rows.push({
@@ -2921,20 +2973,27 @@ async function importGrades(req, res, next) {
       });
     });
 
+    // Detect enrolled students not present in the file at all
+    const missingFromFile = enrolledRes.rows
+      .filter((e) => !studentIdsInFile.has(String(e.student_number)))
+      .map((e) => ({ student_id: String(e.student_number), student_name: e.student_name, email: e.email }));
+
     const changedRows   = rows.filter((r) => r.status === 'changed');
     const summary = {
-      total_rows:   totalRows,
-      matched:      rows.filter((r) => r.status === 'changed' || r.status === 'unchanged').length,
-      changed:      changedRows.length,
-      unchanged:    rows.filter((r) => r.status === 'unchanged').length,
-      invalid:      rows.filter((r) => r.status === 'invalid').length,
-      not_enrolled: rows.filter((r) => r.status === 'not_enrolled').length
+      total_rows:             totalRows,
+      matched:                rows.filter((r) => r.status === 'changed' || r.status === 'unchanged').length,
+      changed:                changedRows.length,
+      unchanged:              rows.filter((r) => r.status === 'unchanged').length,
+      invalid:                rows.filter((r) => r.status === 'invalid').length,
+      not_enrolled:           rows.filter((r) => r.status === 'not_enrolled').length,
+      missing_from_file_count: missingFromFile.length
     };
 
     const responseData = {
       section: { id: sectionId, code: sectionMeta.course_code, name: sectionMeta.course_name, section_number: sectionMeta.section_number },
       summary,
-      rows
+      rows,
+      missing_from_file: missingFromFile
     };
 
     // Preview only
@@ -2978,11 +3037,12 @@ async function importGrades(req, res, next) {
       entityLabel: `${sectionMeta.course_code} §${sectionMeta.section_number}`,
       description: `Imported grades for section ${sectionMeta.course_code} §${sectionMeta.section_number}`,
       metadata: {
-        total_rows:       totalRows,
-        updated_count:    changedRows.length,
-        invalid_count:    summary.invalid,
-        not_enrolled_count: summary.not_enrolled,
-        source:           'excel'
+        total_rows:              totalRows,
+        updated_count:           changedRows.length,
+        invalid_count:           summary.invalid,
+        not_enrolled_count:      summary.not_enrolled,
+        missing_from_file_count: missingFromFile.length,
+        source:                  'excel'
       }
     });
 

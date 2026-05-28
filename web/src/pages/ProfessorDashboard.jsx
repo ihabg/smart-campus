@@ -232,6 +232,7 @@ export default function ProfessorDashboard() {
   const [importPreview, setImportPreview] = useState(null);
   const [importLoading, setImportLoading] = useState(false);
   const [importConfirming, setImportConfirming] = useState(false);
+  const [missingExpanded, setMissingExpanded] = useState(false);
 
   const [roomOptions, setRoomOptions] = useState([]);
   const [changeModal, setChangeModal] = useState(null);
@@ -764,6 +765,7 @@ export default function ProfessorDashboard() {
     setImportModalOpen(false);
     setImportFile(null);
     setImportPreview(null);
+    setMissingExpanded(false);
   };
 
   const handleImportPreview = async () => {
@@ -1204,11 +1206,12 @@ export default function ProfessorDashboard() {
                   {/* Summary cards */}
                   <div className="prof-import-summary">
                     {[
-                      { label: 'Rows Found',   value: importPreview.summary.total_rows,   color: 'blue' },
-                      { label: 'Changed',      value: importPreview.summary.changed,      color: 'green' },
-                      { label: 'Unchanged',    value: importPreview.summary.unchanged,    color: 'gray' },
-                      { label: 'Invalid',      value: importPreview.summary.invalid,      color: 'red' },
-                      { label: 'Not Enrolled', value: importPreview.summary.not_enrolled, color: 'orange' }
+                      { label: 'Rows Found',    value: importPreview.summary.total_rows,              color: 'blue' },
+                      { label: 'Changed',       value: importPreview.summary.changed,                 color: 'green' },
+                      { label: 'Unchanged',     value: importPreview.summary.unchanged,               color: 'gray' },
+                      { label: 'Invalid',       value: importPreview.summary.invalid,                 color: 'red' },
+                      { label: 'Not Enrolled',  value: importPreview.summary.not_enrolled,            color: 'orange' },
+                      { label: 'Missing',       value: importPreview.summary.missing_from_file_count, color: 'amber' }
                     ].map(({ label, value, color }) => (
                       <div key={label} className={`prof-import-card prof-import-card--${color}`}>
                         <span className="prof-import-card__val">{value}</span>
@@ -1216,6 +1219,29 @@ export default function ProfessorDashboard() {
                       </div>
                     ))}
                   </div>
+
+                  {/* Missing enrolled students warning */}
+                  {importPreview.missing_from_file?.length > 0 && (
+                    <div className="prof-import-warning">
+                      <div className="prof-import-warning__head" onClick={() => setMissingExpanded((v) => !v)}>
+                        <span>
+                          ⚠ {importPreview.missing_from_file.length} enrolled student{importPreview.missing_from_file.length !== 1 ? 's are' : ' is'} not included in this file. {importPreview.missing_from_file.length !== 1 ? 'Their' : 'Their'} grades will remain unchanged.
+                        </span>
+                        <span className="prof-import-warning__toggle">{missingExpanded ? '▲ Hide' : '▼ Show'}</span>
+                      </div>
+                      {missingExpanded && (
+                        <ul className="prof-import-missing-list">
+                          {importPreview.missing_from_file.map((s) => (
+                            <li key={s.student_id}>
+                              <span className="prof-import-missing-id">{s.student_id}</span>
+                              <span className="prof-import-missing-name">{s.student_name}</span>
+                              <span className="prof-import-missing-email">{s.email}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  )}
 
                   {/* Preview table — horizontal scroll inside scrollable body */}
                   <div className="prof-import-table-wrap">
@@ -1292,7 +1318,7 @@ export default function ProfessorDashboard() {
                 <>
                   <button
                     className="btn btn--secondary"
-                    onClick={() => { setImportPreview(null); setImportFile(null); }}
+                    onClick={() => { setImportPreview(null); setImportFile(null); setMissingExpanded(false); }}
                     disabled={importConfirming}
                   >
                     ← Choose different file
