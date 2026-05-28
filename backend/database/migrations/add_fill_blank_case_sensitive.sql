@@ -1,0 +1,2 @@
+ALTER TABLE quiz_questions
+  ADD COLUMN IF NOT EXISTS case_sensitive BOOLEAN NOT NULL DEFAULT false;

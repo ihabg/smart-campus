@@ -209,7 +209,7 @@ export default function StudentAssessmentsPage() {
       const currentAnswer = current[question.id] || { question_id: question.id, selected_option_ids: [] };
       let selectedIds = currentAnswer.selected_option_ids || [];
 
-      if (question.question_type === 'single_choice') {
+      if (question.question_type === 'single_choice' || question.question_type === 'true_false') {
         selectedIds = [optionId];
       } else if (checked) {
         selectedIds = Array.from(new Set([...selectedIds, optionId]));
@@ -229,6 +229,18 @@ export default function StudentAssessmentsPage() {
       ...current,
       [question.id]: { question_id: question.id, answer_text: text, selected_option_ids: [] }
     }));
+  }
+
+  function setBlankAnswer(question, blankIndex, text) {
+    setAnswers((current) => {
+      const prev = current[question.id] || { question_id: question.id, selected_option_ids: [], answer_json: {} };
+      const prevJson = prev.answer_json || {};
+      const nextJson = { ...prevJson, [String(blankIndex)]: text };
+      return {
+        ...current,
+        [question.id]: { ...prev, answer_json: nextJson, answer_text: nextJson['1'] || '' }
+      };
+    });
   }
 
   async function submitQuiz() {
@@ -367,6 +379,7 @@ export default function StudentAssessmentsPage() {
                 answers={answers}
                 setChoice={setChoice}
                 setTextAnswer={setTextAnswer}
+                setBlankAnswer={setBlankAnswer}
                 startQuiz={startQuiz}
                 submitQuiz={submitQuiz}
                 saving={saving}
@@ -746,7 +759,7 @@ function AssignmentPanel({ selected, submissionText, setSubmissionText, submitAs
   );
 }
 
-function QuizPanel({ selected, answers, setChoice, setTextAnswer, startQuiz, submitQuiz, saving, timeLeft, openQuizReview, quizReview, reviewLoading, closeQuizReview }) {
+function QuizPanel({ selected, answers, setChoice, setTextAnswer, setBlankAnswer, startQuiz, submitQuiz, saving, timeLeft, openQuizReview, quizReview, reviewLoading, closeQuizReview }) {
   const status = statusOf(selected);
   const attempt = selected.attempt;
   const inProgress = attempt?.status === 'in_progress';
@@ -811,7 +824,9 @@ function QuizPanel({ selected, answers, setChoice, setTextAnswer, startQuiz, sub
                 <strong>Question {index + 1}</strong>
                 <span>{question.points} pts</span>
               </div>
-              <p>{question.question_text}</p>
+              {!(question.question_type === 'fill_blank' && /_{4,}/.test(question.question_text || '')) && (
+                <p>{question.question_text}</p>
+              )}
               {question.question_image_url && (
                 <img
                   className="student-question-image"
@@ -827,6 +842,12 @@ function QuizPanel({ selected, answers, setChoice, setTextAnswer, startQuiz, sub
                   onChange={(e) => setTextAnswer(question, e.target.value)}
                   placeholder="Write your answer"
                 />
+              ) : question.question_type === 'fill_blank' ? (
+                <FillBlankInput
+                  question={question}
+                  answerJson={answers[question.id]?.answer_json || {}}
+                  onBlankChange={(blankIndex, text) => setBlankAnswer(question, blankIndex, text)}
+                />
               ) : (
                 <div className="student-options">
                   {(question.options || []).map((option) => {
@@ -835,7 +856,7 @@ function QuizPanel({ selected, answers, setChoice, setTextAnswer, startQuiz, sub
                     return (
                       <label key={option.id}>
                         <input
-                          type={question.question_type === 'single_choice' ? 'radio' : 'checkbox'}
+                          type={question.question_type === 'multiple_choice' ? 'checkbox' : 'radio'}
                           name={`question-${question.id}`}
                           checked={checked}
                           onChange={(e) => setChoice(question, option.id, e.target.checked)}
@@ -885,9 +906,80 @@ function StudentQuizReview({ review, onClose }) {
   );
 }
 
+function FillBlankInput({ question, answerJson, onBlankChange }) {
+  const text = question.question_text || '';
+  const parts = text.split(/_{4,}/);
+
+  if (parts.length <= 1) {
+    return (
+      <input
+        type="text"
+        className="student-fill-blank-input"
+        value={answerJson['1'] || ''}
+        onChange={(e) => onBlankChange(1, e.target.value)}
+        placeholder="Your answer..."
+        autoComplete="off"
+      />
+    );
+  }
+
+  return (
+    <p className="student-fill-blank-inline">
+      {parts.map((part, idx) => (
+        <React.Fragment key={idx}>
+          {part && <span className="sfb-text">{part}</span>}
+          {idx < parts.length - 1 && (
+            <input
+              type="text"
+              className="student-fill-blank-input student-fill-blank-input--inline"
+              value={answerJson[String(idx + 1)] || ''}
+              onChange={(e) => onBlankChange(idx + 1, e.target.value)}
+              placeholder="..."
+              autoComplete="off"
+            />
+          )}
+        </React.Fragment>
+      ))}
+    </p>
+  );
+}
+
+function FillBlankReviewInline({ question, answer }) {
+  const text = question.question_text || '';
+  const parts = text.split(/_{4,}/);
+  if (parts.length <= 1) return null;
+
+  const answerJson = answer.answer_json || (answer.answer_text ? { 1: answer.answer_text } : {});
+  const blankResults = answer.blank_results || {};
+
+  return (
+    <p className="student-fill-blank-inline student-fill-blank-inline--review">
+      {parts.map((part, idx) => (
+        <React.Fragment key={idx}>
+          {part && <span className="sfb-text">{part}</span>}
+          {idx < parts.length - 1 && (() => {
+            const blankNum = String(idx + 1);
+            const studentAns = answerJson[blankNum] || answerJson[idx + 1] || '';
+            const isBlankCorrect = blankResults[blankNum]?.correct ?? false;
+            return (
+              <span className={`sfb-answer sfb-answer--${isBlankCorrect ? 'correct' : 'wrong'}`}>
+                {studentAns || <em>no answer</em>}
+                <span className={`sfb-badge sfb-badge--${isBlankCorrect ? 'correct' : 'wrong'}`}>
+                  {isBlankCorrect ? '✓' : '✗'}
+                </span>
+              </span>
+            );
+          })()}
+        </React.Fragment>
+      ))}
+    </p>
+  );
+}
+
 function StudentReviewQuestion({ question, index }) {
   const answer = question.answer || {};
   const selectedIds = Array.isArray(answer.selected_option_ids) ? answer.selected_option_ids : [];
+  const isFillBlankInline = question.question_type === 'fill_blank' && /_{4,}/.test(question.question_text || '');
 
   return (
     <div className="student-review-question">
@@ -895,7 +987,7 @@ function StudentReviewQuestion({ question, index }) {
         <strong>Question {index + 1}</strong>
         <span>{answer.points_awarded ?? 0} / {question.points} pts</span>
       </div>
-      <p>{question.question_text}</p>
+      {!isFillBlankInline && <p>{question.question_text}</p>}
       {question.question_image_url && (
         <img className="student-question-image" src={publicFileUrl(question.question_image_url)} alt={`Question ${index + 1}`} />
       )}
@@ -904,6 +996,59 @@ function StudentReviewQuestion({ question, index }) {
         <div className="student-review-text-answer">
           <strong>Your answer</strong>
           <p>{answer.answer_text || 'No answer submitted.'}</p>
+        </div>
+      ) : question.question_type === 'fill_blank' ? (
+        <div className="student-review-fill-blank">
+          {isFillBlankInline ? (
+            <FillBlankReviewInline question={question} answer={answer} />
+          ) : (
+            <div className="student-review-fb__row">
+              <strong>Your answer</strong>
+              <span className={`student-review-fb-answer student-review-fb-answer--${answer.is_correct ? 'correct' : 'wrong'}`}>
+                {answer.answer_text || '(no answer)'}
+              </span>
+              <span className={`student-review-fb-badge student-review-fb-badge--${answer.is_correct ? 'correct' : 'wrong'}`}>
+                {answer.is_correct ? '✓ Correct' : '✗ Incorrect'}
+              </span>
+            </div>
+          )}
+          {!answer.is_correct && (question.options || []).length > 0 && (() => {
+            const opts = question.options || [];
+            const blankResults = answer.blank_results || {};
+            const byBlank = {};
+            for (const o of opts) {
+              const bi = String(o.blank_index ?? 1);
+              if (!byBlank[bi]) byBlank[bi] = [];
+              byBlank[bi].push(o);
+            }
+            const blankKeys = Object.keys(byBlank).sort((a, b) => Number(a) - Number(b));
+
+            if (blankKeys.length <= 1) {
+              return (
+                <div className="student-review-fb__accepted">
+                  <strong>Accepted answers</strong>
+                  <div className="student-review-fb-list">
+                    {opts.map((o, i) => <span key={i} className="student-review-fb-item">{o.option_text}</span>)}
+                  </div>
+                </div>
+              );
+            }
+
+            const wrongBlanks = blankKeys.filter((bi) => !blankResults[bi]?.correct);
+            if (!wrongBlanks.length) return null;
+            return (
+              <div className="student-review-fb__accepted">
+                {wrongBlanks.map((bi) => (
+                  <div key={bi} className="student-review-fb__blank-row">
+                    <strong>Blank {bi} accepted answers</strong>
+                    <div className="student-review-fb-list">
+                      {byBlank[bi].map((o, i) => <span key={i} className="student-review-fb-item">{o.option_text}</span>)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
         </div>
       ) : (
         <div className="student-review-options">

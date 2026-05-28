@@ -1,0 +1,2 @@
+ALTER TABLE quiz_options
+  ADD COLUMN IF NOT EXISTS blank_index INTEGER;

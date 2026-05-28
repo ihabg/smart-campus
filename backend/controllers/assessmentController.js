@@ -269,10 +269,11 @@ async function insertQuestions(client, assessmentId, questions, questionImages =
     const questionText = String(q.question_text || q.text || '').trim();
     if (!questionText) continue;
 
-    const questionType = ['single_choice', 'multiple_choice', 'text'].includes(q.question_type || q.type)
+    const questionType = ['single_choice', 'multiple_choice', 'text', 'fill_blank', 'true_false'].includes(q.question_type || q.type)
       ? (q.question_type || q.type)
       : 'single_choice';
     const points = asNumber(q.points, 1) || 1;
+    const caseSensitive = questionType === 'fill_blank' ? !!q.case_sensitive : false;
 
     const imageIndex = asNumber(q.image_file_index, null);
     const imageFile = imageIndex !== null ? questionImages[imageIndex] : null;
@@ -282,9 +283,10 @@ async function insertQuestions(client, assessmentId, questions, questionImages =
       `
       INSERT INTO quiz_questions (
         assessment_id, question_text, question_type, points, position,
-        question_image_url, question_image_name, question_image_type, question_image_size
+        question_image_url, question_image_name, question_image_type, question_image_size,
+        case_sensitive
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
       RETURNING id
       `,
       [
@@ -296,7 +298,8 @@ async function insertQuestions(client, assessmentId, questions, questionImages =
         image.question_image_url,
         image.question_image_name,
         image.question_image_type,
-        image.question_image_size
+        image.question_image_size,
+        caseSensitive
       ]
     );
 
@@ -307,12 +310,15 @@ async function insertQuestions(client, assessmentId, questions, questionImages =
         const optionText = String(option.option_text || option.text || '').trim();
         if (!optionText) continue;
 
+        const blankIndex = questionType === 'fill_blank' && option.blank_index != null
+          ? Number(option.blank_index)
+          : null;
         await client.query(
           `
-          INSERT INTO quiz_options (question_id, option_text, is_correct, position)
-          VALUES ($1, $2, $3, $4)
+          INSERT INTO quiz_options (question_id, option_text, is_correct, position, blank_index)
+          VALUES ($1, $2, $3, $4, $5)
           `,
-          [qRes.rows[0].id, optionText, !!option.is_correct, j + 1]
+          [qRes.rows[0].id, optionText, !!option.is_correct, j + 1, blankIndex]
         );
       }
     }
@@ -786,7 +792,8 @@ async function buildQuizReviewData(assessment, attemptId, studentId = null) {
                  'id', o.id,
                  'option_text', o.option_text,
                  'is_correct', o.is_correct,
-                 'position', o.position
+                 'position', o.position,
+                 'blank_index', o.blank_index
                ) ORDER BY o.position
              ) FILTER (WHERE o.id IS NOT NULL),
              '[]'
@@ -810,10 +817,32 @@ async function buildQuizReviewData(assessment, attemptId, studentId = null) {
   );
 
   const answersByQuestion = new Map(answersRes.rows.map((answer) => [answer.question_id, answer]));
-  const questions = questionsRes.rows.map((question) => ({
-    ...question,
-    answer: answersByQuestion.get(question.id) || null
-  }));
+  const questions = questionsRes.rows.map((question) => {
+    const answer = answersByQuestion.get(question.id) || null;
+    if (question.question_type === 'fill_blank' && answer) {
+      const normalize = question.case_sensitive
+        ? (s) => String(s ?? '').trim()
+        : (s) => String(s ?? '').trim().toLowerCase();
+      const opts = Array.isArray(question.options) ? question.options : [];
+      const answerJson = answer.answer_json || (answer.answer_text ? { 1: answer.answer_text } : {});
+      const byBlank = {};
+      for (const o of opts) {
+        const bi = String(o.blank_index ?? 1);
+        if (!byBlank[bi]) byBlank[bi] = [];
+        byBlank[bi].push(o);
+      }
+      const blank_results = {};
+      for (const [bi, blankOptions] of Object.entries(byBlank)) {
+        const studentAns = normalize(answerJson[bi] ?? answerJson[Number(bi)] ?? '');
+        blank_results[bi] = {
+          correct: blankOptions.some((o) => o.is_correct && normalize(o.option_text) === studentAns),
+          answer: answerJson[bi] || ''
+        };
+      }
+      return { ...question, answer: { ...answer, answer_json: answerJson, blank_results } };
+    }
+    return { ...question, answer };
+  });
 
   return { assessment, attempt, questions };
 }
@@ -931,7 +960,10 @@ async function getStudentAssessment(req, res, next) {
         `SELECT * FROM quiz_attempts WHERE assessment_id = $1 AND student_id = $2 LIMIT 1`,
         [assessment.id, req.user.id]
       );
-      extra.questions = questions.rows;
+      // Strip accepted answers from fill_blank questions so students can't see them
+      extra.questions = questions.rows.map((q) =>
+        q.question_type === 'fill_blank' ? { ...q, options: [] } : q
+      );
       extra.attempt = attempt.rows[0] || null;
     }
 
@@ -1107,20 +1139,50 @@ async function submitQuiz(req, res, next) {
         let isCorrect = null;
         let awarded = 0;
 
-        if (question.question_type !== 'text') {
+        if (['single_choice', 'multiple_choice', 'true_false'].includes(question.question_type)) {
           const correctIds = options.filter((o) => o.is_correct).map((o) => o.id).sort();
           const selected = selectedOptionIds.slice().sort();
           isCorrect = correctIds.length === selected.length && correctIds.every((id, idx) => id === selected[idx]);
           awarded = isCorrect ? Number(question.points) : 0;
           score += awarded;
+        } else if (question.question_type === 'fill_blank') {
+          const normalize = question.case_sensitive
+            ? (s) => String(s ?? '').trim()
+            : (s) => String(s ?? '').trim().toLowerCase();
+          const byBlank = new Map();
+          for (const o of options) {
+            const bi = o.blank_index != null ? Number(o.blank_index) : 1;
+            if (!byBlank.has(bi)) byBlank.set(bi, []);
+            byBlank.get(bi).push(o);
+          }
+          const blankCount = byBlank.size || 1;
+          const pointsPerBlank = Number(question.points) / blankCount;
+          const rawAnswerJson = studentAnswer.answer_json;
+          const blankAnswers = (rawAnswerJson && typeof rawAnswerJson === 'object')
+            ? rawAnswerJson
+            : (answerText ? { 1: answerText } : {});
+          let allCorrect = true;
+          awarded = 0;
+          for (const [bi, blankOptions] of byBlank.entries()) {
+            const studentBlankText = normalize(blankAnswers[String(bi)] ?? blankAnswers[bi] ?? '');
+            const blankCorrect = blankOptions.some((o) => o.is_correct && normalize(o.option_text) === studentBlankText);
+            if (blankCorrect) awarded += pointsPerBlank;
+            else allCorrect = false;
+          }
+          awarded = Math.round(awarded * 100) / 100;
+          isCorrect = allCorrect && blankCount > 0;
+          score += awarded;
         }
 
+        const storedAnswerJson = question.question_type === 'fill_blank' && studentAnswer.answer_json
+          ? JSON.stringify(studentAnswer.answer_json)
+          : null;
         await client.query(
           `
-          INSERT INTO quiz_answers (attempt_id, question_id, selected_option_ids, answer_text, is_correct, points_awarded)
-          VALUES ($1, $2, $3::uuid[], $4, $5, $6)
+          INSERT INTO quiz_answers (attempt_id, question_id, selected_option_ids, answer_text, answer_json, is_correct, points_awarded)
+          VALUES ($1, $2, $3::uuid[], $4, $5::jsonb, $6, $7)
           `,
-          [attempt.id, question.id, selectedOptionIds, answerText, isCorrect, awarded]
+          [attempt.id, question.id, selectedOptionIds, answerText, storedAnswerJson, isCorrect, awarded]
         );
       }
 

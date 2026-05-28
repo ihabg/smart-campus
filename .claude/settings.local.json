@@ -77,7 +77,8 @@
       "PowerShell(head -50)",
       "Bash(xargs wc -l)",
       "Bash(xargs grep -l \"assignment_submissions\\\\|schema\\\\|migration\")",
-      "Bash(npm install *)"
+      "Bash(npm install *)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\Kebab\\\\Desktop\\\\smartwhek\\\\backend\\\\database\\\\migrations\" -Name)"
     ]
   }
 }

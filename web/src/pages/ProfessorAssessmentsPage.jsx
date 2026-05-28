@@ -45,6 +45,7 @@ function defaultQuestion(position = 1) {
     question_text: '',
     question_type: 'single_choice',
     points: 1,
+    case_sensitive: false,
     image_file: null,
     image_preview_url: '',
     options: [
@@ -162,6 +163,22 @@ export default function ProfessorAssessmentsPage() {
   }
 
   function normalizeQuestionOptions(questionType, options) {
+    if (questionType === 'true_false') {
+      const existing = Array.isArray(options) ? options : [];
+      const trueIsCorrect = existing.length >= 1 ? !!existing[0].is_correct : true;
+      return [
+        { option_text: 'True',  is_correct: trueIsCorrect },
+        { option_text: 'False', is_correct: !trueIsCorrect }
+      ];
+    }
+
+    if (questionType === 'fill_blank') {
+      const existing = Array.isArray(options) && options.length ? options : [];
+      return existing.length
+        ? existing.map((o) => ({ ...o, is_correct: true }))
+        : [{ option_text: '', is_correct: true }];
+    }
+
     const list = Array.isArray(options) && options.length ? options : [
       { option_text: '', is_correct: true },
       { option_text: '', is_correct: false }
@@ -170,7 +187,7 @@ export default function ProfessorAssessmentsPage() {
     if (questionType !== 'single_choice') return list;
 
     let firstCorrectFound = false;
-    const normalized = list.map((option, index) => {
+    const normalized = list.map((option) => {
       const shouldStayCorrect = option.is_correct && !firstCorrectFound;
       if (shouldStayCorrect) firstCorrectFound = true;
       return { ...option, is_correct: shouldStayCorrect };
@@ -188,11 +205,33 @@ export default function ProfessorAssessmentsPage() {
       if (i !== index) return question;
 
       if (key === 'question_type') {
+        let nextOptions;
+        if (value === 'fill_blank') {
+          nextOptions = [{ option_text: '', is_correct: true, blank_index: 1 }];
+        } else if (value === 'true_false') {
+          nextOptions = [
+            { option_text: 'True', is_correct: true },
+            { option_text: 'False', is_correct: false }
+          ];
+        } else {
+          nextOptions = normalizeQuestionOptions(value, question.options);
+        }
         return {
           ...question,
           question_type: value,
-          options: normalizeQuestionOptions(value, question.options)
+          options: nextOptions,
+          case_sensitive: value === 'fill_blank' ? false : question.case_sensitive
         };
+      }
+
+      if (key === 'question_text' && question.question_type === 'fill_blank') {
+        const newBlankCount = (value.match(/_{4,}/g) || []).length;
+        const currentMaxBlank = question.options.reduce((max, o) => Math.max(max, o.blank_index ?? 1), 0);
+        let nextOptions = [...question.options];
+        for (let bi = currentMaxBlank + 1; bi <= newBlankCount; bi++) {
+          nextOptions.push({ option_text: '', is_correct: true, blank_index: bi });
+        }
+        return { ...question, question_text: value, options: nextOptions };
       }
 
       return { ...question, [key]: value };
@@ -216,7 +255,7 @@ export default function ProfessorAssessmentsPage() {
       if (i !== questionIndex) return question;
       const nextOptions = question.options.map((option, j) => {
         if (j !== optionIndex) {
-          if (key === 'is_correct' && value && question.question_type === 'single_choice') {
+          if (key === 'is_correct' && value && (question.question_type === 'single_choice' || question.question_type === 'true_false')) {
             return { ...option, is_correct: false };
           }
           return option;
@@ -227,16 +266,13 @@ export default function ProfessorAssessmentsPage() {
     }));
   }
 
-  function addOption(questionIndex) {
+  function addOption(questionIndex, blankIndex = 1) {
     setQuestions((current) => current.map((question, i) => {
       if (i !== questionIndex) return question;
-      return {
-        ...question,
-        options: [
-          ...question.options,
-          { option_text: '', is_correct: false }
-        ]
-      };
+      const newOption = question.question_type === 'fill_blank'
+        ? { option_text: '', is_correct: true, blank_index: blankIndex }
+        : { option_text: '', is_correct: false };
+      return { ...question, options: [...question.options, newOption] };
     }));
   }
 
@@ -244,15 +280,17 @@ export default function ProfessorAssessmentsPage() {
     setQuestions((current) => current.map((question, i) => {
       if (i !== questionIndex) return question;
 
-      if ((question.options || []).length <= 2) {
-        return question;
+      if (question.question_type === 'fill_blank') {
+        const option = question.options[optionIndex];
+        const blankIdx = option?.blank_index ?? 1;
+        const blankGroupCount = question.options.filter((o) => (o.blank_index ?? 1) === blankIdx).length;
+        if (blankGroupCount <= 1) return question;
+        return { ...question, options: question.options.filter((_, j) => j !== optionIndex) };
       }
 
+      if ((question.options || []).length <= 2) return question;
       const nextOptions = question.options.filter((_, j) => j !== optionIndex);
-      return {
-        ...question,
-        options: normalizeQuestionOptions(question.question_type, nextOptions)
-      };
+      return { ...question, options: normalizeQuestionOptions(question.question_type, nextOptions) };
     }));
   }
 
@@ -282,7 +320,33 @@ export default function ProfessorAssessmentsPage() {
             throw new Error(`Question ${index + 1} is empty.`);
           }
 
-          if (questionType !== 'text') {
+          if (questionType === 'fill_blank') {
+            const detectedBlanks = Math.max(1, ((questionText.match(/_{4,}/g) || []).length));
+            const cleanOptions = [];
+            for (let bi = 1; bi <= detectedBlanks; bi++) {
+              const blankOpts = (cleanQuestion.options || [])
+                .filter((o) => (o.blank_index ?? 1) === bi)
+                .map((o) => ({ option_text: String(o.option_text || '').trim(), is_correct: true, blank_index: bi }))
+                .filter((o) => o.option_text);
+              if (!blankOpts.length) {
+                throw new Error(`Question ${index + 1}: Blank ${bi} needs at least one accepted answer.`);
+              }
+              cleanOptions.push(...blankOpts);
+            }
+            cleanQuestion.options = cleanOptions;
+            cleanQuestion.case_sensitive = !!cleanQuestion.case_sensitive;
+          } else if (questionType === 'true_false') {
+            const cleanOptions = (cleanQuestion.options || [])
+              .map((o) => ({ option_text: String(o.option_text || '').trim(), is_correct: !!o.is_correct }))
+              .filter((o) => o.option_text);
+            if (cleanOptions.length < 2) {
+              throw new Error(`Question ${index + 1}: True/False options are incomplete.`);
+            }
+            if (!cleanOptions.some((o) => o.is_correct)) {
+              throw new Error(`Question ${index + 1}: please select the correct answer (True or False).`);
+            }
+            cleanQuestion.options = cleanOptions;
+          } else if (questionType !== 'text') {
             const cleanOptions = (cleanQuestion.options || [])
               .map((option) => ({
                 option_text: String(option.option_text || '').trim(),
@@ -597,6 +661,8 @@ export default function ProfessorAssessmentsPage() {
                         <option value="single_choice">Single choice</option>
                         <option value="multiple_choice">Multiple choice</option>
                         <option value="text">Text answer</option>
+                        <option value="fill_blank">Fill in the blank</option>
+                        <option value="true_false">True / False</option>
                       </select>
                     </label>
                     <label>
@@ -609,6 +675,11 @@ export default function ProfessorAssessmentsPage() {
                     Question {qIndex + 1}
                     <textarea value={question.question_text} onChange={(e) => updateQuestion(qIndex, 'question_text', e.target.value)} required rows="2" />
                   </label>
+                  {question.question_type === 'fill_blank' && (() => {
+                    const blanks = ((question.question_text || '').match(/_{4,}/g) || []).length;
+                    if (blanks === 0) return <p className="fill-blank-hint fill-blank-hint--tip">Tip: add ____ where each blank should appear in the sentence.</p>;
+                    return null;
+                  })()}
 
                   <div className="question-image-field">
                     <div className="question-image-field__head">
@@ -634,7 +705,86 @@ export default function ProfessorAssessmentsPage() {
                     )}
                   </div>
 
-                  {question.question_type !== 'text' && (
+                  {/* ── Fill in the blank: per-blank accepted answers ── */}
+                  {question.question_type === 'fill_blank' && (() => {
+                    const blankCount = Math.max(1, ((question.question_text || '').match(/_{4,}/g) || []).length);
+                    const pointsPerBlank = blankCount > 1 ? (Number(question.points) / blankCount).toFixed(1) : null;
+                    return (
+                      <div className="options-box">
+                        {Array.from({ length: blankCount }, (_, bi) => {
+                          const blankIndex = bi + 1;
+                          const blankOptions = question.options
+                            .map((o, idx) => ({ ...o, _idx: idx }))
+                            .filter((o) => (o.blank_index ?? 1) === blankIndex);
+                          return (
+                            <div key={blankIndex} className="fill-blank-group">
+                              <div className="options-box__head">
+                                <span>Blank {blankIndex} — accepted answer{blankOptions.length !== 1 ? 's' : ''}</span>
+                                <button type="button" className="option-add-btn" onClick={() => addOption(qIndex, blankIndex)}>
+                                  + Add alternative
+                                </button>
+                              </div>
+                              {blankOptions.map((option) => (
+                                <div key={option._idx} className="option-line">
+                                  <input
+                                    value={option.option_text}
+                                    onChange={(e) => updateOption(qIndex, option._idx, 'option_text', e.target.value)}
+                                    placeholder="Accepted answer"
+                                  />
+                                  <button
+                                    type="button"
+                                    className="option-remove-btn"
+                                    disabled={blankOptions.length <= 1}
+                                    title={blankOptions.length <= 1 ? 'At least 1 answer required per blank' : 'Remove this answer'}
+                                    onClick={() => removeOption(qIndex, option._idx)}
+                                  >
+                                    Delete
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          );
+                        })}
+                        <small style={{ padding: '4px 0 0', color: 'var(--text-muted)', display: 'block' }}>
+                          Matching is case-insensitive by default.
+                          {pointsPerBlank && ` Partial credit: ${pointsPerBlank} pts per blank.`}
+                        </small>
+                        <label className="fill-blank-case-label">
+                          <input
+                            type="checkbox"
+                            checked={!!question.case_sensitive}
+                            onChange={(e) => updateQuestion(qIndex, 'case_sensitive', e.target.checked)}
+                          />
+                          Case-sensitive matching
+                        </label>
+                      </div>
+                    );
+                  })()}
+
+                  {/* ── True / False: locked two-option radio ── */}
+                  {question.question_type === 'true_false' && (
+                    <div className="options-box">
+                      <div className="options-box__head">
+                        <span>Correct answer</span>
+                      </div>
+                      {question.options.map((option, optionIndex) => (
+                        <div key={optionIndex} className="option-line option-line--true-false">
+                          <label>
+                            <input
+                              type="radio"
+                              name={`tf-correct-${qIndex}`}
+                              checked={option.is_correct}
+                              onChange={() => updateOption(qIndex, optionIndex, 'is_correct', true)}
+                            />
+                            {option.option_text}
+                          </label>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* ── Single / Multiple choice: editable options ── */}
+                  {(question.question_type === 'single_choice' || question.question_type === 'multiple_choice') && (
                     <div className="options-box">
                       <div className="options-box__head">
                         <span>Answer options</span>
@@ -1137,6 +1287,76 @@ function ReviewQuestion({ question, index }) {
         <div className="review-text-answer">
           <strong>Student answer</strong>
           <p>{answer.answer_text || 'No answer submitted.'}</p>
+        </div>
+      ) : question.question_type === 'fill_blank' ? (
+        <div className="review-fill-blank">
+          {(() => {
+            const opts = question.options || [];
+            const answerJson = answer.answer_json || (answer.answer_text ? { 1: answer.answer_text } : {});
+            const blankResults = answer.blank_results || {};
+            const byBlank = {};
+            for (const o of opts) {
+              const bi = String(o.blank_index ?? 1);
+              if (!byBlank[bi]) byBlank[bi] = [];
+              byBlank[bi].push(o);
+            }
+            const blankKeys = Object.keys(byBlank).sort((a, b) => Number(a) - Number(b));
+
+            if (blankKeys.length <= 1) {
+              return (
+                <>
+                  <div className="review-fill-blank__row">
+                    <strong>Student answer</strong>
+                    <span className={`review-fb-answer review-fb-answer--${answer.is_correct ? 'correct' : 'wrong'}`}>
+                      {answer.answer_text || answerJson[1] || '(no answer)'}
+                    </span>
+                    <span className={`review-fb-badge review-fb-badge--${answer.is_correct ? 'correct' : 'wrong'}`}>
+                      {answer.is_correct ? '✓ Correct' : '✗ Incorrect'}
+                    </span>
+                  </div>
+                  {!answer.is_correct && opts.length > 0 && (
+                    <div className="review-fill-blank__accepted">
+                      <strong>Accepted answers</strong>
+                      <div className="review-fb-accepted-list">
+                        {opts.map((o, i) => <span key={i} className="review-fb-accepted-item">{o.option_text}</span>)}
+                      </div>
+                    </div>
+                  )}
+                </>
+              );
+            }
+
+            return (
+              <>
+                {blankKeys.map((bi) => {
+                  const blankOpts = byBlank[bi];
+                  const studentAns = answerJson[bi] || answerJson[Number(bi)] || '';
+                  const blankCorrect = blankResults[bi]?.correct ?? false;
+                  return (
+                    <div key={bi} className="review-fill-blank__blank">
+                      <div className="review-fill-blank__row">
+                        <strong>Blank {bi}</strong>
+                        <span className={`review-fb-answer review-fb-answer--${blankCorrect ? 'correct' : 'wrong'}`}>
+                          {studentAns || '(no answer)'}
+                        </span>
+                        <span className={`review-fb-badge review-fb-badge--${blankCorrect ? 'correct' : 'wrong'}`}>
+                          {blankCorrect ? '✓ Correct' : '✗ Incorrect'}
+                        </span>
+                      </div>
+                      {!blankCorrect && blankOpts.length > 0 && (
+                        <div className="review-fill-blank__accepted">
+                          <strong>Accepted answers</strong>
+                          <div className="review-fb-accepted-list">
+                            {blankOpts.map((o, i) => <span key={i} className="review-fb-accepted-item">{o.option_text}</span>)}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </>
+            );
+          })()}
         </div>
       ) : (
         <div className="review-options">
