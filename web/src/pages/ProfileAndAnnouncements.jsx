@@ -494,7 +494,15 @@ export function ProfilePage() {
                     {assignedOffice.room_name && (
                       <div className="prof-office__room-name">{assignedOffice.room_name}</div>
                     )}
-                    <Link to="/map" className="prof-map-btn">🗺️ Open Campus Map</Link>
+                    {assignedOffice.room_id ? (
+                      <Link
+                        to="/map"
+                        state={{ roomId: assignedOffice.room_id, roomNumber: assignedOffice.room_number }}
+                        className="prof-map-btn"
+                      >🗺️ Open Campus Map</Link>
+                    ) : (
+                      <span className="prof-office__no-map">Office location is not linked to the map yet.</span>
+                    )}
                   </>
                 ) : (
                   <div className="prof-office__warning">
