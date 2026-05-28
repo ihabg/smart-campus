@@ -1185,7 +1185,7 @@ export default function ProfessorDashboard() {
                 /* ── Upload step ── */
                 <div className="prof-import-upload">
                   <p className="prof-import-hint">
-                    Use the exported grade sheet format. Only <strong>Student ID</strong>, <strong>Midterm</strong>, <strong>Assignments</strong>, <strong>Final</strong>, and <strong>Practical</strong> columns are read. Empty grade cells are treated as 0.
+                    Use the exported grade sheet format. Only <strong>Student ID</strong>, <strong>Midterm</strong>, <strong>Assignments</strong>, and <strong>Final</strong> columns are read. Empty grade cells are treated as 0.
                   </p>
                   <label className="prof-import-file-label">
                     <input

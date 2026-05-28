@@ -2149,9 +2149,8 @@ async function exportGradesCsv(req, res, next) {
         COALESCE(g.midterm, 0) AS midterm,
         COALESCE(g.assignments, 0) AS assignments,
         COALESCE(g.final, 0) AS final,
-        COALESCE(g.practical, 0) AS practical,
         COALESCE(g.letter_grade, '') AS letter_grade,
-        (COALESCE(g.midterm,0) + COALESCE(g.assignments,0) + COALESCE(g.final,0) + COALESCE(g.practical,0)) AS total
+        (COALESCE(g.midterm,0) + COALESCE(g.assignments,0) + COALESCE(g.final,0)) AS total
        FROM enrollments e
        JOIN users u ON u.id = e.student_id
        LEFT JOIN grades g ON g.student_id = u.id AND g.section_id = e.section_id
@@ -2186,12 +2185,11 @@ async function exportGradesCsv(req, res, next) {
       { key: 'e', width: 14 },
       { key: 'f', width: 12 },
       { key: 'g', width: 12 },
-      { key: 'h', width: 12 },
-      { key: 'i', width: 14 }
+      { key: 'h', width: 14 }
     ];
 
     // ---- Row 1: Title ----
-    ws.mergeCells('A1:I1');
+    ws.mergeCells('A1:H1');
     const titleCell = ws.getCell('A1');
     titleCell.value = 'Smart Campus — Grade Sheet';
     titleCell.font = { name: 'Calibri', size: 18, bold: true, color: { argb: 'FF1a2744' } };
@@ -2199,9 +2197,9 @@ async function exportGradesCsv(req, res, next) {
     ws.getRow(1).height = 36;
 
     // ---- Row 2: Instruction note ----
-    ws.mergeCells('A2:I2');
+    ws.mergeCells('A2:H2');
     const noteCell = ws.getCell('A2');
-    noteCell.value = 'Edit Midterm / Assignments / Final / Practical — Total and Letter Grade update automatically.';
+    noteCell.value = 'Edit Midterm / Assignments / Final — Total and Letter Grade update automatically.';
     noteCell.font = { name: 'Calibri', size: 10, italic: true, color: { argb: 'FF64739a' } };
     noteCell.alignment = { horizontal: 'center', vertical: 'middle' };
     ws.getRow(2).height = 18;
@@ -2226,7 +2224,7 @@ async function exportGradesCsv(req, res, next) {
     infoRows.forEach(([label, value], idx) => {
       const rowNum = 4 + idx;
       ws.mergeCells(`A${rowNum}:B${rowNum}`);
-      ws.mergeCells(`C${rowNum}:I${rowNum}`);
+      ws.mergeCells(`C${rowNum}:H${rowNum}`);
 
       const labelCell = ws.getCell(`A${rowNum}`);
       labelCell.value = label;
@@ -2247,7 +2245,7 @@ async function exportGradesCsv(req, res, next) {
     const HEADER_ROW = 10;
     const DATA_START = 11;
 
-    const headerLabels = ['Student ID', 'Student Name', 'Email', 'Midterm', 'Assignments', 'Final', 'Practical', 'Total', 'Letter Grade'];
+    const headerLabels = ['Student ID', 'Student Name', 'Email', 'Midterm', 'Assignments', 'Final', 'Total', 'Letter Grade'];
     const headerRow = ws.getRow(HEADER_ROW);
     headerRow.height = 24;
 
@@ -2266,7 +2264,7 @@ async function exportGradesCsv(req, res, next) {
     });
 
     ws.views = [{ state: 'frozen', ySplit: HEADER_ROW, xSplit: 0 }];
-    ws.autoFilter = { from: { row: HEADER_ROW, column: 1 }, to: { row: HEADER_ROW, column: 9 } };
+    ws.autoFilter = { from: { row: HEADER_ROW, column: 1 }, to: { row: HEADER_ROW, column: 8 } };
 
     // ---- Grade scale nested IF formula (matches backend letterGrade function) ----
     function gradeFormula(hRef) {
@@ -2316,15 +2314,14 @@ async function exportGradesCsv(req, res, next) {
 
       const rowBg = isFailed ? LIGHT_RED : isHigh ? LIGHT_GREEN : (idx % 2 === 0 ? ROW_NORMAL : ROW_ALT);
 
-      // Columns A–G: static values
+      // Columns A–F: static values
       const staticCols = [
         student.student_id,
         student.student_name,
         student.email,
         parseFloat(student.midterm),
         parseFloat(student.assignments),
-        parseFloat(student.final),
-        parseFloat(student.practical)
+        parseFloat(student.final)
       ];
 
       staticCols.forEach((val, colIdx) => {
@@ -2336,17 +2333,17 @@ async function exportGradesCsv(req, res, next) {
         cell.alignment = { horizontal: colIdx >= 3 ? 'center' : 'left', vertical: 'middle' };
       });
 
-      // Column H: Total = SUM(D:G) formula
-      const totalCell = dataRow.getCell(8);
-      totalCell.value = { formula: `SUM(D${rowNum}:G${rowNum})`, result: total };
+      // Column G: Total = SUM(D:F) formula
+      const totalCell = dataRow.getCell(7);
+      totalCell.value = { formula: `SUM(D${rowNum}:F${rowNum})`, result: total };
       totalCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: rowBg } };
       totalCell.border = cellBorder;
       totalCell.font = { name: 'Calibri', size: 11, bold: true };
       totalCell.alignment = { horizontal: 'center', vertical: 'middle' };
 
-      // Column I: Letter Grade = IFS formula keyed to H
-      const gradeCell = dataRow.getCell(9);
-      gradeCell.value = { formula: gradeFormula(`H${rowNum}`), result: letterGrade };
+      // Column H: Letter Grade formula keyed to G
+      const gradeCell = dataRow.getCell(8);
+      gradeCell.value = { formula: gradeFormula(`G${rowNum}`), result: letterGrade };
       gradeCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: rowBg } };
       gradeCell.border = cellBorder;
       gradeCell.font = { name: 'Calibri', size: 11, bold: true };
@@ -2357,7 +2354,7 @@ async function exportGradesCsv(req, res, next) {
     const SUMMARY_LABEL_ROW = DATA_START + students.length + 2;
     const SUMMARY_DATA_START = SUMMARY_LABEL_ROW + 1;
 
-    ws.mergeCells(`A${SUMMARY_LABEL_ROW}:I${SUMMARY_LABEL_ROW}`);
+    ws.mergeCells(`A${SUMMARY_LABEL_ROW}:H${SUMMARY_LABEL_ROW}`);
     const sumHdrCell = ws.getCell(`A${SUMMARY_LABEL_ROW}`);
     sumHdrCell.value = 'Summary';
     sumHdrCell.font = { name: 'Calibri', size: 12, bold: true, color: { argb: 'FF1a2744' } };
@@ -2368,8 +2365,8 @@ async function exportGradesCsv(req, res, next) {
     if (students.length > 0) {
       const DATA_FIRST = DATA_START;
       const DATA_LAST = DATA_START + students.length - 1;
-      const HR = `H${DATA_FIRST}:H${DATA_LAST}`;
-      const IR = `I${DATA_FIRST}:I${DATA_LAST}`;
+      const HR = `G${DATA_FIRST}:G${DATA_LAST}`;
+      const IR = `H${DATA_FIRST}:H${DATA_LAST}`;
       const classAvg = parseFloat((totalSum / students.length).toFixed(1));
 
       summaryItems = [
@@ -2665,7 +2662,7 @@ async function getAnalytics(req, res, next) {
         SELECT
           g.section_id,
           g.student_id,
-          COALESCE(g.midterm, 0) + COALESCE(g.assignments, 0) + COALESCE(g.final, 0) + COALESCE(g.practical, 0) AS total_grade
+          COALESCE(g.midterm, 0) + COALESCE(g.assignments, 0) + COALESCE(g.final, 0) AS total_grade
         FROM grades g
       )
       SELECT
@@ -2779,7 +2776,7 @@ async function importGrades(req, res, next) {
     // Find header row (scan rows 1-15 for any row containing "student id")
     let headerRowNum = null;
     let colMap = {};
-    const REQUIRED = ['student id', 'midterm', 'assignments', 'final', 'practical'];
+    const REQUIRED = ['student id', 'midterm', 'assignments', 'final'];
 
     for (let r = 1; r <= Math.min(15, ws.rowCount); r++) {
       const rowObj = ws.getRow(r);
@@ -2818,7 +2815,6 @@ async function importGrades(req, res, next) {
               COALESCE(g.midterm, 0)     AS cur_midterm,
               COALESCE(g.assignments, 0) AS cur_assignments,
               COALESCE(g.final, 0)       AS cur_final,
-              COALESCE(g.practical, 0)   AS cur_practical,
               COALESCE(g.letter_grade, '') AS cur_letter_grade
        FROM enrollments e
        JOIN users u ON u.id = e.student_id
@@ -2886,14 +2882,12 @@ async function importGrades(req, res, next) {
       const mp = parseGradeCell(row, 'midterm');
       const ap = parseGradeCell(row, 'assignments');
       const fp = parseGradeCell(row, 'final');
-      const pp = parseGradeCell(row, 'practical');
-      const errors = [mp.error, ap.error, fp.error, pp.error].filter(Boolean);
+      const errors = [mp.error, ap.error, fp.error].filter(Boolean);
 
       const curMid = parseFloat(enrolled.cur_midterm);
       const curAss = parseFloat(enrolled.cur_assignments);
       const curFin = parseFloat(enrolled.cur_final);
-      const curPra = parseFloat(enrolled.cur_practical);
-      const curTot = curMid + curAss + curFin + curPra;
+      const curTot = curMid + curAss + curFin;
 
       if (errors.length > 0) {
         rows.push({
@@ -2901,7 +2895,7 @@ async function importGrades(req, res, next) {
           student_name: enrolled.student_name,
           email: enrolled.email,
           status: 'invalid',
-          current: { midterm: curMid, assignments: curAss, final: curFin, practical: curPra, total: curTot, letter_grade: enrolled.cur_letter_grade },
+          current: { midterm: curMid, assignments: curAss, final: curFin, total: curTot, letter_grade: enrolled.cur_letter_grade },
           imported: null,
           errors
         });
@@ -2911,19 +2905,18 @@ async function importGrades(req, res, next) {
       const impMid = mp.value;
       const impAss = ap.value;
       const impFin = fp.value;
-      const impPra = pp.value;
-      const impTot = impMid + impAss + impFin + impPra;
+      const impTot = impMid + impAss + impFin;
       const impLg  = letterGrade(impTot);
 
-      const changed = impMid !== curMid || impAss !== curAss || impFin !== curFin || impPra !== curPra;
+      const changed = impMid !== curMid || impAss !== curAss || impFin !== curFin;
 
       rows.push({
         student_id: studentIdStr,
         student_name: enrolled.student_name,
         email: enrolled.email,
         status: changed ? 'changed' : 'unchanged',
-        current: { midterm: curMid, assignments: curAss, final: curFin, practical: curPra, total: curTot, letter_grade: enrolled.cur_letter_grade },
-        imported: { midterm: impMid, assignments: impAss, final: impFin, practical: impPra, total: impTot, letter_grade: impLg },
+        current: { midterm: curMid, assignments: curAss, final: curFin, total: curTot, letter_grade: enrolled.cur_letter_grade },
+        imported: { midterm: impMid, assignments: impAss, final: impFin, total: impTot, letter_grade: impLg },
         errors: []
       });
     });
@@ -2955,7 +2948,7 @@ async function importGrades(req, res, next) {
         for (const row of changedRows) {
           const enr = enrolledMap[row.student_id];
           const imp = row.imported;
-          const tot = imp.midterm + imp.assignments + imp.final + imp.practical;
+          const tot = imp.midterm + imp.assignments + imp.final;
           const lg  = letterGrade(tot);
 
           await client.query(
@@ -2970,7 +2963,7 @@ async function importGrades(req, res, next) {
                letter_grade = $7,
                updated_by   = $8,
                updated_at   = NOW()`,
-            [enr.user_id, sectionId, imp.midterm, imp.final, imp.assignments, imp.practical, lg, req.user.id]
+            [enr.user_id, sectionId, imp.midterm, imp.final, imp.assignments, 0, lg, req.user.id]
           );
         }
       });
