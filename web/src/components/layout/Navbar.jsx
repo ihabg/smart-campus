@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../hooks/index';
 import { BellIcon } from '../ui/index';
 import { timeAgo } from '../../utils/helpers';
+import { getNotificationTarget } from '../../utils/notificationTarget';
 import { publicUrl } from '../../utils/publicUrl';
 import toast from 'react-hot-toast';
 import './Navbar.css';
@@ -122,7 +123,15 @@ export default function Navbar({ onMenuToggle }) {
                       className={`notif-item ${
                         !notification.is_read ? 'notif-item--unread' : ''
                       }`}
-                      onClick={() => markRead(notification.id)}
+                      onClick={() => {
+                        if (!notification.is_read) markRead(notification.id);
+                        setNotifOpen(false);
+                        const target = getNotificationTarget(notification, user);
+                        navigate(target.search
+                          ? { pathname: target.pathname, search: target.search }
+                          : target.pathname
+                        );
+                      }}
                       type="button"
                     >
                       <div className="notif-item__title">

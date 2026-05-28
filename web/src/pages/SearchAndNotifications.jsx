@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { useSearchParams, Link } from 'react-router-dom';
+import { useSearchParams, Link, useNavigate } from 'react-router-dom';
 import { useSearch, useNotifications } from '../hooks/index';
+import { useAuth } from '../context/AuthContext';
 import { SearchInput, Spinner, Badge } from '../components/ui/index';
 import { roomTypeLabel, roomTypeBadgeClass, timeAgo } from '../utils/helpers';
+import { getNotificationTarget } from '../utils/notificationTarget';
 
 // ─── Search Page ──────────────────────────────────────────────
 export function SearchPage() {
@@ -162,6 +164,8 @@ export function SearchPage() {
 // ─── Notifications Page ───────────────────────────────────────
 export function NotificationsPage() {
   const { notifications, loading, markRead, markAllRead, unreadCount, refetch } = useNotifications();
+  const { user } = useAuth();
+  const navigate = useNavigate();
 
   return (
     <div style={{ maxWidth: 700, margin: '0 auto' }}>
@@ -190,11 +194,18 @@ export function NotificationsPage() {
           {notifications.map(n => (
             <div
               key={n.id}
-              onClick={() => !n.is_read && markRead(n.id)}
+              onClick={() => {
+                if (!n.is_read) markRead(n.id);
+                const target = getNotificationTarget(n, user);
+                navigate(target.search
+                  ? { pathname: target.pathname, search: target.search }
+                  : target.pathname
+                );
+              }}
               style={{
                 padding: '14px 20px',
                 borderBottom: '1px solid var(--border)',
-                cursor: n.is_read ? 'default' : 'pointer',
+                cursor: 'pointer',
                 background: n.is_read ? 'var(--surface)' : 'var(--najah-light)',
                 display: 'flex', gap: 12,
               }}
