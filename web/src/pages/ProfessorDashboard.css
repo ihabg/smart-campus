@@ -1128,6 +1128,23 @@
   border-radius: var(--r-2xl);
 }
 
+.prof-feature-form-card--editing {
+  border: 2px solid #2454b6 !important;
+  box-shadow: 0 0 0 4px rgba(36, 84, 182, 0.1) !important;
+}
+
+.prof-editing-badge {
+  display: inline-block;
+  padding: 4px 11px;
+  border-radius: 999px;
+  background: #eef3ff;
+  color: #2454b6;
+  font-size: 12px;
+  font-weight: 800;
+  border: 1px solid #c5d5f8;
+  white-space: nowrap;
+}
+
 .prof-muted {
   color: var(--text-muted);
   font-size: 12px;

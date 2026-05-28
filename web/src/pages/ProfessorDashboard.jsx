@@ -248,6 +248,7 @@ export default function ProfessorDashboard() {
   const [materialSaving, setMaterialSaving] = useState(false);
   const [materialFileUploading, setMaterialFileUploading] = useState(false);
   const materialFileInputRef = useRef(null);
+  const materialFormRef = useRef(null);
   const [editingMaterialId, setEditingMaterialId] = useState(null);
   const [materialForm, setMaterialForm] = useState({
     title: '',
@@ -794,6 +795,7 @@ export default function ProfessorDashboard() {
       is_published: m.is_published !== false,
       notify_students: false
     });
+    setTimeout(() => materialFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
   };
 
   const deleteMaterial = async (materialId) => {
@@ -1892,10 +1894,22 @@ export default function ProfessorDashboard() {
       {mode === 'materials' && (
         <div className="prof-feature-page">
           <div className="prof-feature-grid">
-            <div className="card prof-feature-form-card">
+            <div
+              ref={materialFormRef}
+              className={`card prof-feature-form-card${editingMaterialId ? ' prof-feature-form-card--editing' : ''}`}
+            >
               <div className="prof-card-hdr">
-                <h3>📚 Course Materials</h3>
-                <span className="prof-muted">Dynamic from your sections and database</span>
+                {editingMaterialId ? (
+                  <>
+                    <h3>✏️ Edit material</h3>
+                    <span className="prof-editing-badge">Editing</span>
+                  </>
+                ) : (
+                  <>
+                    <h3>📚 Course Materials</h3>
+                    <span className="prof-muted">Dynamic from your sections and database</span>
+                  </>
+                )}
               </div>
 
               <label className="prof-field">
