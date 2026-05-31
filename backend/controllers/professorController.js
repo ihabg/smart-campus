@@ -82,7 +82,7 @@ async function notifySectionStudents({ sectionId, senderId, title, body, data = 
   await query(
     `
     INSERT INTO notification_receipts (notification_id, user_id)
-    SELECT $1, e.student_id
+    SELECT $1::uuid, e.student_id
     FROM enrollments e
     WHERE e.section_id = $2
       AND e.status = 'enrolled'
@@ -116,7 +116,7 @@ async function notifyAllProfessorStudents({ instructorId, senderId, title, body,
   await query(
     `
     INSERT INTO notification_receipts (notification_id, user_id)
-    SELECT DISTINCT $1, e.student_id
+    SELECT DISTINCT $1::uuid, e.student_id
     FROM enrollments e
     JOIN sections s ON s.id = e.section_id
     WHERE s.instructor_id = $2
@@ -1324,7 +1324,7 @@ async function changeMeeting(req, res, next) {
     await query(
       `
       INSERT INTO notification_receipts (notification_id, user_id)
-      SELECT $1, e.student_id
+      SELECT $1::uuid, e.student_id
       FROM enrollments e
       WHERE e.section_id = $2
         AND e.status = 'enrolled'
@@ -2079,7 +2079,7 @@ async function respondOfficeHourBooking(req, res, next) {
     await query(
       `
       INSERT INTO notification_receipts (notification_id, user_id)
-      VALUES ($1, $2)
+      VALUES ($1::uuid, $2)
       ON CONFLICT (notification_id, user_id) DO NOTHING
       `,
       [notificationRes.rows[0].id, booking.student_id]

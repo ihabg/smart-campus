@@ -2218,3 +2218,106 @@
     justify-content: center;
   }
 }
+/* =========================================================
+   FIX: Professor schedule change modal layout
+   ========================================================= */
+
+.prof-modal-backdrop {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 99999 !important;
+
+  display: flex !important;
+  align-items: flex-start !important;
+  justify-content: center !important;
+
+  padding: 90px 18px 28px !important;
+  background: rgba(10, 18, 35, 0.58) !important;
+
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+}
+
+.prof-change-modal {
+  width: min(720px, 96vw) !important;
+  max-height: calc(100vh - 120px) !important;
+
+  display: flex !important;
+  flex-direction: column !important;
+
+  background: #ffffff !important;
+  border-radius: 24px !important;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.25) !important;
+
+  overflow: hidden !important;
+}
+
+.prof-change-modal__head {
+  flex-shrink: 0 !important;
+  display: flex !important;
+}
+
+.prof-change-form {
+  flex: 1 !important;
+  min-height: 0 !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 14px !important;
+  padding: 22px 24px !important;
+}
+
+.prof-change-modal__foot {
+  flex-shrink: 0 !important;
+  display: flex !important;
+  justify-content: flex-end !important;
+  gap: 10px !important;
+
+  padding: 16px 24px 22px !important;
+  border-top: 1px solid var(--border) !important;
+  background: #ffffff !important;
+}
+
+/* Make long fields full width */
+.prof-change-form__wide,
+.prof-change-form__range {
+  grid-column: 1 / -1 !important;
+}
+
+/* Mobile */
+@media (max-width: 720px) {
+  .prof-modal-backdrop {
+    align-items: flex-start !important;
+    padding: 76px 10px 18px !important;
+  }
+
+  .prof-change-modal {
+    width: 100% !important;
+    max-height: calc(100vh - 95px) !important;
+    border-radius: 18px !important;
+  }
+
+  .prof-change-form {
+    grid-template-columns: 1fr !important;
+    padding: 18px !important;
+  }
+
+  .prof-change-form__range {
+    grid-template-columns: 1fr !important;
+  }
+
+  .prof-change-modal__head {
+    padding: 18px !important;
+  }
+
+  .prof-change-modal__foot {
+    padding: 14px 18px 18px !important;
+    flex-direction: column-reverse !important;
+  }
+
+  .prof-change-modal__foot button {
+    width: 100% !important;
+  }
+}
