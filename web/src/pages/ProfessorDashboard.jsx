@@ -248,6 +248,7 @@ export default function ProfessorDashboard() {
     reason: ''
   });
   const [changeSaving, setChangeSaving] = useState(false);
+  const [changeError, setChangeError] = useState(null);
 
   const [materials, setMaterials] = useState([]);
   const [materialSections, setMaterialSections] = useState([]);
@@ -621,6 +622,7 @@ export default function ProfessorDashboard() {
 
   const openMeetingChange = async (meeting) => {
     const nextDate = dateForNextDay(meeting.day_of_week);
+    setChangeError(null);
     setChangeModal(meeting);
     setChangeForm({
       change_scope: 'single_day',
@@ -641,6 +643,7 @@ export default function ProfessorDashboard() {
     if (!changeModal) return;
 
     setChangeSaving(true);
+    setChangeError(null);
     try {
       await axiosInstance.post(`/professor/sections/${changeModal.id}/meeting-change`, {
         meeting_id: changeModal.meeting_id || null,
@@ -660,7 +663,11 @@ export default function ProfessorDashboard() {
       await loadSchedule();
       await loadDashboard();
     } catch (err) {
-      showToast(err?.response?.data?.message || 'Failed to change room/time', 'error');
+      if (err?.response?.status === 409) {
+        setChangeError(err.response.data?.message || 'This room is already booked at the selected time.');
+      } else {
+        showToast(err?.response?.data?.message || 'Failed to change room/time', 'error');
+      }
     } finally {
       setChangeSaving(false);
     }
@@ -1343,7 +1350,7 @@ export default function ProfessorDashboard() {
         document.body
       )}
 
-      {changeModal && (
+      {changeModal && createPortal(
         <div className="prof-modal-backdrop" onClick={() => !changeSaving && setChangeModal(null)}>
           <div className="prof-change-modal" onClick={(e) => e.stopPropagation()}>
             <div className="prof-change-modal__head">
@@ -1461,6 +1468,12 @@ export default function ProfessorDashboard() {
               </label>
             </div>
 
+            {changeError && (
+              <div className="prof-change-conflict-error">
+                <span>&#9888;</span> {changeError}
+              </div>
+            )}
+
             <div className="prof-change-modal__foot">
               <button className="btn btn--secondary" onClick={() => setChangeModal(null)} disabled={changeSaving}>Cancel</button>
               <button className="btn btn--primary" onClick={submitMeetingChange} disabled={changeSaving}>
@@ -1468,7 +1481,8 @@ export default function ProfessorDashboard() {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       <div className="prof-header">

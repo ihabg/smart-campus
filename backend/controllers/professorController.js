@@ -1075,6 +1075,18 @@ async function changeMeeting(req, res, next) {
       });
     }
 
+    if (change_scope === 'single_day' && change_date) {
+      const DAY_NAMES = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+      const [y, m, d] = change_date.split('-').map(Number);
+      const derivedDow = new Date(y, m - 1, d).getDay();
+      if (Number(day_of_week) !== derivedDow) {
+        return res.status(400).json({
+          success: false,
+          message: `The selected date (${change_date}) falls on ${DAY_NAMES[derivedDow]}, but the submitted day is ${DAY_NAMES[Number(day_of_week)]}. Please select the correct day.`
+        });
+      }
+    }
+
     if (change_scope === 'date_range') {
       if (!start_date || !end_date) {
         return res.status(400).json({
@@ -1096,6 +1108,8 @@ async function changeMeeting(req, res, next) {
       SELECT
         s.id,
         s.section_number,
+        s.semester::TEXT AS semester,
+        s.academic_year,
         s.room_id AS current_room_id,
         s.day_of_week,
         s.start_time,
@@ -1181,6 +1195,139 @@ async function changeMeeting(req, res, next) {
       }
 
       newRoom = roomRes.rows[0];
+
+      // ── Conflict validation ────────────────────────────────────────────────
+      const newStart = String(start_time).slice(0, 5);
+      const newEnd   = String(end_time).slice(0, 5);
+      const newDow   = Number(day_of_week);
+
+      // Check A: regular section meetings in same room/semester/academic_year
+      // Exclude the specific meeting being changed (prefer meeting_id; fallback to section).
+      const smExcludeSql = meeting_id ? 'AND sm.id != $7' : 'AND s.id != $7';
+      const smExcludeVal = meeting_id ? meeting_id : sectionId;
+
+      const smConflict = await query(
+        `SELECT c.code AS course_code, c.name AS course_name,
+                sm.start_time::text AS start_time, sm.end_time::text AS end_time
+         FROM section_meetings sm
+         JOIN sections s ON s.id = sm.section_id
+         JOIN courses  c ON c.id = s.course_id
+         WHERE COALESCE(sm.room_id, s.room_id) = $1
+           AND s.semester::TEXT = $2
+           AND s.academic_year  = $3
+           AND sm.day_of_week   = $4
+           AND sm.start_time    < $5::time
+           AND sm.end_time      > $6::time
+           AND s.is_active = TRUE
+           ${smExcludeSql}
+         LIMIT 1`,
+        [room_id, section.semester, section.academic_year, newDow, newEnd, newStart, smExcludeVal]
+      );
+
+      if (smConflict.rows.length) {
+        const conf = smConflict.rows[0];
+        return res.status(409).json({
+          success: false,
+          message: `Room ${newRoom.room_number} is already occupied at this time by ${conf.course_code}.`,
+          conflict_type: 'section',
+          conflicts: [{ course_code: conf.course_code, course_name: conf.course_name, start_time: conf.start_time, end_time: conf.end_time }]
+        });
+      }
+
+      // Check B: active lecture relocations (section_meeting_changes) in same room
+      // Exclude changes belonging to this section to avoid self-conflict.
+      let smcDateSql, smcDateParams;
+      const smcBase = [room_id, newDow, newEnd, newStart, sectionId];
+
+      if (change_scope === 'single_day') {
+        smcDateSql = `AND (
+          (smc.change_scope = 'single_day'  AND smc.change_date  = $6::date)
+          OR (smc.change_scope = 'date_range' AND smc.start_date <= $6::date AND smc.end_date >= $6::date)
+          OR (smc.change_scope = 'permanent')
+        )`;
+        smcDateParams = [...smcBase, change_date];
+      } else if (change_scope === 'date_range') {
+        smcDateSql = `AND (
+          (smc.change_scope = 'single_day'  AND smc.change_date BETWEEN $6::date AND $7::date)
+          OR (smc.change_scope = 'date_range' AND smc.start_date <= $7::date AND smc.end_date >= $6::date)
+          OR (smc.change_scope = 'permanent')
+        )`;
+        smcDateParams = [...smcBase, start_date, end_date];
+      } else {
+        smcDateSql = '';
+        smcDateParams = smcBase;
+      }
+
+      const smcConflict = await query(
+        `SELECT c.code AS course_code, c.name AS course_name,
+                smc.new_start_time::text AS start_time, smc.new_end_time::text AS end_time
+         FROM section_meeting_changes smc
+         JOIN sections s ON s.id = smc.section_id
+         JOIN courses  c ON c.id = s.course_id
+         WHERE smc.new_room_id     = $1
+           AND smc.new_day_of_week = $2
+           AND smc.new_start_time  < $3::time
+           AND smc.new_end_time    > $4::time
+           AND smc.is_active = TRUE
+           AND smc.section_id != $5
+           ${smcDateSql}
+         LIMIT 1`,
+        smcDateParams
+      );
+
+      if (smcConflict.rows.length) {
+        const conf = smcConflict.rows[0];
+        return res.status(409).json({
+          success: false,
+          message: `Room ${newRoom.room_number} is already booked at this time for a relocated class (${conf.course_code}).`,
+          conflict_type: 'relocation',
+          conflicts: [{ course_code: conf.course_code, course_name: conf.course_name, start_time: conf.start_time, end_time: conf.end_time }]
+        });
+      }
+
+      // Check C: admin event bookings — both legacy room_id and multi-room join table
+      let evDateSql, evDateParams;
+      const evBase = [room_id, newEnd, newStart];
+
+      if (change_scope === 'single_day') {
+        evDateSql = `AND eb.event_date = $4::date`;
+        evDateParams = [...evBase, change_date];
+      } else if (change_scope === 'date_range') {
+        evDateSql = `AND eb.event_date BETWEEN $4::date AND $5::date AND EXTRACT(DOW FROM eb.event_date)::int = $6`;
+        evDateParams = [...evBase, start_date, end_date, newDow];
+      } else {
+        evDateSql = `AND eb.event_date >= CURRENT_DATE AND EXTRACT(DOW FROM eb.event_date)::int = $4`;
+        evDateParams = [...evBase, newDow];
+      }
+
+      const evConflict = await query(
+        `SELECT eb.title, eb.event_date::text, eb.start_time::text, eb.end_time::text
+         FROM event_bookings eb
+         WHERE eb.status = 'active'
+           AND eb.start_time < $2::time
+           AND eb.end_time   > $3::time
+           AND (
+             eb.room_id = $1
+             OR EXISTS (
+               SELECT 1 FROM event_booking_rooms ebr
+               WHERE ebr.event_booking_id = eb.id AND ebr.room_id = $1
+             )
+           )
+           ${evDateSql}
+         LIMIT 1`,
+        evDateParams
+      );
+
+      if (evConflict.rows.length) {
+        const ev = evConflict.rows[0];
+        return res.status(409).json({
+          success: false,
+          message: `Room ${newRoom.room_number} is reserved for the event "${ev.title}" on ${ev.event_date}.`,
+          conflict_type: 'event',
+          conflicts: [{ title: ev.title, event_date: ev.event_date, start_time: ev.start_time, end_time: ev.end_time }]
+        });
+      }
+      // ── End conflict validation ────────────────────────────────────────────
     }
 
     let savedChange = null;
