@@ -738,7 +738,13 @@ export default function ProfessorDashboard() {
   const loadRoomOptions = useCallback(async () => {
     try {
       const r = await axiosInstance.get('/professor/rooms');
-      setRoomOptions(r.data.data.rooms || []);
+      const raw = r.data.data.rooms || [];
+      // Defensive filter: only keep rooms the backend flagged as teaching rooms.
+      // The endpoint already enforces this via INNER JOIN, but filtering here
+      // ensures that any stale cache or unexpected generic response never leaks
+      // non-teaching rooms into the dropdown or map.
+      const rooms = raw.filter(rm => rm.is_teaching === true);
+      setRoomOptions(rooms);
     } catch {
       showToast('Failed to load rooms', 'error');
     }
@@ -801,15 +807,22 @@ export default function ProfessorDashboard() {
       if (r.floor_label !== fLabel) return;
       const isSelected = String(r.id) === String(changeForm.room_id);
       let mapStatus;
-      // Conflict status always wins — even for the selected room.
-      // isSelected is set separately so the map component can draw the blue outline.
+      // Priority order:
+      // 1. busy (conflict) always wins, even for the selected room
+      // 2. selected + available → blue
+      // 3. selected + unknown → blue (professor can see their current pick even before time is set)
+      // 4. available (confirmed) → green
+      // 5. unknown → gray, non-clickable (no availability data yet)
       if (r.avStatus === 'busy') {
         mapStatus = r.avConflict?.type === 'event_booking' ? 'event_conflict' : 'lecture_conflict';
       } else if (isSelected) {
+        // Show selected in blue regardless of unknown status so professor can always see their pick
         mapStatus = 'selected';
-      } else {
-        // 'available' or 'unknown' — show as green/clickable either way
+      } else if (r.avStatus === 'available') {
         mapStatus = 'available';
+      } else {
+        // 'unknown' — availability not yet fetched; render as gray, non-clickable
+        mapStatus = 'unknown';
       }
       byNum[r.room_number] = { status: mapStatus, room_id: r.id, conflict: r.avConflict, isSelected };
     });
@@ -844,7 +857,7 @@ export default function ProfessorDashboard() {
       reason: ''
     });
 
-    if (!roomOptions.length) await loadRoomOptions();
+    await loadRoomOptions();
   };
 
   const openChangeEdit = async (change) => {
@@ -870,7 +883,7 @@ export default function ProfessorDashboard() {
       room_id:      change.new_room_id || '',
       reason:       change.reason || ''
     });
-    if (!roomOptions.length) await loadRoomOptions();
+    await loadRoomOptions();
   };
 
   const openRoomMap = async () => {
@@ -1961,7 +1974,7 @@ export default function ProfessorDashboard() {
                 availabilityByRoomNumber={mapAvailability}
                 selectedRoomId={changeForm.room_id}
                 onRoomClick={(block, avail) => {
-                  if (!avail || !avail.room_id) {
+                  if (!avail || !avail.room_id || avail.status === 'unknown') {
                     setMapMsg(
                       availMap
                         ? 'This room is not available for scheduling.'

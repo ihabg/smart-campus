@@ -81,7 +81,22 @@
       "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\Kebab\\\\Desktop\\\\smartwhek\\\\backend\\\\database\\\\migrations\" -Name)",
       "Bash(Get-Content \"c:\\\\Users\\\\Kebab\\\\Desktop\\\\smartwhek\\\\web\\\\src\\\\pages\\\\admin\\\\AdminEventsTab.css\")",
       "Bash(Measure-Object -Line)",
-      "Bash(Select-Object -ExpandProperty Lines)"
+      "Bash(Select-Object -ExpandProperty Lines)",
+      "Bash(node -e \"const { query } = require\\('./backend/database/index'\\); query\\('SELECT r.id, r.room_number, r.name, r.type::text AS type, r.is_active, rt.is_teaching, rt.is_active AS type_active, rt.label_en FROM rooms r LEFT JOIN room_types rt ON rt.value = r.type::text WHERE r.room_number IN \\(\\\\'9999\\\\',\\\\'509999\\\\'\\) LIMIT 5'\\).then\\(r => { console.log\\(JSON.stringify\\(r.rows, null, 2\\)\\); process.exit\\(0\\); }\\).catch\\(e => { console.error\\(e.message\\); process.exit\\(1\\); }\\);\")",
+      "Bash(node -e \"const { query } = require\\('./database/index'\\); query\\('SELECT r.id, r.room_number, r.name, r.type::text AS type, r.is_active, rt.is_teaching, rt.is_active AS type_active, rt.label_en FROM rooms r LEFT JOIN room_types rt ON rt.value = r.type::text WHERE r.room_number IN \\(\\\\'9999\\\\',\\\\'509999\\\\'\\) LIMIT 5'\\).then\\(r => { console.log\\(JSON.stringify\\(r.rows, null, 2\\)\\); process.exit\\(0\\); }\\).catch\\(e => { console.error\\(e.message\\); process.exit\\(1\\); }\\);\")",
+      "Bash(node --env-file=.env -e ' *)",
+      "Bash(netstat -ano)",
+      "Bash(tasklist)",
+      "PowerShell(Get-Process -Name \"node\" -ErrorAction SilentlyContinue)",
+      "PowerShell(Get-NetTCPConnection -LocalPort 5000 -State Listen -ErrorAction SilentlyContinue)",
+      "PowerShell(Get-Process -Id 10288)",
+      "PowerShell(Get-CimInstance Win32_Process -Filter \"ProcessId = 10288\")",
+      "PowerShell(Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue | Select-Object LocalPort, OwningProcess | ForEach-Object { $p = Get-CimInstance Win32_Process -Filter \"ProcessId = $\\($_.OwningProcess\\)\"; [PSCustomObject]@{ Port=$_.LocalPort; PID=$_.OwningProcess; CMD=$p.CommandLine } })",
+      "PowerShell(Get-CimInstance Win32_Process -Filter \"ProcessId = 11372\")",
+      "PowerShell($p = Get-CimInstance Win32_Process -Filter \"ProcessId = 11372\"; $p.CommandLine)",
+      "PowerShell(Get-Process -Name \"node\" | ForEach-Object { $p = Get-CimInstance Win32_Process -Filter \"ProcessId = $\\($_.Id\\)\"; [PSCustomObject]@{ PID=$_.Id; Mem=[math]::Round\\($_.WorkingSet/1MB,1\\); CMD=$p.CommandLine } } | Format-List)",
+      "PowerShell(Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Where-Object { $_.LocalPort -in @\\(5000, 5001, 5002, 5003, 5004\\) } | ForEach-Object { $p = Get-CimInstance Win32_Process -Filter \"ProcessId = $\\($_.OwningProcess\\)\"; [PSCustomObject]@{ Port=$_.LocalPort; PID=$_.OwningProcess; CMD=$p.CommandLine } })",
+      "Bash(node --env-file=.env -e \"require\\('./controllers/professorController'\\); console.log\\('backend syntax OK'\\);\")"
     ]
   }
 }

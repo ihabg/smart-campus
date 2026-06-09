@@ -987,27 +987,16 @@ async function getRoomsForChange(req, res, next) {
     if (!instructorId) return;
 
     const result = await query(
-      `
-      SELECT
-        r.id,
-        r.room_number,
-        r.name,
-        r.type::TEXT AS type,
-        r.capacity,
-        f.floor_label,
-        b.name AS building_name
-      FROM rooms r
-      LEFT JOIN floors f ON f.id = r.floor_id
-      LEFT JOIN buildings b ON b.id = f.building_id
-      WHERE r.is_active = TRUE
-      ORDER BY
-        CASE
-          WHEN r.room_number IN ('9999', '509999') THEN 0
-          WHEN r.type::TEXT IN ('lecture_hall', 'classroom', 'lab') THEN 1
-          ELSE 2
-        END,
-        r.room_number
-      `
+      `SELECT r.id, r.room_number, r.name, r.type::TEXT AS type,
+              r.capacity, f.floor_label, b.name AS building_name,
+              true AS is_teaching
+       FROM rooms r
+       INNER JOIN room_types rt
+         ON rt.value = r.type::text AND rt.is_teaching = true AND rt.is_active = true
+       LEFT JOIN floors    f ON f.id = r.floor_id
+       LEFT JOIN buildings b ON b.id = f.building_id
+       WHERE r.is_active = TRUE
+       ORDER BY r.room_number`
     );
 
     res.json({
@@ -1067,18 +1056,18 @@ async function getRoomAvailability(req, res, next) {
     }
     const section = sectionRes.rows[0];
 
-    // ── 3. Fetch all active rooms (same set as getRoomsForChange) ─
+    // ── 3. Fetch active teaching rooms (same set as getRoomsForChange) ─
     const roomsRes = await query(
       `SELECT r.id, r.room_number, r.name, r.type::TEXT AS type,
-              r.capacity, f.floor_label, b.name AS building_name
+              r.capacity, f.floor_label, b.name AS building_name,
+              true AS is_teaching
        FROM rooms r
+       INNER JOIN room_types rt
+         ON rt.value = r.type::text AND rt.is_teaching = true AND rt.is_active = true
        LEFT JOIN floors    f ON f.id = r.floor_id
        LEFT JOIN buildings b ON b.id = f.building_id
        WHERE r.is_active = TRUE
-       ORDER BY
-         CASE WHEN r.type::TEXT IN ('lecture_hall','classroom','lab') THEN 1
-              ELSE 2 END,
-         r.room_number`
+       ORDER BY r.room_number`
     );
     const allRooms = roomsRes.rows;
 
@@ -1475,7 +1464,11 @@ async function changeMeeting(req, res, next) {
     let newRoom = null;
     if (room_id) {
       const roomRes = await query(
-        `SELECT id, room_number, name FROM rooms WHERE id = $1 AND is_active = TRUE`,
+        `SELECT r.id, r.room_number, r.name,
+                COALESCE(rt.is_teaching, false) AS is_teaching
+         FROM rooms r
+         LEFT JOIN room_types rt ON rt.value = r.type::text AND rt.is_active = true
+         WHERE r.id = $1 AND r.is_active = TRUE`,
         [room_id]
       );
 
@@ -1487,6 +1480,13 @@ async function changeMeeting(req, res, next) {
       }
 
       newRoom = roomRes.rows[0];
+
+      if (!newRoom.is_teaching) {
+        return res.status(400).json({
+          success: false,
+          message: 'This room cannot be used for lectures.'
+        });
+      }
 
       // ── Conflict validation ────────────────────────────────────────────────
       const newStart = String(start_time).slice(0, 5);
@@ -3159,13 +3159,24 @@ async function editMeetingChange(req, res, next) {
     let newRoom = null;
     if (room_id) {
       const roomRes = await query(
-        `SELECT id, room_number, name FROM rooms WHERE id = $1 AND is_active = TRUE`,
+        `SELECT r.id, r.room_number, r.name,
+                COALESCE(rt.is_teaching, false) AS is_teaching
+         FROM rooms r
+         LEFT JOIN room_types rt ON rt.value = r.type::text AND rt.is_active = true
+         WHERE r.id = $1 AND r.is_active = TRUE`,
         [room_id]
       );
       if (!roomRes.rows.length) {
         return res.status(404).json({ success: false, message: 'Selected room was not found.' });
       }
       newRoom = roomRes.rows[0];
+
+      if (!newRoom.is_teaching) {
+        return res.status(400).json({
+          success: false,
+          message: 'This room cannot be used for lectures.'
+        });
+      }
 
       // ── Conflict validation ─────────────────────────────────────────────
       const newStart = String(start_time).slice(0, 5);
