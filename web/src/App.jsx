@@ -60,6 +60,12 @@ function RequireAdmin({ children }) {
   return children;
 }
 
+function RoleDashboardRedirect() {
+  const { isAdmin } = useAuth();
+  if (isAdmin) return <Navigate to="/admin" replace />;
+  return <DashboardPage />;
+}
+
 function AppShell({ mapLayout = false }) {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -96,7 +102,7 @@ export default function App() {
 
           {/* Student + Professor shared routes */}
           <Route element={<RequireAuth><AppShell /></RequireAuth>}>
-            <Route path="/dashboard"     element={<DashboardPage />} />
+            <Route path="/dashboard"     element={<RoleDashboardRedirect />} />
             <Route path="/schedule"      element={<SchedulePage />} />
             <Route path="/materials"     element={<StudentMaterialsPage />} />
             <Route path="/assessments"  element={<StudentAssessmentsPage />} />
@@ -126,6 +132,7 @@ export default function App() {
           {/* Admin only */}
 <Route element={<RequireAuth><RequireAdmin><AppShell /></RequireAdmin></RequireAuth>}>
   <Route path="/admin"               element={<AdminDashboard />} />
+  <Route path="/admin/dashboard"     element={<AdminDashboard />} />
   <Route path="/admin/users"         element={<AdminUsers />} />
   <Route path="/admin/floors"        element={<AdminFloors />} />
   <Route path="/admin/rooms"          element={<AdminRoomsPage />} />
