@@ -2,7 +2,8 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom';
 import { useLocation, useNavigate, Link } from 'react-router-dom';
 import axiosInstance from '../api/axiosInstance';
-import { notificationAPI } from '../api/index';
+import { notificationAPI, floorAPI } from '../api/index';
+import { RoomAvailabilityMap } from '../components/map/RoomAvailabilityMap';
 import { useAuth } from '../context/AuthContext';
 import { timeAgo } from '../utils/helpers';
 import useProfessorTerm from '../hooks/useProfessorTerm';
@@ -179,6 +180,18 @@ function SectionSelectCard({ sections, onOpenStudents, onOpenAttendance, showAtt
   );
 }
 
+function normalizeFloorKey(floor) {
+  const label = String(floor?.floor_label || '').trim().toUpperCase();
+  if (label === 'B2') return 'B2';
+  if (label === 'B1') return 'B1';
+  if (label === 'G')  return 'G';
+  const n = Number(floor?.floor_number);
+  if (n === -2) return 'B2';
+  if (n === -1) return 'B1';
+  if (n === 0)  return 'G';
+  return String(n || label);
+}
+
 export default function ProfessorDashboard() {
   const { user } = useAuth();
   const location = useLocation();
@@ -249,6 +262,17 @@ export default function ProfessorDashboard() {
   });
   const [changeSaving, setChangeSaving] = useState(false);
   const [changeError, setChangeError] = useState(null);
+  const [editingChangeId, setEditingChangeId] = useState(null);
+
+  const [roomSearch, setRoomSearch] = useState('');
+  const [roomDropOpen, setRoomDropOpen] = useState(false);
+  const roomDropRef = useRef(null);
+
+  const [mapOpen, setMapOpen] = useState(false);
+  const [mapFloors, setMapFloors] = useState([]);
+  const mapFloorsLoadedRef = useRef(false);
+  const [mapFloorId, setMapFloorId] = useState('');
+  const [mapMsg, setMapMsg] = useState('');
 
   const [materials, setMaterials] = useState([]);
   const [materialSections, setMaterialSections] = useState([]);
@@ -558,6 +582,18 @@ export default function ProfessorDashboard() {
       .finally(() => setNotifLoading(false));
   }, [mode]);
 
+  useEffect(() => {
+    if (!roomDropOpen) return;
+    function closeOnOutsideClick(e) {
+      if (roomDropRef.current && !roomDropRef.current.contains(e.target)) {
+        setRoomDropOpen(false);
+        setRoomSearch('');
+      }
+    }
+    document.addEventListener('mousedown', closeOnOutsideClick);
+    return () => document.removeEventListener('mousedown', closeOnOutsideClick);
+  }, [roomDropOpen]);
+
   const loadSection = useCallback(async (section, targetMode = 'students', options = {}) => {
     if (!section) return;
 
@@ -620,8 +656,47 @@ export default function ProfessorDashboard() {
     }
   }, [showToast]);
 
+  const filteredRoomOptions = useMemo(() => {
+    const q = roomSearch.trim().toLowerCase();
+    if (!q) return roomOptions;
+    return roomOptions.filter(r =>
+      (r.room_number || '').toLowerCase().includes(q) ||
+      (r.name || '').toLowerCase().includes(q) ||
+      (r.type || '').toLowerCase().replace(/_/g, ' ').includes(q) ||
+      (r.floor_label || '').toLowerCase().includes(q) ||
+      (r.building_name || '').toLowerCase().includes(q)
+    );
+  }, [roomOptions, roomSearch]);
+
+  const selectedRoomObj = useMemo(
+    () => roomOptions.find(r => String(r.id) === String(changeForm.room_id)) || null,
+    [roomOptions, changeForm.room_id]
+  );
+
+  const mapFloorKey = useMemo(() => {
+    const floor = mapFloors.find(f => f.id === mapFloorId);
+    return floor ? normalizeFloorKey(floor) : null;
+  }, [mapFloors, mapFloorId]);
+
+  const mapAvailability = useMemo(() => {
+    const floor = mapFloors.find(f => f.id === mapFloorId);
+    if (!floor) return {};
+    const fLabel = floor.floor_label;
+    const byNum = {};
+    roomOptions.forEach(r => {
+      if (r.floor_label === fLabel) {
+        byNum[r.room_number] = {
+          status:  String(r.id) === String(changeForm.room_id) ? 'selected' : 'available',
+          room_id: r.id,
+        };
+      }
+    });
+    return byNum;
+  }, [mapFloors, mapFloorId, roomOptions, changeForm.room_id]);
+
   const openMeetingChange = async (meeting) => {
     const nextDate = dateForNextDay(meeting.day_of_week);
+    setEditingChangeId(null);
     setChangeError(null);
     setChangeModal(meeting);
     setChangeForm({
@@ -639,27 +714,77 @@ export default function ProfessorDashboard() {
     if (!roomOptions.length) await loadRoomOptions();
   };
 
+  const openChangeEdit = async (change) => {
+    setEditingChangeId(change.id);
+    setChangeError(null);
+    setChangeModal({
+      id:          change.section_id,
+      meeting_id:  change.meeting_id || null,
+      code:        change.code,
+      course_name: change.course_name
+    });
+    setChangeForm({
+      change_scope: change.change_scope,
+      change_date:  change.change_date  ? String(change.change_date).slice(0, 10)  : '',
+      start_date:   change.start_date   ? String(change.start_date).slice(0, 10)   : '',
+      end_date:     change.end_date     ? String(change.end_date).slice(0, 10)     : '',
+      day_of_week:  String(change.new_day_of_week ?? ''),
+      start_time:   formatTime24(change.new_start_time),
+      end_time:     formatTime24(change.new_end_time),
+      room_id:      change.new_room_id || '',
+      reason:       change.reason || ''
+    });
+    if (!roomOptions.length) await loadRoomOptions();
+  };
+
+  const openRoomMap = async () => {
+    if (!roomOptions.length) await loadRoomOptions();
+    setMapMsg('');
+    setMapOpen(true);
+    if (!mapFloorsLoadedRef.current) {
+      try {
+        const res = await floorAPI.getAll();
+        const floors = res?.data?.data?.floors || [];
+        setMapFloors(floors);
+        setMapFloorId(floors[0]?.id || '');
+        mapFloorsLoadedRef.current = true;
+      } catch {
+        /* floors stay empty — RoomAvailabilityMap shows graceful fallback */
+      }
+    }
+  };
+
   const submitMeetingChange = async () => {
     if (!changeModal) return;
 
     setChangeSaving(true);
     setChangeError(null);
     try {
-      await axiosInstance.post(`/professor/sections/${changeModal.id}/meeting-change`, {
-        meeting_id: changeModal.meeting_id || null,
+      const payload = {
         change_scope: changeForm.change_scope,
-        change_date: changeForm.change_scope === 'single_day' ? changeForm.change_date : null,
-        start_date: changeForm.change_scope === 'date_range' ? changeForm.start_date : null,
-        end_date: changeForm.change_scope === 'date_range' ? changeForm.end_date : null,
-        day_of_week: Number(changeForm.day_of_week),
-        start_time: changeForm.start_time,
-        end_time: changeForm.end_time,
-        room_id: changeForm.room_id || null,
-        reason: changeForm.reason || ''
-      });
+        change_date:  changeForm.change_scope === 'single_day' ? changeForm.change_date : null,
+        start_date:   changeForm.change_scope === 'date_range' ? changeForm.start_date  : null,
+        end_date:     changeForm.change_scope === 'date_range' ? changeForm.end_date    : null,
+        day_of_week:  Number(changeForm.day_of_week),
+        start_time:   changeForm.start_time,
+        end_time:     changeForm.end_time,
+        room_id:      changeForm.room_id || null,
+        reason:       changeForm.reason || ''
+      };
+
+      if (editingChangeId) {
+        await axiosInstance.patch(`/professor/meeting-changes/${editingChangeId}`, payload);
+      } else {
+        await axiosInstance.post(`/professor/sections/${changeModal.id}/meeting-change`, {
+          ...payload,
+          meeting_id: changeModal.meeting_id || null
+        });
+      }
 
       showToast('✅ Change saved and students notified');
       setChangeModal(null);
+      setEditingChangeId(null);
+      setChangeError(null);
       await loadSchedule();
       await loadDashboard();
     } catch (err) {
@@ -1004,12 +1129,13 @@ export default function ProfessorDashboard() {
   };
 
   const cancelChange = async (id) => {
-    if (!window.confirm('Cancel this temporary schedule change and notify students?')) return;
+    if (!window.confirm('Cancel this schedule change and notify students?')) return;
     try {
       await axiosInstance.delete(`/professor/meeting-changes/${id}`);
       showToast('Change canceled and students notified');
       await loadChangeHistory();
       await loadSchedule();
+      await loadDashboard();
     } catch (err) {
       showToast(err?.response?.data?.message || 'Failed to cancel change', 'error');
     }
@@ -1351,14 +1477,14 @@ export default function ProfessorDashboard() {
       )}
 
       {changeModal && createPortal(
-        <div className="prof-modal-backdrop" onClick={() => !changeSaving && setChangeModal(null)}>
+        <div className="prof-modal-backdrop" onClick={() => { if (!changeSaving) { setMapOpen(false); setChangeModal(null); setEditingChangeId(null); setChangeError(null); } }}>
           <div className="prof-change-modal" onClick={(e) => e.stopPropagation()}>
             <div className="prof-change-modal__head">
               <div>
-                <h3>Change room / time</h3>
+                <h3>{editingChangeId ? 'Edit schedule change' : 'Change room / time'}</h3>
                 <p>{changeModal.code} — {changeModal.course_name}</p>
               </div>
-              <button onClick={() => setChangeModal(null)} disabled={changeSaving}>×</button>
+              <button onClick={() => { setChangeModal(null); setEditingChangeId(null); setChangeError(null); setMapOpen(false); }} disabled={changeSaving}>×</button>
             </div>
 
             <div className="prof-change-form">
@@ -1442,20 +1568,79 @@ export default function ProfessorDashboard() {
                 />
               </label>
 
-              <label className="prof-change-form__wide">
+              <div className="prof-change-form__wide prof-room-field">
                 <span>Room</span>
-                <select
-                  value={changeForm.room_id}
-                  onChange={(e) => setChangeForm((p) => ({ ...p, room_id: e.target.value }))}
-                >
-                  <option value="">Online / no room</option>
-                  {roomOptions.map((room) => (
-                    <option key={room.id} value={room.id}>
-                      {roomDisplay(room.room_number)} {room.name ? `— ${room.name}` : ''}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                <div className="prof-room-input-row">
+                  <div className="prof-room-picker" ref={roomDropRef}>
+                    {roomDropOpen ? (
+                      <input
+                        className="prof-room-picker__input"
+                        type="text"
+                        autoFocus
+                        autoComplete="off"
+                        placeholder="Search by room number, name, type…"
+                        value={roomSearch}
+                        onChange={e => setRoomSearch(e.target.value)}
+                      />
+                    ) : (
+                      <button
+                        type="button"
+                        className="prof-room-picker__display"
+                        onClick={() => { setRoomDropOpen(true); setRoomSearch(''); }}
+                      >
+                        <span className="prof-room-picker__display-text">
+                          {selectedRoomObj
+                            ? `${selectedRoomObj.room_number}${selectedRoomObj.name ? ` — ${selectedRoomObj.name}` : ''}${selectedRoomObj.floor_label ? ` · Floor ${selectedRoomObj.floor_label}` : ''}`
+                            : 'Online / no room'}
+                        </span>
+                        <span className="prof-room-picker__chevron">▾</span>
+                      </button>
+                    )}
+                    {changeForm.room_id && (
+                      <button
+                        type="button"
+                        className="prof-room-picker__clear"
+                        onClick={() => setChangeForm(p => ({ ...p, room_id: '' }))}
+                        title="Clear room"
+                      >×</button>
+                    )}
+                    {roomDropOpen && (
+                      <div className="prof-room-picker__dropdown">
+                        <button
+                          type="button"
+                          className="prof-room-picker__option"
+                          onMouseDown={e => { e.preventDefault(); setChangeForm(p => ({ ...p, room_id: '' })); setRoomDropOpen(false); setRoomSearch(''); }}
+                        >
+                          <span className="prof-room-picker__opt-tag">—</span>
+                          <span className="prof-room-picker__opt-text">Online / no room</span>
+                        </button>
+                        {filteredRoomOptions.map(room => (
+                          <button
+                            key={room.id}
+                            type="button"
+                            className={`prof-room-picker__option${String(changeForm.room_id) === String(room.id) ? ' prof-room-picker__option--active' : ''}`}
+                            onMouseDown={e => { e.preventDefault(); setChangeForm(p => ({ ...p, room_id: room.id })); setRoomDropOpen(false); setRoomSearch(''); }}
+                          >
+                            <span className="prof-room-picker__opt-tag">{room.room_number}</span>
+                            {room.name && <span className="prof-room-picker__opt-text">{room.name}</span>}
+                            <span className="prof-room-picker__opt-meta">
+                              {room.type ? room.type.replace(/_/g, ' ') : ''}
+                              {room.capacity ? ` · ${room.capacity} seats` : ''}
+                              {room.floor_label ? ` · Floor ${room.floor_label}` : ''}
+                            </span>
+                          </button>
+                        ))}
+                        {filteredRoomOptions.length === 0 && roomSearch && (
+                          <div className="prof-room-picker__empty">No rooms match "{roomSearch}"</div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <button type="button" className="prof-map-btn" onClick={openRoomMap}>
+                    🗺 Map
+                  </button>
+                </div>
+              </div>
 
               <label className="prof-change-form__wide">
                 <span>Reason / note for students</span>
@@ -1475,10 +1660,63 @@ export default function ProfessorDashboard() {
             )}
 
             <div className="prof-change-modal__foot">
-              <button className="btn btn--secondary" onClick={() => setChangeModal(null)} disabled={changeSaving}>Cancel</button>
+              <button className="btn btn--secondary" onClick={() => { setChangeModal(null); setEditingChangeId(null); setChangeError(null); setMapOpen(false); }} disabled={changeSaving}>Cancel</button>
               <button className="btn btn--primary" onClick={submitMeetingChange} disabled={changeSaving}>
                 {changeSaving ? 'Saving...' : 'Save change & notify students'}
               </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {mapOpen && createPortal(
+        <div className="prof-map-overlay" onClick={() => setMapOpen(false)}>
+          <div className="prof-map-modal" onClick={e => e.stopPropagation()}>
+            <div className="prof-map-modal__head">
+              <h3>Choose Room from Map</h3>
+              <button className="prof-map-modal__close" onClick={() => setMapOpen(false)}>×</button>
+            </div>
+            <div className="prof-map-modal__tabs">
+              {mapFloors.map(f => (
+                <button
+                  key={f.id}
+                  type="button"
+                  className={`prof-map-tab${mapFloorId === f.id ? ' prof-map-tab--active' : ''}`}
+                  onClick={() => { setMapFloorId(f.id); setMapMsg(''); }}
+                >
+                  {f.floor_label || f.floor_number}
+                </button>
+              ))}
+              {mapFloors.length === 0 && (
+                <span className="prof-map-loading">Loading floors…</span>
+              )}
+            </div>
+            <div className="prof-map-modal__body">
+              <RoomAvailabilityMap
+                floorKey={mapFloorKey}
+                availabilityByRoomNumber={mapAvailability}
+                selectedRoomId={changeForm.room_id}
+                onRoomClick={(block, avail) => {
+                  if (!avail || !avail.room_id) {
+                    setMapMsg('This room is not available for scheduling.');
+                    return;
+                  }
+                  setChangeForm(p => ({ ...p, room_id: avail.room_id }));
+                  setMapMsg(`Room ${block.roomNumber || ''} selected.`);
+                  setTimeout(() => setMapOpen(false), 350);
+                }}
+                clickableStatuses={['available', 'selected']}
+              />
+            </div>
+            {mapMsg && <div className="prof-map-msg">{mapMsg}</div>}
+            <div className="prof-map-modal__foot">
+              <div className="prof-map-legend">
+                <span className="prof-map-legend__dot prof-map-legend__dot--available" /> Selectable
+                <span className="prof-map-legend__dot prof-map-legend__dot--selected" /> Selected
+                <span className="prof-map-legend__dot prof-map-legend__dot--default" /> Not schedulable
+              </div>
+              <button className="btn btn--secondary" onClick={() => setMapOpen(false)}>Close</button>
             </div>
           </div>
         </div>,
@@ -1861,16 +2099,42 @@ export default function ProfessorDashboard() {
               <div className="prof-active-changes-list">
                 {scheduleChanges.map((change) => (
                   <div className="prof-active-change" key={change.id}>
-                    <div>
+                    <div className="prof-active-change__info">
                       <strong>{change.code} — {change.course_name}</strong>
                       <p>
                         {scopeLabel(change.change_scope)} · {changeDateText(change)} · {DAYS_AR[change.new_day_of_week] || DAYS[change.new_day_of_week]} · {formatTime24(change.new_start_time)} - {formatTime24(change.new_end_time)} · {roomDisplay(change.new_room_number)}
                       </p>
                       {change.reason && <small>Note: {change.reason}</small>}
                     </div>
-                    <span className={`prof-change-scope prof-change-scope--${change.change_scope}`}>
-                      {scopeLabel(change.change_scope)}
-                    </span>
+                    <div className="prof-active-change__meta">
+                      <span className={`prof-change-scope prof-change-scope--${change.change_scope}`}>
+                        {scopeLabel(change.change_scope)}
+                      </span>
+                      <div className="prof-active-change__actions">
+                        <button
+                          className="btn btn--sm btn--ghost"
+                          onClick={() => openChangeEdit(change)}
+                        >
+                          Edit
+                        </button>
+                        {change.change_scope !== 'permanent' ? (
+                          <button
+                            className="btn btn--sm prof-danger-btn"
+                            onClick={() => cancelChange(change.id)}
+                          >
+                            Cancel
+                          </button>
+                        ) : (
+                          <button
+                            className="btn btn--sm btn--ghost"
+                            disabled
+                            title="Permanent changes update the base schedule. Use Edit to modify, or create a new change to override."
+                          >
+                            Cancel
+                          </button>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 ))}
               </div>

@@ -86,6 +86,7 @@ router.get('/messages',                               ctrl.getCourseMessages);
 router.post('/messages',                              ctrl.createCourseMessage);
 router.delete('/messages/:messageId',                 ctrl.deleteCourseMessage);
 router.get('/meeting-changes',                        ctrl.getChangeHistory);
+router.patch('/meeting-changes/:changeId',            ctrl.editMeetingChange);
 router.delete('/meeting-changes/:changeId',           ctrl.cancelMeetingChange);
 router.get('/analytics',                              ctrl.getAnalytics);
 router.post('/sections/:sectionId/meeting-change',    ctrl.changeMeeting);
