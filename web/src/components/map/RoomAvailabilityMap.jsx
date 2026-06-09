@@ -84,16 +84,30 @@ export function RoomAvailabilityMap({ floorKey, availabilityByRoomNumber = {}, s
             {floorMeta.blocks.map(block => {
               const avail   = availabilityByRoomNumber[block.roomNumber];
               const status  = avail?.status;
-              const isSelected = avail?.room_id && avail.room_id === selectedRoomId;
-              const isHovered  = hovered === block.id;
+              const isBusyConflict = status === 'lecture_conflict' || status === 'event_conflict';
+              // isSelected from the avail object (set by parent when this room is the current choice)
+              const isSelectedInAvail = !!(avail?.isSelected) ||
+                (!isBusyConflict && avail?.room_id && String(avail.room_id) === String(selectedRoomId));
+              // A room that is BOTH selected and conflicting: show conflict fill + blue outline
+              const isBusySelected = isBusyConflict &&
+                (avail?.isSelected || (avail?.room_id && String(avail.room_id) === String(selectedRoomId)));
+              const isHovered   = hovered === block.id;
               const isClickable = (clickableStatuses || ['available']).includes(status);
 
-              const s = isSelected ? SELECTED_STYLE : (status ? (STATUS_STYLE[status] || DEFAULT_STYLE) : DEFAULT_STYLE);
+              let s;
+              if (isBusySelected) {
+                // Conflict fill with blue outline: professor can see "selected but occupied"
+                s = { ...(STATUS_STYLE[status] || DEFAULT_STYLE), stroke: '#2563eb', strokeWidth: 3 };
+              } else if (isSelectedInAvail) {
+                s = SELECTED_STYLE;
+              } else {
+                s = status ? (STATUS_STYLE[status] || DEFAULT_STYLE) : DEFAULT_STYLE;
+              }
 
               const sharedProps = {
                 fill:        s.fill,
-                stroke:      isHovered && isClickable ? '#15803d' : s.stroke,
-                strokeWidth: isHovered || isSelected ? Math.max(s.strokeWidth, 2.5) : s.strokeWidth,
+                stroke:      isHovered && isClickable && !isBusySelected ? '#15803d' : s.stroke,
+                strokeWidth: isHovered || isSelectedInAvail ? Math.max(s.strokeWidth, 2.5) : s.strokeWidth,
                 style:       { cursor: isClickable ? 'pointer' : 'default' },
                 onMouseEnter: () => setHovered(block.id),
                 onMouseLeave: () => setHovered(null),
@@ -110,7 +124,7 @@ export function RoomAvailabilityMap({ floorKey, availabilityByRoomNumber = {}, s
                     <rect x={block.x} y={block.y} width={block.width} height={block.height} {...sharedProps} />
                   )}
 
-                  {(isHovered || isSelected) && block.labelX != null && (
+                  {(isHovered || isSelectedInAvail) && block.labelX != null && (
                     <foreignObject
                       x={block.labelX - 44} y={block.labelY - 14}
                       width="88" height="20"

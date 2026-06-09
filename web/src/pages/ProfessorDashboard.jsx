@@ -274,6 +274,12 @@ export default function ProfessorDashboard() {
   const [mapFloorId, setMapFloorId] = useState('');
   const [mapMsg, setMapMsg] = useState('');
 
+  // Availability state
+  const [availMap, setAvailMap]       = useState(null); // Map<roomId, {status,conflict}> | null
+  const [availLoading, setAvailLoading] = useState(false);
+  const availSeqRef = useRef(0);        // stale-request guard
+  const [rconflictMsg, setRconflictMsg] = useState('');
+
   const [materials, setMaterials] = useState([]);
   const [materialSections, setMaterialSections] = useState([]);
   const [materialSectionId, setMaterialSectionId] = useState('');
@@ -588,11 +594,93 @@ export default function ProfessorDashboard() {
       if (roomDropRef.current && !roomDropRef.current.contains(e.target)) {
         setRoomDropOpen(false);
         setRoomSearch('');
+        setRconflictMsg('');
       }
     }
     document.addEventListener('mousedown', closeOnOutsideClick);
     return () => document.removeEventListener('mousedown', closeOnOutsideClick);
   }, [roomDropOpen]);
+
+  // ── Availability refresh ─────────────────────────────────────────────
+  // Fires whenever the change modal's time/date params change.
+  // Uses a sequence counter to discard stale responses (avoids races).
+  useEffect(() => {
+    if (!changeModal) {
+      setAvailMap(null);
+      setAvailLoading(false);
+      return;
+    }
+
+    const {
+      change_scope, change_date, start_date, end_date,
+      day_of_week, start_time, end_time,
+    } = changeForm;
+
+    const hasTime =
+      start_time && end_time &&
+      day_of_week !== '' && day_of_week !== undefined;
+    const hasDate =
+      change_scope === 'single_day' ? !!change_date :
+      change_scope === 'date_range' ? (!!start_date && !!end_date) :
+      true;
+
+    if (!hasTime || !hasDate) {
+      setAvailMap(null);
+      setAvailLoading(false);
+      return;
+    }
+
+    // Debounce + stale-guard
+    availSeqRef.current += 1;
+    const seq = availSeqRef.current;
+    setAvailLoading(true);
+
+    const timer = setTimeout(async () => {
+      const params = {
+        section_id:   changeModal.id,
+        change_scope,
+        day_of_week,
+        start_time,
+        end_time,
+      };
+      if (change_scope === 'single_day')  params.date       = change_date;
+      if (change_scope === 'date_range') { params.start_date = start_date; params.end_date = end_date; }
+      if (changeModal.meeting_id)         params.meeting_id  = changeModal.meeting_id;
+      if (editingChangeId)                params.editing_change_id = editingChangeId;
+
+      try {
+        const res = await axiosInstance.get('/professor/rooms/availability', { params });
+        if (availSeqRef.current !== seq) return; // stale — a newer request superseded this one
+        const payload = res.data?.data;
+        if (!payload?.params_complete) {
+          setAvailMap(null);
+        } else {
+          const map = new Map();
+          (payload.rooms || []).forEach(r => {
+            map.set(String(r.id), { status: r.status, conflict: r.conflict });
+          });
+          setAvailMap(map);
+        }
+      } catch {
+        if (availSeqRef.current !== seq) return;
+        setAvailMap(null); // keep modal usable on error
+      } finally {
+        if (availSeqRef.current === seq) setAvailLoading(false);
+      }
+    }, 350);
+
+    return () => clearTimeout(timer);
+  }, [
+    changeModal,
+    editingChangeId,
+    changeForm.change_scope,
+    changeForm.change_date,
+    changeForm.start_date,
+    changeForm.end_date,
+    changeForm.day_of_week,
+    changeForm.start_time,
+    changeForm.end_time,
+  ]);
 
   const loadSection = useCallback(async (section, targetMode = 'students', options = {}) => {
     if (!section) return;
@@ -656,17 +744,40 @@ export default function ProfessorDashboard() {
     }
   }, [showToast]);
 
+  // ── Rooms enriched with availability status ──────────────────────────
+  const roomsWithAvail = useMemo(() => {
+    return roomOptions.map(r => {
+      const av = availMap ? availMap.get(String(r.id)) : null;
+      return {
+        ...r,
+        avStatus:  av?.status  || (availMap ? 'available' : 'unknown'),
+        avConflict: av?.conflict || null,
+      };
+    });
+  }, [roomOptions, availMap]);
+
+  // Sorted + filtered list for the dropdown
+  // Order: selected first, then available, then busy, then unknown
   const filteredRoomOptions = useMemo(() => {
     const q = roomSearch.trim().toLowerCase();
-    if (!q) return roomOptions;
-    return roomOptions.filter(r =>
-      (r.room_number || '').toLowerCase().includes(q) ||
-      (r.name || '').toLowerCase().includes(q) ||
-      (r.type || '').toLowerCase().replace(/_/g, ' ').includes(q) ||
-      (r.floor_label || '').toLowerCase().includes(q) ||
-      (r.building_name || '').toLowerCase().includes(q)
-    );
-  }, [roomOptions, roomSearch]);
+    const STATUS_ORDER = { available: 0, busy: 1, unknown: 2 };
+    return roomsWithAvail
+      .filter(r =>
+        !q ||
+        (r.room_number || '').toLowerCase().includes(q) ||
+        (r.name || '').toLowerCase().includes(q) ||
+        (r.type || '').toLowerCase().replace(/_/g, ' ').includes(q) ||
+        (r.floor_label || '').toLowerCase().includes(q) ||
+        (r.building_name || '').toLowerCase().includes(q)
+      )
+      .sort((a, b) => {
+        const aSelected = String(a.id) === String(changeForm.room_id);
+        const bSelected = String(b.id) === String(changeForm.room_id);
+        if (aSelected && !bSelected) return -1;
+        if (!aSelected && bSelected) return 1;
+        return (STATUS_ORDER[a.avStatus] ?? 2) - (STATUS_ORDER[b.avStatus] ?? 2);
+      });
+  }, [roomsWithAvail, roomSearch, changeForm.room_id]);
 
   const selectedRoomObj = useMemo(
     () => roomOptions.find(r => String(r.id) === String(changeForm.room_id)) || null,
@@ -678,26 +789,48 @@ export default function ProfessorDashboard() {
     return floor ? normalizeFloorKey(floor) : null;
   }, [mapFloors, mapFloorId]);
 
+  // Map availability — uses availability data when loaded, falls back to
+  // showing all rooms as "available" (clickable/green) when params are
+  // not yet complete so the floor plan remains navigable.
   const mapAvailability = useMemo(() => {
     const floor = mapFloors.find(f => f.id === mapFloorId);
     if (!floor) return {};
     const fLabel = floor.floor_label;
-    const byNum = {};
-    roomOptions.forEach(r => {
-      if (r.floor_label === fLabel) {
-        byNum[r.room_number] = {
-          status:  String(r.id) === String(changeForm.room_id) ? 'selected' : 'available',
-          room_id: r.id,
-        };
+    const byNum  = {};
+    roomsWithAvail.forEach(r => {
+      if (r.floor_label !== fLabel) return;
+      const isSelected = String(r.id) === String(changeForm.room_id);
+      let mapStatus;
+      // Conflict status always wins — even for the selected room.
+      // isSelected is set separately so the map component can draw the blue outline.
+      if (r.avStatus === 'busy') {
+        mapStatus = r.avConflict?.type === 'event_booking' ? 'event_conflict' : 'lecture_conflict';
+      } else if (isSelected) {
+        mapStatus = 'selected';
+      } else {
+        // 'available' or 'unknown' — show as green/clickable either way
+        mapStatus = 'available';
       }
+      byNum[r.room_number] = { status: mapStatus, room_id: r.id, conflict: r.avConflict, isSelected };
     });
     return byNum;
-  }, [mapFloors, mapFloorId, roomOptions, changeForm.room_id]);
+  }, [mapFloors, mapFloorId, roomsWithAvail, changeForm.room_id]);
+
+  // Warning when the professor's current room selection becomes conflicted
+  // (e.g. they changed the time after picking a room).
+  const selectedRoomBusy = useMemo(() => {
+    if (!changeForm.room_id || !availMap) return null;
+    const av = availMap.get(String(changeForm.room_id));
+    return av?.status === 'busy' ? av.conflict : null;
+  }, [changeForm.room_id, availMap]);
 
   const openMeetingChange = async (meeting) => {
     const nextDate = dateForNextDay(meeting.day_of_week);
     setEditingChangeId(null);
     setChangeError(null);
+    setAvailMap(null);
+    setAvailLoading(false);
+    setRconflictMsg('');
     setChangeModal(meeting);
     setChangeForm({
       change_scope: 'single_day',
@@ -717,6 +850,9 @@ export default function ProfessorDashboard() {
   const openChangeEdit = async (change) => {
     setEditingChangeId(change.id);
     setChangeError(null);
+    setAvailMap(null);
+    setAvailLoading(false);
+    setRconflictMsg('');
     setChangeModal({
       id:          change.section_id,
       meeting_id:  change.meeting_id || null,
@@ -1477,14 +1613,14 @@ export default function ProfessorDashboard() {
       )}
 
       {changeModal && createPortal(
-        <div className="prof-modal-backdrop" onClick={() => { if (!changeSaving) { setMapOpen(false); setChangeModal(null); setEditingChangeId(null); setChangeError(null); } }}>
+        <div className="prof-modal-backdrop" onClick={() => { if (!changeSaving) { setChangeModal(null); setEditingChangeId(null); setChangeError(null); setMapOpen(false); setAvailMap(null); setAvailLoading(false); setRconflictMsg(''); } }}>
           <div className="prof-change-modal" onClick={(e) => e.stopPropagation()}>
             <div className="prof-change-modal__head">
               <div>
                 <h3>{editingChangeId ? 'Edit schedule change' : 'Change room / time'}</h3>
                 <p>{changeModal.code} — {changeModal.course_name}</p>
               </div>
-              <button onClick={() => { setChangeModal(null); setEditingChangeId(null); setChangeError(null); setMapOpen(false); }} disabled={changeSaving}>×</button>
+              <button onClick={() => { setChangeModal(null); setEditingChangeId(null); setChangeError(null); setMapOpen(false); setAvailMap(null); setAvailLoading(false); setRconflictMsg(''); }} disabled={changeSaving}>×</button>
             </div>
 
             <div className="prof-change-form">
@@ -1569,7 +1705,10 @@ export default function ProfessorDashboard() {
               </label>
 
               <div className="prof-change-form__wide prof-room-field">
-                <span>Room</span>
+                <span>
+                  Room
+                  {availLoading && <span className="prof-avail-loading-badge">Checking…</span>}
+                </span>
                 <div className="prof-room-input-row">
                   <div className="prof-room-picker" ref={roomDropRef}>
                     {roomDropOpen ? (
@@ -1580,13 +1719,13 @@ export default function ProfessorDashboard() {
                         autoComplete="off"
                         placeholder="Search by room number, name, type…"
                         value={roomSearch}
-                        onChange={e => setRoomSearch(e.target.value)}
+                        onChange={e => { setRoomSearch(e.target.value); setRconflictMsg(''); }}
                       />
                     ) : (
                       <button
                         type="button"
                         className="prof-room-picker__display"
-                        onClick={() => { setRoomDropOpen(true); setRoomSearch(''); }}
+                        onClick={() => { setRoomDropOpen(true); setRoomSearch(''); setRconflictMsg(''); }}
                       >
                         <span className="prof-room-picker__display-text">
                           {selectedRoomObj
@@ -1600,36 +1739,79 @@ export default function ProfessorDashboard() {
                       <button
                         type="button"
                         className="prof-room-picker__clear"
-                        onClick={() => setChangeForm(p => ({ ...p, room_id: '' }))}
+                        onClick={() => { setChangeForm(p => ({ ...p, room_id: '' })); setRconflictMsg(''); }}
                         title="Clear room"
                       >×</button>
                     )}
                     {roomDropOpen && (
                       <div className="prof-room-picker__dropdown">
+                        {/* Header row: availability hint or loading */}
+                        {availLoading && (
+                          <div className="prof-room-picker__avail-status">Checking availability…</div>
+                        )}
+                        {!availLoading && !availMap && (
+                          <div className="prof-room-picker__avail-status">Set date &amp; time to check availability</div>
+                        )}
+                        {/* "Online / no room" option */}
                         <button
                           type="button"
                           className="prof-room-picker__option"
-                          onMouseDown={e => { e.preventDefault(); setChangeForm(p => ({ ...p, room_id: '' })); setRoomDropOpen(false); setRoomSearch(''); }}
+                          onMouseDown={e => { e.preventDefault(); setChangeForm(p => ({ ...p, room_id: '' })); setRoomDropOpen(false); setRoomSearch(''); setRconflictMsg(''); }}
                         >
                           <span className="prof-room-picker__opt-tag">—</span>
-                          <span className="prof-room-picker__opt-text">Online / no room</span>
+                          <span className="prof-room-picker__opt-body">
+                            <span className="prof-room-picker__opt-text">Online / no room</span>
+                          </span>
                         </button>
-                        {filteredRoomOptions.map(room => (
-                          <button
-                            key={room.id}
-                            type="button"
-                            className={`prof-room-picker__option${String(changeForm.room_id) === String(room.id) ? ' prof-room-picker__option--active' : ''}`}
-                            onMouseDown={e => { e.preventDefault(); setChangeForm(p => ({ ...p, room_id: room.id })); setRoomDropOpen(false); setRoomSearch(''); }}
-                          >
-                            <span className="prof-room-picker__opt-tag">{room.room_number}</span>
-                            {room.name && <span className="prof-room-picker__opt-text">{room.name}</span>}
-                            <span className="prof-room-picker__opt-meta">
-                              {room.type ? room.type.replace(/_/g, ' ') : ''}
-                              {room.capacity ? ` · ${room.capacity} seats` : ''}
-                              {room.floor_label ? ` · Floor ${room.floor_label}` : ''}
-                            </span>
-                          </button>
-                        ))}
+                        {filteredRoomOptions.map(room => {
+                          const isSelected = String(changeForm.room_id) === String(room.id);
+                          const isBusy     = room.avStatus === 'busy';
+                          return (
+                            <button
+                              key={room.id}
+                              type="button"
+                              className={[
+                                'prof-room-picker__option',
+                                isSelected ? 'prof-room-picker__option--active' : '',
+                                isBusy     ? 'prof-room-picker__option--busy'   : '',
+                              ].filter(Boolean).join(' ')}
+                              onMouseDown={e => {
+                                e.preventDefault();
+                                if (isBusy) {
+                                  const c = room.avConflict;
+                                  setRconflictMsg(c
+                                    ? c.type === 'event_booking'
+                                      ? `Reserved for event "${c.title}" — ${c.start_time}–${c.end_time}`
+                                      : `Conflict: ${c.course_code} — ${c.start_time}–${c.end_time}`
+                                    : 'This room has a conflict at the selected time.');
+                                  return;
+                                }
+                                setChangeForm(p => ({ ...p, room_id: room.id }));
+                                setRoomDropOpen(false);
+                                setRoomSearch('');
+                                setRconflictMsg('');
+                              }}
+                            >
+                              <span className="prof-room-picker__opt-tag">{room.room_number}</span>
+                              <span className="prof-room-picker__opt-body">
+                                {room.name && <span className="prof-room-picker__opt-text">{room.name}</span>}
+                                {isBusy && room.avConflict && (
+                                  <span className="prof-room-picker__opt-conflict">
+                                    {room.avConflict.type === 'event_booking'
+                                      ? `Event: ${room.avConflict.title} ${room.avConflict.start_time}–${room.avConflict.end_time}`
+                                      : `Conflict: ${room.avConflict.course_code} ${room.avConflict.start_time}–${room.avConflict.end_time}`}
+                                  </span>
+                                )}
+                                <span className="prof-room-picker__opt-meta">
+                                  {room.type ? room.type.replace(/_/g, ' ') : ''}
+                                  {room.capacity ? ` · ${room.capacity} seats` : ''}
+                                  {room.floor_label ? ` · Floor ${room.floor_label}` : ''}
+                                </span>
+                              </span>
+                              <span className={`prof-room-avail-dot prof-room-avail-dot--${isBusy ? 'busy' : isSelected ? 'selected' : room.avStatus === 'unknown' ? 'unknown' : 'available'}`} />
+                            </button>
+                          );
+                        })}
                         {filteredRoomOptions.length === 0 && roomSearch && (
                           <div className="prof-room-picker__empty">No rooms match "{roomSearch}"</div>
                         )}
@@ -1640,6 +1822,18 @@ export default function ProfessorDashboard() {
                     🗺 Map
                   </button>
                 </div>
+                {rconflictMsg && (
+                  <div className="prof-room-conflict-msg">{rconflictMsg}</div>
+                )}
+                {!rconflictMsg && selectedRoomBusy && (
+                  <div className="prof-room-conflict-msg">
+                    ⚠ Selected room is now occupied:{' '}
+                    {selectedRoomBusy.type === 'event_booking'
+                      ? `Event "${selectedRoomBusy.title}" ${selectedRoomBusy.start_time}–${selectedRoomBusy.end_time}`
+                      : `${selectedRoomBusy.course_code} ${selectedRoomBusy.start_time}–${selectedRoomBusy.end_time}`
+                    }. Please choose a different room.
+                  </div>
+                )}
               </div>
 
               <label className="prof-change-form__wide">
@@ -1660,7 +1854,7 @@ export default function ProfessorDashboard() {
             )}
 
             <div className="prof-change-modal__foot">
-              <button className="btn btn--secondary" onClick={() => { setChangeModal(null); setEditingChangeId(null); setChangeError(null); setMapOpen(false); }} disabled={changeSaving}>Cancel</button>
+              <button className="btn btn--secondary" onClick={() => { setChangeModal(null); setEditingChangeId(null); setChangeError(null); setMapOpen(false); setAvailMap(null); setAvailLoading(false); setRconflictMsg(''); }} disabled={changeSaving}>Cancel</button>
               <button className="btn btn--primary" onClick={submitMeetingChange} disabled={changeSaving}>
                 {changeSaving ? 'Saving...' : 'Save change & notify students'}
               </button>
@@ -1673,10 +1867,77 @@ export default function ProfessorDashboard() {
       {mapOpen && createPortal(
         <div className="prof-map-overlay" onClick={() => setMapOpen(false)}>
           <div className="prof-map-modal" onClick={e => e.stopPropagation()}>
+
+            {/* ── Header ─────────────────────────────────────────── */}
             <div className="prof-map-modal__head">
               <h3>Choose Room from Map</h3>
               <button className="prof-map-modal__close" onClick={() => setMapOpen(false)}>×</button>
             </div>
+
+            {/* ── Date / time controls ────────────────────────────
+                All inputs write directly to changeForm — no duplicate
+                state; values are already in the main modal on close. */}
+            <div className="prof-map-controls">
+              {changeForm.change_scope === 'single_day' && (
+                <label className="prof-map-ctrl">
+                  <span>Date</span>
+                  <input
+                    type="date"
+                    value={changeForm.change_date}
+                    onChange={e => {
+                      const v = e.target.value;
+                      if (v) {
+                        const [y, m, d] = v.split('-').map(Number);
+                        const dow = new Date(y, m - 1, d).getDay();
+                        setChangeForm(p => ({ ...p, change_date: v, day_of_week: String(dow) }));
+                      } else {
+                        setChangeForm(p => ({ ...p, change_date: v }));
+                      }
+                    }}
+                  />
+                </label>
+              )}
+              {changeForm.change_scope === 'date_range' && (
+                <>
+                  <label className="prof-map-ctrl">
+                    <span>From</span>
+                    <input type="date" value={changeForm.start_date}
+                      onChange={e => setChangeForm(p => ({ ...p, start_date: e.target.value }))} />
+                  </label>
+                  <label className="prof-map-ctrl">
+                    <span>To</span>
+                    <input type="date" value={changeForm.end_date}
+                      onChange={e => setChangeForm(p => ({ ...p, end_date: e.target.value }))} />
+                  </label>
+                </>
+              )}
+              {/* Day selector — hidden for single_day (derived from date) */}
+              {changeForm.change_scope !== 'single_day' && (
+                <label className="prof-map-ctrl">
+                  <span>Day</span>
+                  <select value={changeForm.day_of_week}
+                    onChange={e => setChangeForm(p => ({ ...p, day_of_week: e.target.value }))}>
+                    {DAYS.map((d, i) => <option key={i} value={i}>{d}</option>)}
+                  </select>
+                </label>
+              )}
+              <label className="prof-map-ctrl">
+                <span>Start</span>
+                <input type="time" value={changeForm.start_time}
+                  onChange={e => setChangeForm(p => ({ ...p, start_time: e.target.value }))} />
+              </label>
+              <label className="prof-map-ctrl">
+                <span>End</span>
+                <input type="time" value={changeForm.end_time}
+                  onChange={e => setChangeForm(p => ({ ...p, end_time: e.target.value }))} />
+              </label>
+              {availLoading && <span className="prof-map-avail-badge prof-map-avail-badge--loading">Checking…</span>}
+              {!availLoading && availMap === null && changeForm.start_time && changeForm.end_time && (
+                <span className="prof-map-avail-badge prof-map-avail-badge--hint">Set all fields</span>
+              )}
+            </div>
+
+            {/* ── Floor tabs ──────────────────────────────────────── */}
             <div className="prof-map-modal__tabs">
               {mapFloors.map(f => (
                 <button
@@ -1692,6 +1953,8 @@ export default function ProfessorDashboard() {
                 <span className="prof-map-loading">Loading floors…</span>
               )}
             </div>
+
+            {/* ── Map canvas ──────────────────────────────────────── */}
             <div className="prof-map-modal__body">
               <RoomAvailabilityMap
                 floorKey={mapFloorKey}
@@ -1699,25 +1962,47 @@ export default function ProfessorDashboard() {
                 selectedRoomId={changeForm.room_id}
                 onRoomClick={(block, avail) => {
                   if (!avail || !avail.room_id) {
-                    setMapMsg('This room is not available for scheduling.');
+                    setMapMsg(
+                      availMap
+                        ? 'This room is not available for scheduling.'
+                        : 'Set date and time to check room availability.'
+                    );
+                    return;
+                  }
+                  const status = avail.status;
+                  if (status === 'lecture_conflict' || status === 'event_conflict') {
+                    const c = avail.conflict;
+                    setMapMsg(c
+                      ? c.type === 'event_booking'
+                        ? `Reserved for event "${c.title}" — ${c.start_time}–${c.end_time}`
+                        : `Conflict: ${c.course_code} — ${c.start_time}–${c.end_time}`
+                      : 'This room has a conflict at the selected time.');
                     return;
                   }
                   setChangeForm(p => ({ ...p, room_id: avail.room_id }));
                   setMapMsg(`Room ${block.roomNumber || ''} selected.`);
+                  setRconflictMsg('');
                   setTimeout(() => setMapOpen(false), 350);
                 }}
-                clickableStatuses={['available', 'selected']}
+                clickableStatuses={['available', 'selected', 'lecture_conflict', 'event_conflict']}
               />
             </div>
+
+            {/* ── Feedback message ────────────────────────────────── */}
             {mapMsg && <div className="prof-map-msg">{mapMsg}</div>}
+
+            {/* ── Footer: legend + close ──────────────────────────── */}
             <div className="prof-map-modal__foot">
               <div className="prof-map-legend">
-                <span className="prof-map-legend__dot prof-map-legend__dot--available" /> Selectable
-                <span className="prof-map-legend__dot prof-map-legend__dot--selected" /> Selected
-                <span className="prof-map-legend__dot prof-map-legend__dot--default" /> Not schedulable
+                <span className="prof-map-legend__dot prof-map-legend__dot--available" /> Available
+                <span className="prof-map-legend__dot prof-map-legend__dot--selected"  /> Selected
+                <span className="prof-map-legend__dot prof-map-legend__dot--conflict"  /> Conflict
+                <span className="prof-map-legend__dot prof-map-legend__dot--event"     /> Event
+                <span className="prof-map-legend__dot prof-map-legend__dot--default"   /> Not schedulable
               </div>
               <button className="btn btn--secondary" onClick={() => setMapOpen(false)}>Close</button>
             </div>
+
           </div>
         </div>,
         document.body

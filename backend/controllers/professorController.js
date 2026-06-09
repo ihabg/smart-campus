@@ -1021,6 +1021,296 @@ async function getRoomsForChange(req, res, next) {
   }
 }
 
+// ─── Room availability for professor change picker ────────────
+// GET /api/professor/rooms/availability
+// Returns all active rooms annotated with availability status
+// for the requested change scope/date/time. Uses the same three
+// conflict checks as changeMeeting / editMeetingChange so that
+// what the professor sees in the picker matches what the backend
+// will accept on save.
+async function getRoomAvailability(req, res, next) {
+  try {
+    const instructorId = await requireInstructor(req, res);
+    if (!instructorId) return;
+
+    const {
+      section_id,
+      change_scope   = 'single_day',
+      date:           rawChangeDate,
+      start_date:     rawStartDate,
+      end_date:       rawEndDate,
+      day_of_week:    rawDow,
+      start_time:     rawStart,
+      end_time:       rawEnd,
+      meeting_id,
+      editing_change_id,
+    } = req.query;
+
+    // ── 1. Require section_id ──────────────────────────────────
+    if (!section_id) {
+      return res.status(400).json({ success: false, message: 'section_id is required.' });
+    }
+    const ALLOWED_SCOPES = ['single_day', 'date_range', 'permanent'];
+    if (!ALLOWED_SCOPES.includes(change_scope)) {
+      return res.status(400).json({ success: false, message: 'Invalid change_scope.' });
+    }
+
+    // ── 2. Authorise: professor must own this section ──────────
+    const sectionRes = await query(
+      `SELECT id, semester::TEXT AS semester, academic_year
+       FROM sections
+       WHERE id = $1 AND instructor_id = $2 AND is_active = TRUE`,
+      [section_id, instructorId]
+    );
+    if (!sectionRes.rows.length) {
+      return res.status(403).json({ success: false, message: 'Not your active section.' });
+    }
+    const section = sectionRes.rows[0];
+
+    // ── 3. Fetch all active rooms (same set as getRoomsForChange) ─
+    const roomsRes = await query(
+      `SELECT r.id, r.room_number, r.name, r.type::TEXT AS type,
+              r.capacity, f.floor_label, b.name AS building_name
+       FROM rooms r
+       LEFT JOIN floors    f ON f.id = r.floor_id
+       LEFT JOIN buildings b ON b.id = f.building_id
+       WHERE r.is_active = TRUE
+       ORDER BY
+         CASE WHEN r.type::TEXT IN ('lecture_hall','classroom','lab') THEN 1
+              ELSE 2 END,
+         r.room_number`
+    );
+    const allRooms = roomsRes.rows;
+
+    // ── 4. Return "unknown" if time params are incomplete ────────
+    const hasTime =
+      rawStart && rawEnd &&
+      rawDow !== undefined && rawDow !== null && rawDow !== '';
+    const hasDate =
+      change_scope === 'single_day'  ? !!rawChangeDate :
+      change_scope === 'date_range'  ? (!!rawStartDate && !!rawEndDate) :
+      true; // permanent needs no date
+
+    if (!hasTime || !hasDate) {
+      return res.json({
+        success: true,
+        data: {
+          params_complete: false,
+          rooms: allRooms.map(r => ({ ...r, status: 'unknown', conflict: null }))
+        }
+      });
+    }
+
+    // ── 5. Normalise time strings ─────────────────────────────────
+    const newStart = String(rawStart).slice(0, 5);
+    const newEnd   = String(rawEnd).slice(0, 5);
+    if (newStart >= newEnd) {
+      return res.json({
+        success: true,
+        data: {
+          params_complete: false,
+          rooms: allRooms.map(r => ({ ...r, status: 'unknown', conflict: null }))
+        }
+      });
+    }
+
+    // ── 6. Derive effective DOW ───────────────────────────────────
+    // For single_day: always derive from the date (backend authority,
+    // ignores any frontend-supplied day_of_week for this scope).
+    let effectiveDow;
+    if (change_scope === 'single_day') {
+      const [y, m, d] = String(rawChangeDate).split('-').map(Number);
+      effectiveDow = new Date(y, m - 1, d).getDay();
+    } else {
+      effectiveDow = parseInt(rawDow, 10);
+      if (!Number.isInteger(effectiveDow) || effectiveDow < 0 || effectiveDow > 6) {
+        return res.status(400).json({ success: false, message: 'Invalid day_of_week.' });
+      }
+    }
+
+    // ── 7. Self-exclusion params ─────────────────────────────────
+    // Check A (section_meetings): exclude the specific meeting row
+    // when meeting_id is present; otherwise exclude the whole section.
+    const smExcludeVal = meeting_id || section_id;
+    const smExcludeSql = meeting_id ? 'AND sm.id != $6' : 'AND s.id != $6';
+
+    // Check B (section_meeting_changes):
+    //   editing  → exclude only this change record (smc.id != editing_change_id)
+    //   creating → exclude entire section (smc.section_id != section_id)
+    const smcExcludeVal = editing_change_id || section_id;
+    const smcExcludeSql = editing_change_id
+      ? 'AND smc.id != $4'
+      : 'AND smc.section_id != $4';
+
+    // ── 8. Build Check B (changes) date-scope clause ─────────────
+    // Mirrors the identical logic in changeMeeting / editMeetingChange.
+    let smcDateSql  = '';
+    let smcParams   = [effectiveDow, newEnd, newStart, smcExcludeVal];
+
+    if (change_scope === 'single_day') {
+      smcDateSql = `AND (
+        (smc.change_scope = 'single_day'  AND smc.change_date  = $5::date)
+        OR (smc.change_scope = 'date_range' AND smc.start_date <= $5::date AND smc.end_date >= $5::date)
+        OR smc.change_scope = 'permanent'
+      )`;
+      smcParams = [...smcParams, rawChangeDate];
+    } else if (change_scope === 'date_range') {
+      smcDateSql = `AND (
+        (smc.change_scope = 'single_day'  AND smc.change_date BETWEEN $5::date AND $6::date)
+        OR (smc.change_scope = 'date_range' AND smc.start_date <= $6::date AND smc.end_date >= $5::date)
+        OR smc.change_scope = 'permanent'
+      )`;
+      smcParams = [...smcParams, rawStartDate, rawEndDate];
+    }
+    // permanent: no date clause → smcDateSql stays '', smcParams unchanged
+
+    // ── 9. Build Check C (events) date-scope clause ──────────────
+    // Mirrors changeMeeting Check C exactly.
+    let evDateSql = '';
+    let evParams  = [newEnd, newStart];
+
+    if (change_scope === 'single_day') {
+      evDateSql = 'AND eb.event_date = $3::date';
+      evParams  = [...evParams, rawChangeDate];
+    } else if (change_scope === 'date_range') {
+      evDateSql = 'AND eb.event_date BETWEEN $3::date AND $4::date AND EXTRACT(DOW FROM eb.event_date)::int = $5';
+      evParams  = [...evParams, rawStartDate, rawEndDate, effectiveDow];
+    } else {
+      evDateSql = 'AND eb.event_date >= CURRENT_DATE AND EXTRACT(DOW FROM eb.event_date)::int = $3';
+      evParams  = [...evParams, effectiveDow];
+    }
+
+    // ── 10. Run batch conflict queries ────────────────────────────
+    // Each query returns one conflict row per conflicting room.
+    // First conflict found wins (section > relocation > event priority).
+    const conflictMap = new Map(); // UUID string → {type, …}
+
+    // ── Check A: regular section meetings ─────────────────────────
+    // Same WHERE as changeMeeting Check A but without a per-room
+    // filter — returns all conflicting rooms in one query.
+    const checkA = await query(
+      `SELECT DISTINCT ON (COALESCE(sm.room_id, s.room_id))
+         COALESCE(sm.room_id, s.room_id) AS room_id,
+         c.code  AS course_code,
+         c.name  AS course_name,
+         sm.start_time::text AS conflict_start,
+         sm.end_time::text   AS conflict_end
+       FROM section_meetings sm
+       JOIN sections s ON s.id = sm.section_id
+       JOIN courses  c ON c.id = s.course_id
+       WHERE s.semester::TEXT = $1
+         AND s.academic_year  = $2
+         AND sm.day_of_week   = $3
+         AND sm.start_time    < $4::time
+         AND sm.end_time      > $5::time
+         AND s.is_active = TRUE
+         ${smExcludeSql}
+       ORDER BY COALESCE(sm.room_id, s.room_id), sm.start_time`,
+      [section.semester, section.academic_year, effectiveDow, newEnd, newStart, smExcludeVal]
+    );
+    checkA.rows.forEach(row => {
+      if (row.room_id) {
+        conflictMap.set(String(row.room_id), {
+          type:        'section_meeting',
+          course_code: row.course_code,
+          course_name: row.course_name,
+          start_time:  row.conflict_start,
+          end_time:    row.conflict_end,
+        });
+      }
+    });
+
+    // ── Check B: active lecture relocations ───────────────────────
+    // Same WHERE as changeMeeting / editMeetingChange Check B.
+    const checkB = await query(
+      `SELECT DISTINCT ON (smc.new_room_id)
+         smc.new_room_id AS room_id,
+         c.code  AS course_code,
+         c.name  AS course_name,
+         smc.new_start_time::text AS conflict_start,
+         smc.new_end_time::text   AS conflict_end
+       FROM section_meeting_changes smc
+       JOIN sections s ON s.id = smc.section_id
+       JOIN courses  c ON c.id = s.course_id
+       WHERE smc.new_day_of_week = $1
+         AND smc.new_start_time  < $2::time
+         AND smc.new_end_time    > $3::time
+         AND smc.is_active = TRUE
+         ${smcExcludeSql}
+         ${smcDateSql}
+       ORDER BY smc.new_room_id, smc.new_start_time`,
+      smcParams
+    );
+    checkB.rows.forEach(row => {
+      if (row.room_id && !conflictMap.has(String(row.room_id))) {
+        conflictMap.set(String(row.room_id), {
+          type:        'relocation',
+          course_code: row.course_code,
+          course_name: row.course_name,
+          start_time:  row.conflict_start,
+          end_time:    row.conflict_end,
+        });
+      }
+    });
+
+    // ── Check C: admin event bookings ─────────────────────────────
+    // Covers both legacy eb.room_id and multi-room event_booking_rooms.
+    // Same logic as changeMeeting / editMeetingChange Check C.
+    const checkC = await query(
+      `WITH booked AS (
+         SELECT eb.id AS bid, eb.room_id AS rid
+         FROM event_bookings eb
+         WHERE eb.status = 'active'
+           AND eb.room_id IS NOT NULL
+           AND eb.start_time < $1::time
+           AND eb.end_time   > $2::time
+           ${evDateSql}
+         UNION ALL
+         SELECT ebr.event_booking_id AS bid, ebr.room_id AS rid
+         FROM event_booking_rooms ebr
+         JOIN event_bookings eb ON eb.id = ebr.event_booking_id
+         WHERE eb.status = 'active'
+           AND eb.start_time < $1::time
+           AND eb.end_time   > $2::time
+           ${evDateSql}
+       )
+       SELECT DISTINCT ON (b.rid)
+         b.rid AS room_id,
+         eb.title,
+         eb.start_time::text AS conflict_start,
+         eb.end_time::text   AS conflict_end
+       FROM booked b
+       JOIN event_bookings eb ON eb.id = b.bid
+       ORDER BY b.rid, eb.start_time`,
+      evParams
+    );
+    checkC.rows.forEach(row => {
+      if (row.room_id && !conflictMap.has(String(row.room_id))) {
+        conflictMap.set(String(row.room_id), {
+          type:       'event_booking',
+          title:      row.title,
+          start_time: row.conflict_start,
+          end_time:   row.conflict_end,
+        });
+      }
+    });
+
+    // ── 11. Annotate rooms ────────────────────────────────────────
+    const rooms = allRooms.map(room => {
+      const conflict = conflictMap.get(String(room.id)) || null;
+      return { ...room, status: conflict ? 'busy' : 'available', conflict };
+    });
+
+    return res.json({
+      success: true,
+      data: { params_complete: true, rooms }
+    });
+
+  } catch (e) {
+    next(e);
+  }
+}
+
 async function changeMeeting(req, res, next) {
   try {
     const instructorId = await requireInstructor(req, res);
@@ -3630,6 +3920,7 @@ module.exports = {
   sendAttendanceWarning,
   getSchedule,
   getRoomsForChange,
+  getRoomAvailability,
   changeMeeting,
   getMaterials,
   uploadMaterialFile,

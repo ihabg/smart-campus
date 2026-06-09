@@ -71,6 +71,7 @@ router.get('/dashboard',                              ctrl.getDashboard);
 router.get('/terms',                                  ctrl.getProfessorTerms);
 router.get('/schedule',                               ctrl.getSchedule);
 router.get('/rooms',                                  ctrl.getRoomsForChange);
+router.get('/rooms/availability',                     ctrl.getRoomAvailability);
 router.get('/materials',                              ctrl.getMaterials);
 router.post('/materials/upload',                      uploadMaterial.single('material'), ctrl.uploadMaterialFile);
 router.post('/materials/:materialId/open',            ctrl.recordMaterialOpen);
