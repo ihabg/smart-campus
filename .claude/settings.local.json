@@ -98,7 +98,10 @@
       "PowerShell(Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Where-Object { $_.LocalPort -in @\\(5000, 5001, 5002, 5003, 5004\\) } | ForEach-Object { $p = Get-CimInstance Win32_Process -Filter \"ProcessId = $\\($_.OwningProcess\\)\"; [PSCustomObject]@{ Port=$_.LocalPort; PID=$_.OwningProcess; CMD=$p.CommandLine } })",
       "Bash(node --env-file=.env -e \"require\\('./controllers/professorController'\\); console.log\\('backend syntax OK'\\);\")",
       "PowerShell(Head-Object -First 30)",
-      "PowerShell(Get-ChildItem \"C:\\\\Users\\\\Kebab\\\\Desktop\\\\smartwhek\\\\backend\\\\database\\\\migrations\" | Sort-Object Name | Select-Object -First 5 | ForEach-Object { Write-Host \"=== $\\($_.Name\\) ===\"; Get-Content $_.FullName | Select-Object -First 30; Write-Host \"\" })"
+      "PowerShell(Get-ChildItem \"C:\\\\Users\\\\Kebab\\\\Desktop\\\\smartwhek\\\\backend\\\\database\\\\migrations\" | Sort-Object Name | Select-Object -First 5 | ForEach-Object { Write-Host \"=== $\\($_.Name\\) ===\"; Get-Content $_.FullName | Select-Object -First 30; Write-Host \"\" })",
+      "Bash(node scripts/seedDemoSpring2025_2026.js)",
+      "Bash(node scripts/cleanupOldSpring2025_2026.js)",
+      "Bash(node scripts/seedSpringDemoContent2025_2026.js)"
     ]
   }
 }
