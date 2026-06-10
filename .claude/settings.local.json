@@ -96,7 +96,9 @@
       "PowerShell($p = Get-CimInstance Win32_Process -Filter \"ProcessId = 11372\"; $p.CommandLine)",
       "PowerShell(Get-Process -Name \"node\" | ForEach-Object { $p = Get-CimInstance Win32_Process -Filter \"ProcessId = $\\($_.Id\\)\"; [PSCustomObject]@{ PID=$_.Id; Mem=[math]::Round\\($_.WorkingSet/1MB,1\\); CMD=$p.CommandLine } } | Format-List)",
       "PowerShell(Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Where-Object { $_.LocalPort -in @\\(5000, 5001, 5002, 5003, 5004\\) } | ForEach-Object { $p = Get-CimInstance Win32_Process -Filter \"ProcessId = $\\($_.OwningProcess\\)\"; [PSCustomObject]@{ Port=$_.LocalPort; PID=$_.OwningProcess; CMD=$p.CommandLine } })",
-      "Bash(node --env-file=.env -e \"require\\('./controllers/professorController'\\); console.log\\('backend syntax OK'\\);\")"
+      "Bash(node --env-file=.env -e \"require\\('./controllers/professorController'\\); console.log\\('backend syntax OK'\\);\")",
+      "PowerShell(Head-Object -First 30)",
+      "PowerShell(Get-ChildItem \"C:\\\\Users\\\\Kebab\\\\Desktop\\\\smartwhek\\\\backend\\\\database\\\\migrations\" | Sort-Object Name | Select-Object -First 5 | ForEach-Object { Write-Host \"=== $\\($_.Name\\) ===\"; Get-Content $_.FullName | Select-Object -First 30; Write-Host \"\" })"
     ]
   }
 }

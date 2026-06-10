@@ -1,0 +1,470 @@
+/* ═══════════════════════════════════════════════════
+   Admin Profile Page — AdminProfilePage.css
+   ═══════════════════════════════════════════════════ */
+
+/* ─── Page layout ────────────────────────────────── */
+.ap-page {
+  max-width: 860px;
+  margin: 0 auto;
+}
+
+.ap-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: var(--space-xl, 24px);
+  flex-wrap: wrap;
+}
+
+.ap-header__title {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text, #0d1b3e);
+  margin: 0;
+}
+
+.ap-header__sub {
+  font-size: 13px;
+  color: var(--text-muted, #6474a0);
+  margin: 4px 0 0;
+}
+
+/* ─── Hero card ──────────────────────────────────── */
+.ap-hero {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 24px;
+  margin-bottom: 20px;
+  background: var(--white, #fff);
+  border: 1px solid var(--border, #dce2f0);
+  border-radius: var(--r-lg, 14px);
+  flex-wrap: wrap;
+}
+
+/* ─── Avatar ─────────────────────────────────────── */
+.ap-avatar-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.ap-avatar {
+  width: 88px;
+  height: 88px;
+  border-radius: 50%;
+  border: 3px solid var(--border, #dce2f0);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--najah-blue, #1a3a6b);
+  background: var(--najah-light, #e8eef7);
+  user-select: none;
+}
+
+.ap-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.ap-avatar-edit {
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  width: 26px;
+  height: 26px;
+  background: var(--navy, #03184a);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 12px;
+  color: #fff;
+  border: 2px solid #fff;
+  transition: background 0.15s;
+  line-height: 1;
+}
+
+.ap-avatar-edit:hover {
+  background: var(--najah-blue, #1a3a6b);
+}
+
+.ap-avatar-uploading {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+/* ─── Hero info ──────────────────────────────────── */
+.ap-hero__info {
+  flex: 1;
+  min-width: 0;
+}
+
+.ap-hero__name {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text, #0d1b3e);
+  margin: 0 0 4px;
+  word-break: break-word;
+}
+
+.ap-hero__email {
+  font-size: 13.5px;
+  color: var(--text-muted, #6474a0);
+  margin: 0 0 10px;
+  word-break: break-all;
+}
+
+.ap-hero__badges {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* ─── Meta row (created/last login) ──────────────── */
+.ap-hero__meta {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border, #dce2f0);
+  width: 100%;
+}
+
+.ap-meta-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ap-meta-item__label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted, #6474a0);
+}
+
+.ap-meta-item__value {
+  font-size: 13px;
+  color: var(--text, #0d1b3e);
+  font-weight: 500;
+}
+
+/* ─── Tab bar ────────────────────────────────────── */
+.ap-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 2px solid var(--border, #dce2f0);
+  margin-bottom: 20px;
+}
+
+.ap-tab {
+  padding: 9px 20px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-muted, #6474a0);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+
+.ap-tab:hover {
+  color: var(--text, #0d1b3e);
+}
+
+.ap-tab--active {
+  color: var(--navy, #03184a);
+  border-bottom-color: var(--navy, #03184a);
+  font-weight: 600;
+}
+
+/* ─── Content card ───────────────────────────────── */
+.ap-card {
+  background: var(--white, #fff);
+  border: 1px solid var(--border, #dce2f0);
+  border-radius: var(--r-lg, 14px);
+  padding: 24px;
+}
+
+.ap-card__title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text, #0d1b3e);
+  margin: 0 0 18px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border, #dce2f0);
+}
+
+/* ─── Form grid ──────────────────────────────────── */
+.ap-form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.ap-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 14px;
+}
+
+.ap-form-group:last-of-type {
+  margin-bottom: 0;
+}
+
+.ap-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text, #0d1b3e);
+}
+
+.ap-input {
+  width: 100%;
+  padding: 9px 12px;
+  font-size: 14px;
+  border: 1px solid var(--border, #dce2f0);
+  border-radius: var(--r-md, 8px);
+  background: var(--white, #fff);
+  color: var(--text, #0d1b3e);
+  transition: border-color 0.15s, box-shadow 0.15s;
+  box-sizing: border-box;
+  font-family: inherit;
+}
+
+.ap-input:focus {
+  outline: none;
+  border-color: var(--navy, #03184a);
+  box-shadow: 0 0 0 3px rgba(3, 24, 74, 0.08);
+}
+
+.ap-input--readonly {
+  background: var(--surface, #f5f7fc);
+  color: var(--text-muted, #6474a0);
+  cursor: default;
+}
+
+.ap-hint {
+  font-size: 11.5px;
+  color: var(--text-muted, #6474a0);
+  margin-top: 2px;
+}
+
+/* ─── Password strength hint ─────────────────────── */
+.ap-pw-rules {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 6px;
+}
+
+.ap-pw-rule {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--text-muted, #6474a0);
+  transition: color 0.15s;
+}
+
+.ap-pw-rule--ok {
+  color: #16a34a;
+}
+
+.ap-pw-rule__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--border, #dce2f0);
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+
+.ap-pw-rule--ok .ap-pw-rule__dot {
+  background: #16a34a;
+}
+
+/* ─── Form actions ───────────────────────────────── */
+.ap-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border, #dce2f0);
+}
+
+/* ─── Save button ────────────────────────────────── */
+.ap-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 22px;
+  font-size: 14px;
+  font-weight: 600;
+  border: none;
+  border-radius: var(--r-md, 8px);
+  cursor: pointer;
+  transition: background 0.15s, opacity 0.15s, transform 0.1s;
+  white-space: nowrap;
+  font-family: inherit;
+}
+
+.ap-btn:active {
+  transform: scale(0.98);
+}
+
+.ap-btn--primary {
+  background: var(--navy, #03184a);
+  color: #fff;
+}
+
+.ap-btn--primary:hover:not(:disabled) {
+  background: var(--najah-blue, #1a3a6b);
+}
+
+.ap-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* ─── Inline spinner ─────────────────────────────── */
+.ap-spinner {
+  width: 15px;
+  height: 15px;
+  border: 2px solid rgba(255,255,255,0.35);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: ap-spin 0.6s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes ap-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ─── Avatar upload hint ─────────────────────────── */
+.ap-avatar-hint {
+  font-size: 11.5px;
+  color: var(--text-muted, #6474a0);
+  margin-top: 8px;
+  text-align: center;
+}
+
+/* ─── Info section in hero (meta strip) ──────────── */
+.ap-info-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.ap-info-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ap-info-field__label {
+  font-size: 11.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted, #6474a0);
+}
+
+.ap-info-field__value {
+  font-size: 13.5px;
+  color: var(--text, #0d1b3e);
+  font-weight: 500;
+  word-break: break-word;
+}
+
+/* ─── Status badge overrides ─────────────────────── */
+.ap-status--active {
+  background: #dcfce7;
+  color: #166534;
+  border-radius: 6px;
+  padding: 2px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  display: inline-block;
+}
+
+.ap-status--suspended {
+  background: #fee2e2;
+  color: #991b1b;
+  border-radius: 6px;
+  padding: 2px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  display: inline-block;
+}
+
+.ap-status--inactive {
+  background: #f3f4f6;
+  color: #6b7280;
+  border-radius: 6px;
+  padding: 2px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  display: inline-block;
+}
+
+/* ─── Responsive ─────────────────────────────────── */
+@media (max-width: 640px) {
+  .ap-hero {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 16px;
+  }
+
+  .ap-hero__meta {
+    gap: 14px;
+  }
+
+  .ap-form-row {
+    grid-template-columns: 1fr;
+  }
+
+  .ap-info-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .ap-tabs {
+    overflow-x: auto;
+  }
+
+  .ap-form-actions {
+    justify-content: stretch;
+  }
+
+  .ap-btn {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+@media (max-width: 400px) {
+  .ap-avatar {
+    width: 72px;
+    height: 72px;
+    font-size: 22px;
+  }
+
+  .ap-hero__name {
+    font-size: 17px;
+  }
+}

@@ -240,6 +240,14 @@ export default function Navbar({ onMenuToggle }) {
               {isAdmin && (
                 <>
                   <Link
+                    to="/admin/profile"
+                    className="profile-dropdown__item"
+                    onClick={() => setProfileOpen(false)}
+                  >
+                    My Profile
+                  </Link>
+
+                  <Link
                     to="/admin"
                     className="profile-dropdown__item"
                     onClick={() => setProfileOpen(false)}

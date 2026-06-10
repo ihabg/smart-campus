@@ -37,6 +37,7 @@ import AdminStudyPlansPage from './pages/admin/AdminStudyPlansPage';
 import AdminCoursesPage    from './pages/admin/AdminCoursesPage';
 import AdminDoctorsPage    from './pages/admin/AdminDoctorsPage';
 import AdminActivityLogPage from './pages/admin/AdminActivityLogPage';
+import AdminProfilePage    from './pages/admin/AdminProfilePage';
 import ProfessorDashboard from './pages/ProfessorDashboard';
 import ProfessorAssessmentsPage from './pages/ProfessorAssessmentsPage';
 import './styles/variables.css';
@@ -60,9 +61,12 @@ function RequireAdmin({ children }) {
   return children;
 }
 
+const PROFESSOR_ROLES = new Set(['professor', 'department_head', 'dean']);
+
 function RoleDashboardRedirect() {
-  const { isAdmin } = useAuth();
+  const { isAdmin, user } = useAuth();
   if (isAdmin) return <Navigate to="/admin" replace />;
+  if (PROFESSOR_ROLES.has(user?.role)) return <Navigate to="/professor" replace />;
   return <DashboardPage />;
 }
 
@@ -146,6 +150,7 @@ export default function App() {
   <Route path="/admin/notifications"  element={<AdminNotifications />} />
   <Route path="/admin/announcements"  element={<AdminAnnouncements />} />
   <Route path="/admin/activity-log"   element={<AdminActivityLogPage />} />
+  <Route path="/admin/profile"        element={<AdminProfilePage />} />
 </Route>
 
           <Route path="*" element={
